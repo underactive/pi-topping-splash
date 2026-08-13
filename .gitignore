@@ -1,0 +1,10 @@
+node_modules/
+.pi/
+.DS_Store
+*.log
+.rpiv/
+scratchpad
+AGENTS.md
+
+# rpiv artifacts
+.rpiv/
