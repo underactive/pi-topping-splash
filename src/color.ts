@@ -75,6 +75,35 @@ export type BackgroundColor = "rainbow" | "accent" | "border" | "borderAccent" |
 /** Cycle order shown in the settings menu. */
 export const BACKGROUND_COLOR_OPTIONS: readonly BackgroundColor[] = ["rainbow", "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning"];
 
+/** Animations for the splash backdrop; "off" keeps it static. They wrap any backdrop, rainbow included. */
+export type GradientAnimation = "off" | "breathe" | "flow" | "sheen" | "wave";
+
+/** Cycle order shown in the settings menu. */
+export const GRADIENT_ANIMATION_OPTIONS: readonly GradientAnimation[] = ["off", "breathe", "flow", "sheen", "wave"];
+
+export const BREATHE_PERIOD_MS = 4000;
+/** Brightness floor at the trough of the breathe cycle. */
+export const BREATHE_MIN = 0.55;
+export const FLOW_PERIOD_MS = 3000;
+/** Brightness bands stacked down the gradient. */
+export const FLOW_CYCLES = 1.5;
+/** How far the rolling bands dip below the base fade. */
+export const FLOW_DEPTH = 0.3;
+export const SHEEN_PERIOD_MS = 4000;
+/** The highlight crosses the whole splash in this span; the cycle's remainder rests. */
+export const SHEEN_SWEEP_MS = 1400;
+/** Half-width of the sheen band in diagonal units (x/width + 1-level spans 0..2). */
+export const SHEEN_BAND = 0.18;
+/** Peak blend toward white at the crest, scaled by the local fade level. */
+export const SHEEN_ALPHA = 0.55;
+export const WAVE_PERIOD_MS = 2500;
+/** Horizontal wavelength of the ripple, in cells. */
+export const WAVE_LENGTH_CELLS = 24;
+/** How far the ripple displaces the fade level. */
+export const WAVE_AMP = 0.08;
+
+const TAU = Math.PI * 2;
+
 /** Samples the backdrop for one half-cell: horizontal position, terminal width, and vertical fade level (1 top, 0 bottom). */
 export type SwatchSampler = (x: number, width: number, level: number) => Rgb;
 
@@ -111,13 +140,62 @@ function parseThemeRgb(ansi: string): Rgb | undefined {
 	return undefined;
 }
 
-export function backgroundSampler(background: BackgroundColor, theme: Theme): SwatchSampler {
+export function backgroundSampler(background: BackgroundColor, theme: Theme, animation: GradientAnimation = "off", timeMs = 0): SwatchSampler {
+	return animateSampler(baseSampler(background, theme), animation, timeMs);
+}
+
+/** The static backdrop: the rainbow sweep itself, or a theme color scaled by the fade level. */
+function baseSampler(background: BackgroundColor, theme: Theme): SwatchSampler {
 	if (background === "rainbow") return swatchColor;
 	const rgb = parseThemeRgb(theme.getFgAnsi(background));
 	if (!rgb) return swatchColor;
-	const [r, g, b] = rgb.split(";").map(Number);
+	const [r, g, b] = rgb.split(";").map(Number) as [number, number, number];
 	return (_x: number, _width: number, level: number) => {
-		const factor = Math.max(0, level);
-		return `${Math.round(r * factor)};${Math.round(g * factor)};${Math.round(b * factor)}`;
+		const f = Math.min(1, Math.max(0, level));
+		return `${Math.round(r * f)};${Math.round(g * f)};${Math.round(b * f)}`;
 	};
+}
+
+/**
+ * Wraps a base backdrop in the chosen animation, frozen at `timeMs`. Breathe, flow and wave
+ * transform the fade level fed to the base (so the rainbow keeps its hue sweep and a theme
+ * color keeps its tint); sheen post-blends the base's output toward white inside its band.
+ */
+function animateSampler(base: SwatchSampler, animation: GradientAnimation, timeMs: number): SwatchSampler {
+	switch (animation) {
+		case "breathe": {
+			const breath = BREATHE_MIN + (1 - BREATHE_MIN) * 0.5 * (1 + Math.cos((TAU * timeMs) / BREATHE_PERIOD_MS));
+			return (x: number, width: number, level: number) => base(x, width, Math.max(0, level) * breath);
+		}
+		case "flow": {
+			const phase = timeMs / FLOW_PERIOD_MS;
+			// Crests sit where level·FLOW_CYCLES + phase is constant, so they travel downward as time passes.
+			return (x: number, width: number, level: number) => {
+				const f = Math.max(0, level);
+				return base(x, width, f * (1 - FLOW_DEPTH + FLOW_DEPTH * Math.sin(TAU * (f * FLOW_CYCLES + phase))));
+			};
+		}
+		case "sheen": {
+			const cycle = timeMs % SHEEN_PERIOD_MS;
+			if (cycle >= SHEEN_SWEEP_MS) return base;
+			// The band enters fully off the top-left and exits fully off the bottom-right.
+			const pos = (cycle / SHEEN_SWEEP_MS) * (2 + 2 * SHEEN_BAND) - SHEEN_BAND;
+			return (x: number, width: number, level: number) => {
+				const f = Math.min(1, Math.max(0, level));
+				const dist = Math.abs(x / Math.max(1, width) + (1 - f) - pos);
+				if (dist >= SHEEN_BAND) return base(x, width, f);
+				const alpha = 0.5 * (1 + Math.cos((Math.PI * dist) / SHEEN_BAND)) * SHEEN_ALPHA * f;
+				const [r, g, b] = base(x, width, f).split(";").map(Number) as [number, number, number];
+				const glint = (c: number) => Math.round(c + (255 - c) * alpha);
+				return `${glint(r)};${glint(g)};${glint(b)}`;
+			};
+		}
+		case "wave": {
+			const phase = timeMs / WAVE_PERIOD_MS;
+			return (x: number, width: number, level: number) =>
+				base(x, width, Math.min(1, Math.max(0, level + WAVE_AMP * Math.sin(TAU * (x / WAVE_LENGTH_CELLS - phase)))));
+		}
+		default:
+			return base;
+	}
 }

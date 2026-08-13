@@ -4,6 +4,7 @@ import { VERSION } from "@earendil-works/pi-coding-agent";
 import {
 	buildCountsLine,
 	buildHeader,
+	buildHeaderParts,
 	buildLabeledWrappedSection,
 	buildPanelLines,
 	LOGO_GAP,
@@ -321,6 +322,31 @@ describe("custom sampler plumbing", () => {
 			for (const width of [1, 40, 80, 160]) {
 				const lines = buildHeader(width, 40, theme, ["AGENTS.md"], ["a"], ["b"], MODEL, 4000, background);
 				assertLinesExact(lines, width, `buildHeader(background=${background}, width=${width})`);
+			}
+		}
+	});
+});
+
+describe("animated backdrop repaint (S-12)", () => {
+	it("repaintBackdrop exists exactly when an animation is on, for any backdrop", () => {
+		const partsFor = (background: "rainbow" | "accent", animation: "off" | "breathe" | "flow") =>
+			buildHeaderParts(100, 40, theme, ["AGENTS.md"], ["a"], ["b"], MODEL, 4000, background, animation, 0);
+		assert.equal(partsFor("rainbow", "off").repaintBackdrop, undefined, "static rainbow has nothing to repaint");
+		assert.equal(partsFor("accent", "off").repaintBackdrop, undefined, "off stays static");
+		assert.notEqual(partsFor("accent", "flow").repaintBackdrop, undefined, "animated theme color must expose the hook");
+		assert.notEqual(partsFor("rainbow", "breathe").repaintBackdrop, undefined, "animated rainbow must expose the hook");
+	});
+
+	it("repainted frames stay exact-width, keep the row count and reflect the advanced clock", () => {
+		// Times chosen mid-motion for each animation so the frame visibly differs from timeMs=0.
+		const midpoints = { breathe: 2000, flow: 2000, sheen: 700, wave: 1250 } as const;
+		for (const background of ["accent", "rainbow"] as const) {
+			for (const [animation, timeMs] of Object.entries(midpoints) as [keyof typeof midpoints, number][]) {
+				const parts = buildHeaderParts(100, 40, theme, ["AGENTS.md"], ["a"], ["b"], MODEL, 4000, background, animation, 0);
+				const frame = parts.repaintBackdrop!(timeMs);
+				assertLinesExact(frame, 100, `repaintBackdrop(${background}, ${animation})`);
+				assert.equal(frame.length, parts.lines.length, `${background} ${animation}: row count stable`);
+				assert.notDeepEqual(frame, parts.lines, `${background} ${animation}: the frame must move`);
 			}
 		}
 	});

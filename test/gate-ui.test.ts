@@ -25,6 +25,15 @@ describe("isPrintableInput (G-01)", () => {
 			assert.equal(isPrintableInput(String.fromCharCode(code)), expected, `code=0x${code.toString(16)}`);
 		}
 	});
+	it("rejects C1 control characters (U+0080-009F)", () => {
+		for (let code = 0x80; code <= 0x9f; code++) {
+			assert.equal(isPrintableInput(String.fromCharCode(code)), false, `C1 code=0x${code.toString(16)}`);
+		}
+	});
+	it("accepts characters above the C1 range", () => {
+		assert.equal(isPrintableInput("\u00a0"), true, "non-breaking space");
+		assert.equal(isPrintableInput("\u00ff"), true, "ÿ (U+00FF)");
+	});
 	it("rejects escape sequences and strings containing controls", () => {
 		assert.equal(isPrintableInput("\x1b[A"), false);
 		assert.equal(isPrintableInput("a\x1bb"), false);

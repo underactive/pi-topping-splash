@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
 	BACKGROUND_COLOR_OPTIONS,
 	backgroundSampler,
+	BREATHE_PERIOD_MS,
+	GRADIENT_ANIMATION_OPTIONS,
 	hsvRgb,
 	PANEL_BG_DARK,
 	PANEL_BG_LIGHT,
@@ -10,11 +12,13 @@ import {
 	panelBg,
 	RESET,
 	rgbFromHex,
+	SHEEN_SWEEP_MS,
 	SWATCH_HUE_START,
 	sgrBg,
 	sgrFg,
 	swatchColor,
 } from "../src/color.ts";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme } from "./helpers/theme.ts";
 
 const TRIPLET = /^(\d{1,3});(\d{1,3});(\d{1,3})$/;
@@ -211,19 +215,102 @@ describe("backgroundSampler", () => {
 		assert.equal(sample(0, 80, 0), "0;0;0");
 	});
 
-	it("malformed ANSI falls back to swatchColor (no throw, valid triplet)", () => {
-		// FG_COLORS in the test theme are always resolvable; this just documents the fallback
-		// contract by asserting rainbow's own output for an unresolvable input shape is safe.
+	const malformedTheme = { getFgAnsi: () => "\x1b[31m" } as unknown as Theme;
+
+	it("truecolor accent sampler emits valid triplets", () => {
 		const theme = makeTheme();
 		const sample = backgroundSampler("accent", theme);
 		channels(sample(10, 80, 0.5));
 	});
 
-	it("every xterm 256-color index converts to a valid triplet", () => {
-		const theme = makeTheme({ mode: "256color" });
-		for (let i = 0; i < 256; i++) {
-			const sample = backgroundSampler("accent", theme);
-			channels(sample(0, 80, 1));
+	it("malformed ANSI falls back to swatchColor", () => {
+		const sample = backgroundSampler("accent", malformedTheme);
+		assert.equal(sample(10, 80, 0.5), swatchColor(10, 80, 0.5));
+		assert.equal(sample(40, 80, 1), swatchColor(40, 80, 1));
+	});
+});
+
+describe("GRADIENT_ANIMATION_OPTIONS (C-12)", () => {
+	it("lists off first, then the four animations in menu order", () => {
+		assert.deepEqual(GRADIENT_ANIMATION_OPTIONS, ["off", "breathe", "flow", "sheen", "wave"]);
+	});
+});
+
+describe("animated backgroundSampler (C-13)", () => {
+	const theme = makeTheme();
+	const levels = [1, 0.75, 0.5, 0.25, 0.1, 0];
+	const sum = (rgb: string) => channels(rgb).reduce((a, b) => a + b, 0);
+
+	it('"off" and an omitted animation are the same static fade at any timeMs', () => {
+		const bare = backgroundSampler("accent", theme);
+		const off = backgroundSampler("accent", theme, "off", 12345);
+		for (const level of levels) {
+			for (const x of [0, 20, 79]) {
+				assert.equal(off(x, 80, level), bare(x, 80, level), `x=${x} level=${level}`);
+			}
 		}
+	});
+
+	it("rainbow with animation off is swatchColor itself; animated rainbow wraps the sweep", () => {
+		assert.equal(backgroundSampler("rainbow", theme, "off", 500), swatchColor);
+		const crest = backgroundSampler("rainbow", theme, "breathe", 0);
+		assert.notEqual(crest, swatchColor, "animated rainbow is a wrapper");
+		for (const level of [1, 0.5, 0.1]) {
+			for (const x of [0, 40, 79]) {
+				assert.equal(crest(x, 80, level), swatchColor(x, 80, level), `breathe crest x=${x} level=${level}`);
+			}
+		}
+		const trough = backgroundSampler("rainbow", theme, "breathe", BREATHE_PERIOD_MS / 2);
+		assert.ok(sum(trough(0, 80, 1)) < sum(swatchColor(0, 80, 1)), "trough darker than the static sweep");
+	});
+
+	it("every animation emits valid triplets and is deterministic in timeMs", () => {
+		for (const background of ["accent", "rainbow"] as const) {
+			for (const animation of GRADIENT_ANIMATION_OPTIONS) {
+				for (const timeMs of [0, 250, 999, 2000, 3600, 7777]) {
+					const a = backgroundSampler(background, theme, animation, timeMs);
+					const b = backgroundSampler(background, theme, animation, timeMs);
+					for (const level of levels) {
+						for (const x of [0, 7, 40, 79]) {
+							channels(a(x, 80, level));
+							assert.equal(a(x, 80, level), b(x, 80, level), `${background} ${animation} t=${timeMs} x=${x} level=${level}`);
+						}
+					}
+				}
+			}
+		}
+	});
+
+	it("breathe and flow stay horizontally constant", () => {
+		for (const animation of ["breathe", "flow"] as const) {
+			const sample = backgroundSampler("accent", theme, animation, 1234);
+			for (const level of [1, 0.5, 0.2]) {
+				assert.equal(sample(0, 80, level), sample(53, 80, level), `${animation} level=${level}`);
+			}
+		}
+	});
+
+	it("breathe starts at full brightness and dims toward the trough at half period", () => {
+		const off = backgroundSampler("accent", theme, "off", 0);
+		const crest = backgroundSampler("accent", theme, "breathe", 0);
+		assert.equal(crest(0, 80, 1), off(0, 80, 1), "timeMs=0 is the crest");
+		const trough = backgroundSampler("accent", theme, "breathe", BREATHE_PERIOD_MS / 2);
+		assert.ok(sum(trough(0, 80, 1)) < sum(crest(0, 80, 1)), "half period must be darker than the crest");
+	});
+
+	it("sheen rests as the static fade between sweeps and brightens cells mid-sweep", () => {
+		const off = backgroundSampler("accent", theme, "off", 0);
+		const resting = backgroundSampler("accent", theme, "sheen", SHEEN_SWEEP_MS + 100);
+		for (const level of levels) {
+			assert.equal(resting(10, 80, level), off(10, 80, level), `resting level=${level}`);
+		}
+		const sweeping = backgroundSampler("accent", theme, "sheen", SHEEN_SWEEP_MS / 2);
+		let brightened = false;
+		for (let x = 0; x < 80; x++) {
+			for (const level of [1, 0.75, 0.5, 0.25]) {
+				if (sum(sweeping(x, 80, level)) > sum(off(x, 80, level))) brightened = true;
+			}
+		}
+		assert.ok(brightened, "the sweep must brighten part of the gradient");
 	});
 });

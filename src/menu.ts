@@ -22,7 +22,7 @@
  * menu; it has no dependency on this extension's own settings shape.
  */
 
-import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey, truncateToWidth, type TUI, visibleWidth } from "@earendil-works/pi-tui";
 
 export type MenuValue = boolean | string;
@@ -383,7 +383,7 @@ export class MenuComponent implements Component {
  * `applied: false` and the menu's initial values, doing nothing visible.
  */
 export async function showMenu<T extends Record<string, MenuValue>>(
-	ctx: ExtensionCommandContext,
+	ctx: ExtensionContext,
 	config: MenuConfig,
 ): Promise<MenuResult<T>> {
 	const initialValues = buildInitialValues(config) as T;

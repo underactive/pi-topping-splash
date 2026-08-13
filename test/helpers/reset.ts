@@ -1,4 +1,5 @@
 import { headerRenderState, state } from "../../src/state.ts";
+import { gradientAnimation, stopGradientAnimation } from "../../src/animate.ts";
 import {
 	REVEAL_BAND_HALF,
 	REVEAL_HOLD_MS,
@@ -13,6 +14,10 @@ import {
  */
 export function resetModuleState(): void {
 	stopTaglineReveal();
+	stopGradientAnimation();
+	gradientAnimation.lastTickAt = 0;
+	gradientAnimation.timeMs = 0;
+	gradientAnimation.tick = 0;
 	taglineReveal.timer = null;
 	taglineReveal.lastTickAt = 0;
 	taglineReveal.holdLeftMs = REVEAL_HOLD_MS;
@@ -25,7 +30,10 @@ export function resetModuleState(): void {
 	state.quietStartupEnsured = false;
 	state.loadedSkills = [];
 	state.loadedExtensions = [];
+	state.loadedContext = [];
 	state.systemPromptSize = undefined;
 	state.splashRows = 0;
 	state.backgroundColor = "rainbow";
+	state.gradientAnimation = "off";
+	state.conversationStarted = false;
 }

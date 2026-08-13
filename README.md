@@ -4,26 +4,20 @@ Pi extension that replaces the default startup header with an edge-to-edge full-
 
 ![pi-splash](https://raw.githubusercontent.com/underactive/pi-topping-splash/main/media/pi-splash.png)
 
-- displays the pi version, active model, system prompt size, and the loaded context files, skills
-  and extensions in a dark info panel beside the logo, each list under a
-  `[context] 2`/`[skills] 24`/`[extensions] 40` heading. The context files are exactly the sources
-  pi's `/loaded` Context section lists — the SYSTEM.md/APPEND_SYSTEM.md system-prompt sources
-  (project `.pi/` when trusted, else agent dir) and the AGENTS.md/CLAUDE.md files — discovered
-  and displayed with the same cwd-relative/`~`-shortened logic as pi's own. The extensions and
-  skills are likewise pi's actual loaded set: extensions come from the settings `packages` and
-  `extensions` lists plus agent/project `.pi/extensions` auto-discovery (with `+`/`-` overrides
-  and `--extension`/`--no-extensions` honored), labeled with pi's own compact labels (`pkg:src`
-  for package entries, shortest unique path suffix otherwise); skills are the `skill:`-prefixed
-  commands pi registers. If the terminal is too
-  small — splash over 60% of the height, or a name too long to fit — the lists collapse to a
-  single `[context] 2 · [skills] 24 · [extensions] 40` counts line
-- optionally shows a blocking startup gate menu on launch (New session, Resume session, Model, Skills and
-  Extensions, Theme, Quit), each item with an icon and a single-letter hotkey
+
+## Install
+
+```bash
+pi install npm:@underactive/pi-topping-splash
+```
+
+Restart Pi (or run `/reload`) to pick it up.
 
 ## Settings
 
-Run `/topping-splash-settings` (TUI mode only) to open a settings menu with two toggles and a
-background color cycle:
+Run `/topping-splash-settings` (TUI mode only) or pick **Settings** in the startup gate menu
+to open a settings menu with two toggles, a background color cycle and a gradient animation
+cycle:
 
 ```text
 ╔═[ Pi Topping Splash: Settings ]══════════════════════════════════════════╗
@@ -33,10 +27,11 @@ background color cycle:
 ╟─ Splash ─────────────────────────────────────────────────────────────────╢
 ║    [■] Model + prompt size reveal animation                          ON  ║
 ║    [■] Background color                                     ‹ rainbow ›  ║
+║    [■] Animate gradient                                         ‹ off ›  ║
 ║                                                                          ║
 ╟──────────────────────────────────────────────────────────────────────────╢
 ║  ↑↓ move  ␣ toggle  ←→ cycle  ⏎ apply  esc cancel                        ║
-╚═══════════════════════════════════════════════════════════════════[ 1/3 ]╝
+╚═══════════════════════════════════════════════════════════════════[ 1/4 ]╝
 ```
 
 - **Startup gate menu** — show the startup gate menu below the splash on launch (ON by default)
@@ -48,21 +43,16 @@ background color cycle:
   splash to black at the bottom and stays constant horizontally, unlike the rainbow's left-right
   hue sweep. Indexed (256-color) theme colors are approximated as RGB and still require a
   truecolor-capable terminal to render the emitted backdrop.
+- **Animate gradient** — cycle with ←/→ through `off` (the default) and four animations that
+  work on any backdrop, `rainbow` included: `breathe` eases the whole backdrop's brightness on
+  a slow sine, `flow` rolls brightness bands down the fade, `sheen` sweeps a diagonal highlight
+  across every few seconds, and `wave` ripples the fade sideways as a traveling wave. On
+  `rainbow` they modulate the sweep's brightness while the hue run stays put; on a theme color
+  they modulate the vertical fade. The animation runs while the splash is on screen — during
+  the gate, or with the gate off until the first agent turn — then stops for the rest of the
+  session, since the splash scrolls away once the conversation grows.
 
-Toggle/cycle with Space/←→, apply with Enter, or Escape to cancel without saving. The gate and
-reveal toggles are read during startup and take effect on the next launch; the background color
-also applies immediately to an already-visible splash. All three are stored together in
-`pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless `PI_CODING_AGENT_DIR`
-says otherwise); delete that file to return to the defaults (both toggles ON, background
-`rainbow`).
-
-## Install
-
-```bash
-pi install npm:@underactive/pi-topping-splash
-```
-
-Restart Pi (or run `/reload`) to pick it up.
+The gate and reveal toggles are read during startup and take effect on the next launch; the background color and gradient animation also apply immediately to an already-visible splash. All four are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless `PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (both toggles ON, background `rainbow`, animation `off`).
 
 ## Troubleshooting
 

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
 import { ensureQuietStartup, installHeader, withSettings } from "../src/header.ts";
 import { writePreferences } from "../src/preferences.ts";
 import { stopTaglineReveal, TAGLINE_PLACEHOLDER, taglineReveal } from "../src/reveal.ts";
@@ -25,6 +26,7 @@ beforeEach(() => {
 });
 afterEach(() => {
 	stopTaglineReveal();
+	stopGradientAnimation();
 	env.restore();
 });
 
@@ -101,7 +103,7 @@ describe("installHeader (H-04, H-05)", () => {
 	});
 
 	it("taglineReveal:off never starts the reveal and settles the tagline on frame one (I-15)", () => {
-		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow" });
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "off" });
 		const { component } = install();
 		assert.equal(taglineReveal.timer, null, "reveal must not start");
 		const text = component.render(120).map(sanitizeTuiText).join("\n");
@@ -161,5 +163,35 @@ describe("installHeader (H-04, H-05)", () => {
 		assertLinesExact(second, 120, "after reveal tick");
 		const changed = second.filter((line, i) => line !== first[i]).length;
 		assert.ok(changed <= 1, `tick-only render touched ${changed} rows, expected at most 1`);
+	});
+
+	it("an animated background preference seeds state and starts the gradient ticker (H-07)", () => {
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "breathe" });
+		install();
+		assert.equal(state.gradientAnimation, "breathe", "state seeded from preferences");
+		assert.notEqual(gradientAnimation.timer, null, "gradient ticker running");
+	});
+
+	it("an animated rainbow also starts the ticker; animation off never does (H-07)", () => {
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "breathe" });
+		install();
+		assert.notEqual(gradientAnimation.timer, null, "rainbow animates too");
+		resetModuleState();
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off" });
+		install();
+		assert.equal(gradientAnimation.timer, null, "off stays static");
+	});
+
+	it("an animation tick repaints the backdrop rows and holds the width invariant (H-07)", () => {
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "breathe" });
+		const { component } = install();
+		const first = component.render(120);
+		assertLinesExact(first, 120, "initial animated frame");
+		gradientAnimation.timeMs = 2000;
+		gradientAnimation.tick += 1;
+		const second = component.render(120);
+		assertLinesExact(second, 120, "after animation tick");
+		assert.equal(second.length, first.length, "row count stable across ticks");
+		assert.notDeepEqual(second, first, "the backdrop must move");
 	});
 });

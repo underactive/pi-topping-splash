@@ -15,12 +15,13 @@ export const SHORT_TERMINAL_ROWS = 24;
 
 /**
  * True when `data` is plain typed/pasted text safe to append to a filter query: non-empty,
- * no control characters (which covers escape sequences — they start with `\x1b`) and no DEL.
+ * no control characters (C0, C1 U+0080-9F — which covers escape sequences — and DEL).
  */
 export function isPrintableInput(data: string): boolean {
 	if (data.length === 0) return false;
 	for (const ch of data) {
-		if (ch < " " || ch === "\x7f") return false;
+		const cp = ch.codePointAt(0)!;
+		if (cp < 0x20 || cp === 0x7f || (cp >= 0x80 && cp <= 0x9f)) return false;
 	}
 	return true;
 }

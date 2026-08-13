@@ -109,11 +109,11 @@ export function shimmerCell(ch: string, dist: number, palette: ShimmerPalette): 
  * placeholder's width until the wipe outgrows it and then widens toward the finished tagline, being
  * recentered in the panel by the caller throughout.
  *
- * Falls back to the settled line whenever a frame could not be drawn faithfully: ANSI is stripped
- * before reveal, a 256-color theme has no channels to interpolate, a surrogate pair would
- * desynchronize the code point index from the `visibleLength` the panel budgets by, and a tagline
- * shorter than the placeholder could never overwrite all of it, so the label would still be showing
- * once the wipe ran out of characters.
+ * Falls back to the settled line whenever a frame could not be drawn faithfully: a 256-color
+ * theme has no channels to interpolate, a surrogate pair would desynchronize the code point index
+ * from the `visibleLength` the panel budgets by, and a tagline shorter than the placeholder could
+ * never overwrite all of it, so the label would still be showing once the wipe ran out of
+ * characters.
  */
 export function renderTagline(theme: Theme, tagline: string): string {
 	// Strip ANSI escapes from model/provider names that could break out of the themed styling.
@@ -125,7 +125,6 @@ export function renderTagline(theme: Theme, tagline: string): string {
 	if (
 		pos === undefined ||
 		!palette ||
-		safeTagline.includes("\x1b") ||
 		chars.length !== visibleLength(safeTagline) ||
 		chars.length < TAGLINE_PLACEHOLDER.length
 	) {

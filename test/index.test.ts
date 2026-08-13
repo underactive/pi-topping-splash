@@ -3,7 +3,8 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import piStartupGreeter from "../index.ts";
-import { readPreferences, type SplashPreferences } from "../src/preferences.ts";
+import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
+import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
 import { stopTaglineReveal, taglineReveal } from "../src/reveal.ts";
 import { headerRenderState, state } from "../src/state.ts";
 import { setArgv, setEnv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
@@ -28,6 +29,7 @@ beforeEach(() => {
 });
 afterEach(() => {
 	stopTaglineReveal();
+	stopGradientAnimation();
 	restoreGateEnv();
 	restoreArgv();
 	env.restore();
@@ -488,5 +490,95 @@ describe("background color setting (I-06 extension)", () => {
 		await handlerPromise;
 		assert.equal(state.backgroundColor, "accent");
 		assert.ok(wired.tui.renderRequests.length > before, "a render must be requested after applying");
+	});
+});
+
+describe("gradient animation setting (I-17)", () => {
+	/** Menu rows in cursor order: menuGate (0), taglineReveal (1), backgroundColor (2), gradientAnimation (3). */
+	async function applyMenu(wired: Wired, inputs: string[]): Promise<void> {
+		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
+		const component = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+		for (const key of inputs) component.handleInput(key);
+		component.handleInput(KEY.enter);
+		await handlerPromise;
+	}
+
+	it("defaults to off; cycling right persists breathe and leaves the rest alone", async () => {
+		const wired = wire();
+		assert.equal(readPreferences().gradientAnimation, "off", "starts at the default");
+		await applyMenu(wired, [KEY.down, KEY.down, KEY.down, KEY.right]);
+		const prefs = readPreferences();
+		assert.equal(prefs.gradientAnimation, "breathe", "cycled one step right");
+		assert.equal(prefs.backgroundColor, "rainbow", "untouched cycle keeps its value");
+		assert.equal(prefs.menuGate, "on", "untouched toggle keeps its value");
+	});
+
+	it("an invalid persisted value falls back to off", () => {
+		writeFileSync(join(env.agentDir, "pi-topping-splash.json"), JSON.stringify({ gradientAnimation: "sparkle" }), "utf8");
+		assert.equal(readPreferences().gradientAnimation, "off");
+	});
+
+	it("applying an animated theme-color backdrop to a visible splash starts the ticker; off stops it", async () => {
+		await persist({ menuGate: "off" });
+		const wired = wire();
+		await startup(wired);
+		const factory = wired.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
+		factory(wired.tui.tui, makeTheme());
+
+		await applyMenu(wired, [KEY.down, KEY.down, KEY.right, KEY.down, KEY.right]);
+		assert.equal(state.backgroundColor, "accent");
+		assert.equal(state.gradientAnimation, "breathe");
+		assert.notEqual(gradientAnimation.timer, null, "ticker running on an animated backdrop");
+
+		await applyMenu(wired, [KEY.down, KEY.down, KEY.down, KEY.left]);
+		assert.equal(state.gradientAnimation, "off");
+		assert.equal(gradientAnimation.timer, null, "ticker stopped once the animation is off");
+	});
+
+	it("applying an animation while the background stays rainbow also starts the ticker", async () => {
+		await persist({ menuGate: "off" });
+		const wired = wire();
+		await startup(wired);
+		const factory = wired.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
+		factory(wired.tui.tui, makeTheme());
+
+		await applyMenu(wired, [KEY.down, KEY.down, KEY.down, KEY.right]);
+		assert.equal(state.backgroundColor, "rainbow", "background untouched");
+		assert.equal(state.gradientAnimation, "breathe");
+		assert.notEqual(gradientAnimation.timer, null, "the rainbow animates too");
+	});
+
+	it("applying an animation with no splash header wired leaves the ticker off", async () => {
+		const wired = wire();
+		await applyMenu(wired, [KEY.down, KEY.down, KEY.right, KEY.down, KEY.right]);
+		assert.equal(readPreferences().gradientAnimation, "breathe", "persisted for the next launch");
+		assert.equal(gradientAnimation.timer, null, "nothing visible to animate");
+	});
+
+	it("the first agent turn stops the ticker; a later apply persists but cannot restart it", async () => {
+		writePreferences({ menuGate: "off", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow" });
+		const wired = wire();
+		await startup(wired);
+		const factory = wired.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
+		factory(wired.tui.tui, makeTheme());
+		assert.notEqual(gradientAnimation.timer, null, "ticker running in splash-only mode");
+
+		await wired.pi.emit("before_agent_start", { type: "before_agent_start", systemPrompt: "x" }, wired.ctx.ctx);
+		assert.equal(gradientAnimation.timer, null, "first turn stopped the ticker");
+
+		await applyMenu(wired, [KEY.down, KEY.down, KEY.down, KEY.right]);
+		assert.equal(readPreferences().gradientAnimation, "sheen", "preference still persisted");
+		assert.equal(gradientAnimation.timer, null, "mid-session apply must not restart an off-screen animation");
+	});
+
+	it("startup with an animated preference runs the ticker; the gate's proceed teardown stops it", async () => {
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow" });
+		const wired = wire();
+		const emitted = startup(wired);
+		await until(() => wired.ctx.customComponents.length > 0);
+		assert.notEqual(gradientAnimation.timer, null, "ticker running during the gate");
+		(wired.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput("\x1b");
+		await emitted;
+		assert.equal(gradientAnimation.timer, null, "teardown stopped the ticker");
 	});
 });

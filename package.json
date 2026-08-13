@@ -1,6 +1,6 @@
 {
   "name": "@underactive/pi-topping-splash",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A Pi extension that replaces the default startup header with an informative splash screen and optionally adds an interactive startup gate menu",
   "keywords": [
     "pi-package",

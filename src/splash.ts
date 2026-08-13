@@ -1,7 +1,7 @@
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { backgroundSampler, RESET, panelBg, sgrBg, sgrFg, swatchColor } from "./color.ts";
-import type { BackgroundColor, Rgb, SwatchSampler } from "./color.ts";
+import type { BackgroundColor, GradientAnimation, Rgb, SwatchSampler } from "./color.ts";
 import { LOGO_INK, LOGO_LINES, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "./logo.ts";
 import { fitCell, formatPromptSize, joinParts, padCenter, padRight, pickFitting, sanitizeTuiText, truncateVisible, visibleLength, wrapCommaDelimited } from "./text.ts";
 import { renderTagline } from "./reveal.ts";
@@ -92,6 +92,8 @@ export interface PanelPlacement {
 	width: number;
 	bg: Rgb;
 	lines: string[];
+	/** Row offset of the tagline within `lines`, or -1 when there is no tagline. */
+	taglineRow?: number;
 }
 
 /**
@@ -138,6 +140,8 @@ export function paintRow(y: number, width: number, height: number, ink: Map<numb
 	let row = "";
 	let currentFg = "";
 	let currentBg = "";
+	const levelFg = (height - y) / height;
+	const levelBg = (height - y - 0.5) / height;
 	for (let x = 0; x < width; x++) {
 		if (x === panel.x && y >= panel.y && y < panel.y + panel.lines.length) {
 			row += paintPanelRow(panel, y);
@@ -147,8 +151,8 @@ export function paintRow(y: number, width: number, height: number, ink: Map<numb
 			continue;
 		}
 		const cell = ink.get(y * width + x);
-		const cellFg = cell ? cell.color : sample(x, width, (height - y) / height);
-		const cellBg = cell?.backdrop ?? sample(x, width, (height - y - 0.5) / height);
+		const cellFg = cell ? cell.color : sample(x, width, levelFg);
+		const cellBg = cell?.backdrop ?? sample(x, width, levelBg);
 		if (cellFg !== currentFg) {
 			row += sgrFg(cellFg);
 			currentFg = cellFg;
@@ -174,6 +178,8 @@ export interface HeaderParts {
 	lines: string[];
 	/** Repaints just the tagline row; undefined when the panel has no tagline (nothing to reveal). */
 	repaintTagline?: () => { row: number; line: string };
+	/** Repaints every row with the backdrop advanced to `timeMs`; undefined when the backdrop is static. */
+	repaintBackdrop?: (timeMs: number) => string[];
 }
 
 /**
@@ -187,10 +193,11 @@ export interface HeaderParts {
  * ordering. Every layout keeps a spare row below the logo, where its drop shadow lands.
  *
  * Returns a `repaintTagline` hook so the reveal ticker can restyle just the tagline row instead
- * of rebuilding the whole O(W×H) splash on every 20ms tick.
+ * of rebuilding the whole O(W×H) splash on every 20ms tick, and a `repaintBackdrop` hook so the
+ * gradient animation ticker can repaint the rows without redoing this layout work.
  */
-export function buildHeaderParts(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow"): HeaderParts {
-	const sample = backgroundSampler(background, theme);
+export function buildHeaderParts(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0): HeaderParts {
+	let sample = backgroundSampler(background, theme, animation, timeMs);
 	const logoRows = LOGO_LINES.length;
 	const roomBesideLogo = width - SPLASH_MARGIN_X * 2 - LOGO_WIDTH - LOGO_GAP;
 	const sideBySide = roomBesideLogo >= PANEL_MIN_WIDTH;
@@ -231,26 +238,31 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 	const logoX = sideBySide ? Math.max(SPLASH_MARGIN_X, Math.floor((panelX - LOGO_WIDTH) / 2)) : Math.max(0, Math.floor((width - LOGO_WIDTH) / 2));
 	const logoY = sideBySide ? Math.floor((height - logoRows) / 2) : 0;
 	const panelY = sideBySide ? Math.floor((height - lines.length) / 2) : logoRows + 1 + PANEL_MARGIN_Y;
-	const panel: PanelPlacement = { x: panelX, y: panelY, width: panelWidth, bg: panelBg(theme), lines };
+	const taglineText = buildTaglineText(innerWidth, model, systemPromptSize);
+	const taglineRow = taglineText !== "" ? 2 : -1;
+	const panel: PanelPlacement = { x: panelX, y: panelY, width: panelWidth, bg: panelBg(theme), lines, taglineRow };
 	const ink = new Map<number, Ink>();
 	stampLogo(ink, width, height, logoX, logoY);
 	const painted = Array.from({ length: height }, (_, y) => paintRow(y, width, height, ink, panel, sample));
 
-	// The reveal animates only the tagline. It sits at panel.lines index 2 when present
-	// (frame layout: ["", heading, tagline, "", ...body]); recomputing that one row per tick
-	// avoids rebuilding every cell of the swatch backdrop.
-	const taglineText = buildTaglineText(innerWidth, model, systemPromptSize);
-	const repaintTagline = taglineText === ""
+	const repaintTagline = taglineRow === -1
 		? undefined
 		: () => {
-			panel.lines[2] = padCenter(renderTagline(theme, taglineText), innerWidth);
-			const row = panel.y + 2;
+			panel.lines[taglineRow] = padCenter(renderTagline(theme, taglineText), innerWidth);
+			const row = panel.y + taglineRow;
 			return { row, line: paintRow(row, width, height, ink, panel, sample) };
 		};
-	return { lines: painted, repaintTagline };
+	const repaintBackdrop = animation !== "off"
+		? (nowMs: number) => {
+			// Reassigned rather than shadowed so a later tagline repaint paints over the same frame.
+			sample = backgroundSampler(background, theme, animation, nowMs);
+			return Array.from({ length: height }, (_, y) => paintRow(y, width, height, ink, panel, sample));
+		}
+		: undefined;
+	return { lines: painted, repaintTagline, repaintBackdrop };
 }
 
-/** The splash as flat lines. Use `buildHeaderParts` when you also need the tick-only tagline repaint. */
-export function buildHeader(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow"): string[] {
-	return buildHeaderParts(width, termRows, theme, context, skills, extensions, model, systemPromptSize, background).lines;
+/** The splash as flat lines. Use `buildHeaderParts` when you also need the tick-only repaint hooks. */
+export function buildHeader(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0): string[] {
+	return buildHeaderParts(width, termRows, theme, context, skills, extensions, model, systemPromptSize, background, animation, timeMs).lines;
 }

@@ -1,5 +1,5 @@
 
-import type { BackgroundColor } from "./color.ts";
+import type { BackgroundColor, GradientAnimation } from "./color.ts";
 
 /**
  * Module-scoped state that lives for the lifetime of the extension process (not per-session).
@@ -18,6 +18,14 @@ export const state = {
 	splashRows: 0,
 	/** Current render-time splash backdrop, seeded from preferences and updated immediately on apply. */
 	backgroundColor: "rainbow" as BackgroundColor,
+	/** Current render-time backdrop animation, seeded from preferences and updated immediately on apply. */
+	gradientAnimation: "off" as GradientAnimation,
+	/**
+	 * Set at the first agent turn. From then on the transcript outgrows the splash and scrolls it
+	 * off-viewport, where every animation tick would force a full-screen redraw — so the backdrop
+	 * ticker is stopped there and never restarted for the rest of the process.
+	 */
+	conversationStarted: false,
 };
 
 /** Callbacks wired by the active header component so model_select can force a refresh. */

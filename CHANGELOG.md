@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-14
+
+### Added
+
+- Settings cycle "Animate gradient" to animate the splash backdrop — any background, `rainbow`
+  included: `breathe` (the whole backdrop's brightness eases on a slow sine), `flow` (brightness
+  bands roll down the fade), `sheen` (a diagonal highlight sweeps across every few seconds) or
+  `wave` (the fade ripples sideways as a traveling wave). Off by default, applies immediately to
+  a visible splash and persists across launches.
+- Settings entry in the startup gate menu (hotkey `s`; Skills and Extensions moved to `x`), opening the same settings menu as
+  `/topping-splash-settings`.
+
+### Fixed
+
+- Gradient animation now stops immediately in sessions where the gate is bypassed (reload,
+  relaunched child process) — previously the timer kept running even when the splash was never
+  shown. Also stops at the first agent turn in non-gated sessions where the splash was visible.
+- Wave animation backdrop level was not clamped to `[0, 1]`; the sine term could push it
+  negative, producing unexpected colors near the top of the swatch.
+- `isPrintableInput` now rejects C1 control characters (U+0080–009F) in addition to C0 and DEL;
+  pasting text containing C1 bytes could previously reach the filter query.
+- Filter text displayed in the tab header is now sanitized before rendering; a filter string
+  containing escape sequences could break terminal output.
+
 ## [0.2.0] - 2026-08-13
 
 ### Added

@@ -5,6 +5,7 @@ import type { KeyId, OverlayHandle, SizeValue, TUI } from "@earendil-works/pi-tu
 import { headerRenderState, state } from "./state.ts";
 import { ELLIPSIS, sanitizeTuiText } from "./text.ts";
 import { relaunchPi } from "./relaunch.ts";
+import { showSplashSettings } from "./settings.ts";
 import { TwoPaneModelThinking, availableModelRefs, modelRefLabel } from "./model-picker.ts";
 import type { ModelRef, ThinkingLevel } from "./model-picker.ts";
 import { GATE_LIST_HEIGHT, GATE_PANEL_MAX_WIDTH, RESUME_PANEL_WIDTH, SHORT_TERMINAL_ROWS, fuzzyRanked, isPrintableInput, listWindow, renderPopupBox } from "./gate-ui.ts";
@@ -17,7 +18,7 @@ export type SessionListItem = Awaited<ReturnType<typeof SessionManager.list>>[nu
 /** How the gate resolved when it did not relaunch the process. */
 export type GateResolution = "proceed" | "quit";
 
-export type MenuAction = "new" | "resume" | "model" | "theme" | "skills-extensions" | "quit";
+export type MenuAction = "new" | "resume" | "model" | "theme" | "skills-extensions" | "settings" | "quit";
 export type GateView = "menu" | "resume" | "model" | "theme" | "skills-extensions";
 
 /**
@@ -34,14 +35,16 @@ export class StartupGate {
 		{ label: "New session", action: "new", icon: "", hotkey: "n" }, // nf-fa-file
 		{ label: "Resume session", action: "resume", icon: "", hotkey: "r" }, // nf-fa-history
 		{ label: "Model", action: "model", icon: "\u{f1719}", hotkey: "m" }, // nf-md-robot_happy
-		{ label: "Skills and Extensions", action: "skills-extensions", icon: "\u{f0431}", hotkey: "s" }, // nf-md-puzzle
+		{ label: "Skills and Extensions", action: "skills-extensions", icon: "\u{f0431}", hotkey: "x" }, // nf-md-puzzle
 		{ label: "Theme", action: "theme", icon: "", hotkey: "t" }, // nf-fa-paint_brush
+		{ label: "Settings", action: "settings", icon: "", hotkey: "s" }, // nf-fa-cog
 		{ label: "Quit", action: "quit", icon: "\u{f0a48}", hotkey: "q" }, // nf-md-exit_run
 	];
 
 	private sessions: SessionListItem[] | null = null;
 	private sessionsLoading = false;
 	private sessionIndex = 0;
+	private precomputedDisplay: { preview: string; count: string; date: string }[] = [];
 
 	/** Two-pane model + thinking picker, rebuilt each time the Model view opens. */
 	private modelPicker: TwoPaneModelThinking | null = null;
@@ -164,18 +167,38 @@ export class StartupGate {
 			case "model": this.openModel(); break;
 			case "theme": this.openTheme(); break;
 			case "skills-extensions": this.setView("skills-extensions"); break;
+			case "settings": this.openSettings(); break;
 		}
+	}
+
+	/**
+	 * Open the shared settings menu. `ctx.ui.custom` pushes a capturing overlay above the gate's
+	 * own (nonCapturing, possibly hidden) popup, so the gate keeps rendering beneath while the
+	 * settings menu takes input; closing it restores focus to the gate without resolving it.
+	 */
+	private openSettings(): void {
+		void (async () => {
+			await showSplashSettings(this.ctx);
+			this.tui.requestRender();
+		})();
 	}
 
 	private loadSessions(): void {
 		this.sessionsLoading = true;
 		this.sessions = null;
 		this.sessionIndex = 0;
+		this.precomputedDisplay = [];
 		void (async () => {
 			try {
 				this.sessions = await SessionManager.list(this.ctx.cwd);
+				this.precomputedDisplay = this.sessions.map((s) => ({
+					preview: sessionPreview(s),
+					count: `${s.messageCount} msg${s.messageCount === 1 ? "" : "s"}`,
+					date: formatSessionDate(s.modified),
+				}));
 			} catch (e) {
 				this.sessions = [];
+				this.precomputedDisplay = [];
 				this.ctx.ui.notify(sanitizeTuiText(e instanceof Error ? e.message : "Failed to load sessions"), "error");
 			}
 			this.sessionsLoading = false;
@@ -424,11 +447,11 @@ export class StartupGate {
 			const { start, end } = listWindow(this.sessions.length, GATE_LIST_HEIGHT, this.sessionIndex);
 			const gap = " ".repeat(COLUMN_GAP);
 			for (let idx = start; idx < end; idx++) {
-				const session = this.sessions[idx]!;
 				const selected = idx === this.sessionIndex;
-				const preview = truncateToWidth(sessionPreview(session), previewW, "…", true);
-				const count = `${session.messageCount} msg${session.messageCount === 1 ? "" : "s"}`.padStart(COUNT_W);
-				const date = formatSessionDate(session.modified).padStart(DATE_W);
+				const display = this.precomputedDisplay[idx]!;
+				const preview = truncateToWidth(display.preview, previewW, "…", true);
+				const count = display.count.padStart(COUNT_W);
+				const date = display.date.padStart(DATE_W);
 				body.push(
 					`${selected ? this.theme.fg("accent", "▶") : " "} ` +
 						`${this.theme.fg(selected ? "accent" : "text", preview)}` +
@@ -504,7 +527,7 @@ export class StartupGate {
 			const lines = [`${this.theme.fg(active ? "accent" : "warning", `[${name}]`)} ${this.theme.fg("dim", count)}`];
 			if (showFilters) {
 				lines.push(filter
-					? `${this.theme.fg("dim", "filter: ")}${this.theme.fg("text", filter)}${active ? this.theme.fg("accent", "▌") : ""}`
+					? `${this.theme.fg("dim", "filter: ")}${this.theme.fg("text", sanitizeTuiText(filter))}${active ? this.theme.fg("accent", "▌") : ""}`
 					: "");
 			}
 			lines.push("");

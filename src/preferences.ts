@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { BACKGROUND_COLOR_OPTIONS, type BackgroundColor } from "./color.ts";
+import { BACKGROUND_COLOR_OPTIONS, GRADIENT_ANIMATION_OPTIONS, type BackgroundColor, type GradientAnimation } from "./color.ts";
 
 /** "on" enables the feature; every toggle defaults to "on" when missing or unrecognized. */
 export type ToggleMode = "on" | "off";
@@ -13,6 +13,8 @@ export interface SplashPreferences {
 	taglineReveal: ToggleMode;
 	/** Splash backdrop; defaults to "rainbow" when missing or unrecognized. */
 	backgroundColor: BackgroundColor;
+	/** Animation for the splash backdrop (any background, rainbow included); defaults to "off". */
+	gradientAnimation: GradientAnimation;
 }
 
 // Resolved per call rather than cached: PI_CODING_AGENT_DIR can point somewhere else by the
@@ -21,9 +23,9 @@ function preferencesPath(): string {
 	return join(getAgentDir(), "pi-topping-splash.json");
 }
 
-type RawPreferences = { menuGate?: unknown; taglineReveal?: unknown; backgroundColor?: unknown } | null;
+type RawPreferences = { menuGate?: unknown; taglineReveal?: unknown; backgroundColor?: unknown; gradientAnimation?: unknown } | null;
 
-/** Anything missing, unreadable or unrecognized falls back to the defaults: toggles "on", background "rainbow". */
+/** Anything missing, unreadable or unrecognized falls back to the defaults: toggles "on", background "rainbow", animation "off". */
 export function readPreferences(): SplashPreferences {
 	let parsed: RawPreferences = null;
 	try {
@@ -33,10 +35,13 @@ export function readPreferences(): SplashPreferences {
 	}
 	const bg = parsed?.backgroundColor;
 	const backgroundColor = BACKGROUND_COLOR_OPTIONS.includes(bg as BackgroundColor) ? (bg as BackgroundColor) : "rainbow";
+	const anim = parsed?.gradientAnimation;
+	const gradientAnimation = GRADIENT_ANIMATION_OPTIONS.includes(anim as GradientAnimation) ? (anim as GradientAnimation) : "off";
 	return {
 		menuGate: parsed?.menuGate === "off" ? "off" : "on",
 		taglineReveal: parsed?.taglineReveal === "off" ? "off" : "on",
 		backgroundColor,
+		gradientAnimation,
 	};
 }
 

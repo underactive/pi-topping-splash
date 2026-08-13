@@ -140,7 +140,7 @@ describe("menu (GA-04..GA-08)", () => {
 	it("lists the README menu items", () => {
 		const harness = makeGate();
 		const text = menuText(harness);
-		for (const item of ["New session", "Resume", "Model", "Skills and Extensions", "Theme", "Quit"]) {
+		for (const item of ["New session", "Resume", "Model", "Skills and Extensions", "Theme", "Settings", "Quit"]) {
 			assert.ok(text.includes(item), `menu missing ${item}`);
 		}
 	});
@@ -161,6 +161,15 @@ describe("menu (GA-04..GA-08)", () => {
 		const n = makeGate();
 		n.gate.handleInput("n");
 		assert.deepEqual(n.results, ["proceed"]);
+	});
+	it("Settings opens the shared settings menu without resolving the gate", () => {
+		const harness = makeGate();
+		harness.gate.handleInput("s");
+		assert.equal(harness.ctx.customComponents.length, 1, "settings menu mounted via ui.custom");
+		assert.deepEqual(harness.results, [], "gate stays unresolved");
+		(harness.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput(KEY.esc);
+		harness.gate.handleInput("q");
+		assert.deepEqual(harness.results, ["quit"]);
 	});
 	it("arrow keys clamp at both ends", () => {
 		const bottom = makeGate();
@@ -183,12 +192,12 @@ describe("menu (GA-04..GA-08)", () => {
 		state.splashRows = 15;
 		const harness = makeGate({ rows: 40 });
 		const lines = harness.gate.render(90);
-		// free rows = 40 - 15 splash - 14 menu = 11; one below-row is the footer's,
-		// so ceil(11/2) - 1 = 5 trailing blanks push the menu up into the middle.
+		// free rows = 40 - 15 splash - 16 menu = 9; one below-row is the footer's,
+		// so ceil(9/2) - 1 = 4 trailing blanks push the menu up into the middle.
 		let lastVisible = lines.length - 1;
 		while (lastVisible >= 0 && lines[lastVisible] === "") lastVisible--;
 		const trailing = lines.length - 1 - lastVisible;
-		assert.equal(trailing, 5);
+		assert.equal(trailing, 4);
 		assert.ok(sanitizeTuiText(lines[lines.length - trailing - 1] ?? "").includes("↑↓ move"), "hint stays the last visible row");
 	});
 	it("no centering padding without a splash or without free rows", () => {
@@ -293,7 +302,7 @@ describe("skills and extensions view (GA-11)", () => {
 		state.loadedSkills = ["alpha-skill", "beta-skill"];
 		state.loadedExtensions = ["gamma-ext"];
 		const harness = makeGate();
-		harness.gate.handleInput("s");
+		harness.gate.handleInput("x");
 		return harness;
 	}
 	it("lists both panes from shared state", () => {

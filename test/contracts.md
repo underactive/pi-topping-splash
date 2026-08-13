@@ -46,13 +46,15 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 | C-02 | `sgrFg`/`sgrBg` | wrap a triplet into truecolor SGR: `\x1b[38;2;r;g;bm` / `\x1b[48;2;r;g;bm` | `Rgb` doc ("ready to splice into a truecolor SGR") + ECMA-48/collaborator knowledge of 38;2/48;2 |
 | C-03 | `hsvRgb` | hue in degrees 0–360, sat/val in 0–1 → valid `r;g;b` with channels 0..255 integers; `sat=0` → grey (r=g=b); `val=0` → `0;0;0`; `hsvRgb(0,1,1)` = pure red `255;0;0` (HSV definition — standard math, not implementation) | doc comment + HSV definition |
 | C-04 | `hsvRgb` | UNSPECIFIED: hue outside 0–360 (e.g. 320 + full sweep) — assert only: no throw, valid triplet | doc gives domain, not out-of-domain behavior |
-| C-05 | `panelBg` | light body text (per WCAG relative luminance vs threshold 140) → `PANEL_BG_DARK` (navy); dark body text → `PANEL_BG_LIGHT` (paper); 256-color themes (no rgb triplet available) → assumed dark terminal → `PANEL_BG_DARK`. Greyscale probe: for grey text `#vvvvvv`, WCAG luminance == v, so flip occurs at v vs 140 | doc comment + `PANEL_LUMINANCE_THRESHOLD` export + WCAG (coefficients sum to 1) |
+| C-05 | `panelBg` | light body text (per Rec.601 luma vs threshold 140) → `PANEL_BG_DARK` (navy); dark body text → `PANEL_BG_LIGHT` (paper); 256-color themes are analysed via `xterm256ToRgb`; only unparseable ANSI falls back to `PANEL_BG_DARK`. Greyscale probe: for grey text `#vvvvvv`, Rec.601 luma == v, so flip occurs at v vs 140 | doc comment + `PANEL_LUMINANCE_THRESHOLD` export + `parseThemeRgb` (color.ts:53-61) |
 | C-06 | `swatchColor` | hue sweeps a **full turn** (360°) across `width` starting at `SWATCH_HUE_START` (x=0); `level` 1=top → full value, fading to black as level→0; `level<=0` → `0;0;0` | doc comment + `SWATCH_HUE_START` doc |
 | C-07 | `swatchColor` | UNSPECIFIED: exact fade curve (linear?) and saturation profile — assert only: valid triplet, monotonically darker as level decreases (sum of channels non-increasing), x=0 hue ≈ hue of `hsvRgb(SWATCH_HUE_START, SWATCH_SATURATION, SWATCH_VALUE·level-ish)` only at level=1 | — |
 | C-08 | `RESET` | `"\x1b[0m"` | exported literal |
 | C-09 | `BACKGROUND_COLOR_OPTIONS` | `["rainbow", "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning"]`, in that order | exported literal + menu cycle order |
 | C-10 | `backgroundSampler` | `"rainbow"` returns `swatchColor` itself; a theme color returns a sampler that ignores `x` (horizontally constant) and returns the theme's resolved RGB at level 1, black at level<=0 | plan decisions (immediate refresh, RGB approximation) |
 | C-11 | `backgroundSampler` | resolves both truecolor (`38;2;r;g;bm`) and indexed (`38;5;Nm`, all 256 xterm indexes via the 16-color palette, 6x6x6 cube, and grayscale ramp) theme output; falls back to `swatchColor` only when the theme's ANSI cannot be parsed as either | plan step 2 |
+| C-12 | `GRADIENT_ANIMATION_OPTIONS` | `["off", "breathe", "flow", "sheen", "wave"]`, in that order (menu cycle order, off first) | exported literal |
+| C-13 | `backgroundSampler` animation | trailing `animation`/`timeMs` params: omitted or `"off"` reproduces the static backdrop exactly (C-10 unchanged — rainbow stays `swatchColor` itself); animations wrap **any** base backdrop, rainbow included: breathe/flow/wave transform the fade level fed to the base (rainbow keeps its hue sweep, a theme color its tint), sheen post-blends the base's output toward white; animated samplers are pure in `(x, width, level, timeMs)` and emit valid clamped triplets; breathe/flow are horizontally constant over a theme color; breathe at `timeMs=0` matches the static backdrop; sheen rests as the static backdrop outside its sweep window and brightens cells mid-sweep | plan decisions + exported constants; amended (animations extended to the rainbow backdrop) |
 
 ## logo.ts
 
@@ -67,7 +69,7 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 
 | # | Symbol | Claim | Source |
 |---|--------|-------|--------|
-| G-01 | `isPrintableInput` | true iff `data` is non-empty, contains no control chars (C0, incl. `\x1b` — so all escape sequences rejected) and no DEL (`\x7f`) | doc comment |
+| G-01 | `isPrintableInput` | true iff `data` is non-empty, contains no control chars (C0, C1 U+0080-9F, incl. `\x1b` — so all escape sequences rejected) and no DEL (`\x7f`) | doc comment |
 | G-02 | `listWindow` | returns `[start,end)` with: `0 <= start`, `end <= total`, `end-start === min(total,height)`, and `start <= selected < end` whenever `0 <= selected < total` | doc comment ("keeps selected visible within height rows") |
 | G-03 | `fuzzyRanked` | empty query → original order (same array contents, same order); literal-substring matches (case?) stably partitioned to front; non-matching items dropped (it filters — "fuzzy **matches** ranked"); delegates tokenization to pi-tui `fuzzyFilter` (whitespace/slash split) | doc comment + README ("anth opus", literal substring first) |
 | G-04 | `fuzzyRanked` | UNSPECIFIED: case sensitivity of the literal-substring partition — probe with same-case first; mixed-case behavior recorded as finding if surprising | — |
@@ -92,6 +94,14 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 | R-12 | `renderTagline` fallbacks | returns settled line immediately when: no active reveal; 256-color theme; tagline carries escapes; tagline contains surrogate pairs; tagline shorter than `TAGLINE_PLACEHOLDER` | doc comment (all five conditions listed) |
 | R-13 | mid-reveal width | during the reveal the row holds the placeholder's width until the wipe outgrows it, then widens toward the finished tagline: `visibleLength(renderTagline(...))` is between placeholder+2 and tagline+2 (the `- -` wrap) | doc comment |
 
+## animate.ts
+
+| # | Symbol | Claim | Source |
+|---|--------|-------|--------|
+| A-01 | `GRADIENT_TICK_MS` | `100` — deliberately coarser than the reveal's 20ms because a backdrop frame repaints every row | exported literal + doc |
+| A-02 | `startGradientAnimation` | loops forever: each tick advances `timeMs` by a capped step (≤ 2× tick, the R-05 pause-not-skip pattern), bumps `tick` (the header's repaint key) and calls `headerRenderState.requestRender`; never stops itself | doc comment |
+| A-03 | lifecycle | `startGradientAnimation` is idempotent while running (same timer, clock continuity); `stopGradientAnimation` clears the timer and is idempotent | doc comments |
+
 ## splash.ts
 
 | # | Symbol | Claim | Source |
@@ -107,6 +117,7 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 | S-09 | `buildHeader` shadow row | every layout keeps a spare row below the logo for the drop shadow | buildHeader doc; amended 2026-07-28 (slop-audit F-13: previously uncovered — glyph-row-span assertions added for both layouts) |
 | S-10 | `stampLogo` | writes logo + shadow into the ink map within bounds `width×height`; shadow offset `LOGO_SHADOW_OFFSET` down-right; ink colors are `LOGO_INK`/`LOGO_SHADOW` | doc comment |
 | S-11 | `paintRow`/`paintSplash`/`buildHeader` sampler | an optional trailing `SwatchSampler`/`BackgroundColor` parameter drives the backdrop in place of the rainbow default; existing call sites without it are unaffected; every mode stays exact-width per S-06 | plan step 5 |
+| S-12 | `buildHeaderParts` backdrop repaint | trailing `animation`/`timeMs` params (also on `buildHeader`); `repaintBackdrop` is present exactly when the animation is not `"off"` (any backdrop, rainbow included); repainted frames hold W (exact width), keep the row count, and reflect the new `timeMs` | plan; amended (animations extended to the rainbow backdrop) |
 
 ## extensions.ts
 
@@ -174,6 +185,7 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 | H-04 | `installHeader` | replaces the header via `ctx.ui.setHeader`; wires `headerRenderState.{invalidate,requestRender,forceRedraw}` (forceRedraw clears screen+scrollback then repaints → requests a **forced** render); populates `state.loadedSkills/loadedExtensions/systemPromptSize`; starts the tagline reveal | state.ts doc + README ("replaces the default startup header") + headerRenderState docs; amended 2026-08-07 (the reveal starts only when the `taglineReveal` preference is on — off leaves the ticker unstarted, so the tagline settles on the first frame, see I-15) |
 | H-05 | header component render | full-bleed splash lines exactly `width` columns (delegates S-06); re-render after a model change reflects the new model (commit 1a88a1c "re-render header on model selection change") | W + commit log |
 | H-06 | `installHeader` background seeding | reads `readPreferences().backgroundColor` once and assigns it to `state.backgroundColor` before installing the header; the render cache key includes `state.backgroundColor`, and `invalidate()` resets it, so a later state change is not served from stale cached lines | plan steps 4, 6 |
+| H-07 | gradient animation wiring | `installHeader` seeds `state.gradientAnimation` from preferences and starts the gradient ticker whenever the animation is non-off (any background, rainbow included); an animation tick repaints the cached splash rows via `repaintBackdrop` without a structural rebuild, holding W | plan; amended (animations extended to the rainbow backdrop) |
 
 ## gate.ts
 
@@ -182,7 +194,7 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 | GA-01 | `sessionPreview` | session `name` wins when present; `<skill name="x" location="y">…envelope…` reduced to the invocation (`/x`); remaining markup flattened; `"(no messages)"` sentinel → `"(untitled session)"`; ANSI sanitized; whitespace collapsed | commit 8329d39 body + doc comment |
 | GA-02 | `sessionPreview` empty | UNSPECIFIED: truly empty firstMessage → explorer noted "(empty session)"; assert only non-empty human-readable output, record literal in gap pass | — |
 | GA-03 | `formatSessionDate` | `YYYY-MM-DD HH:MM` (zero-padded, local time); `undefined`/Invalid Date → `""` | doc comment |
-| GA-04 | menu layout | items in order: New session, Resume, Model, Skills and Extensions, Theme, Quit; hotkeys n/r/m/s/t/q **jump and activate**; ↑↓ move with clamping (UNSPECIFIED wrap vs clamp — assert selection stays in range and reaches both ends); Enter activates | README (menu table + navigation line) |
+| GA-04 | menu layout | items in order: New session, Resume, Model, Skills and Extensions, Theme, Settings, Quit; hotkeys n/r/m/x/t/s/q **jump and activate**; ↑↓ move with clamping (UNSPECIFIED wrap vs clamp — assert selection stays in range and reaches both ends); Enter activates | README (menu table + navigation line); amended 2026-08-13 (Settings entry added — opens the shared `/topping-splash-settings` menu via `ctx.ui.custom` as a capturing overlay, gate unresolved beneath) |
 | GA-05 | Esc on menu | resolves gate as "proceed" (same as New session) | README |
 | GA-06 | Quit | resolves "quit" | README |
 | GA-07 | ~~`skillsInline`~~ | ~~when true, the Skills and Extensions row is hidden (redundant with splash listing) and its hotkey inert~~ **withdrawn 2026-07-29 (F-16): the flag was always false in production, so the row is now always shown** | — |
@@ -214,6 +226,7 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 | I-14 | menuGate persistence | the choice is stored in `pi-topping-splash.json` under the agent dir and re-read on every `session_start`: `off` suppresses the gate (splash kept) on all later launches; `on` (also the default when the file is missing or corrupt) restores it. The quietStartup write is unaffected either way. The `/topping-splash-settings` menu is the only surface that writes this file | README (Commands, Splash without the gate menu); amended 2026-08-07 (the file now carries both `menuGate` and `taglineReveal`; each key independently defaults to `on` when missing or unrecognized) |
 | I-15 | taglineReveal preference | `taglineReveal:off` on a genuine TUI startup installs the splash (and the gate, when on) but never starts the reveal ticker — the model · prompt-size tagline renders settled from the first frame (`revealPos()` stays `undefined`, R-03/R-12). Default (missing file/key, corrupt file) is `on`: the reveal runs. The `/topping-splash-settings` menu is the only writer | README Settings; added 2026-08-07 |
 | I-16 | `backgroundColor` preference | menu item cycles `BACKGROUND_COLOR_OPTIONS` with left/right, seeded from `readPreferences().backgroundColor`; applying persists it in the same atomic write as the two toggles, then sets `state.backgroundColor`, calls `headerRenderState.invalidate?.()` and `headerRenderState.requestRender?.()` so a visible splash updates immediately — but only after a successful write; a failed write or a cancelled menu leaves `state.backgroundColor` and the persisted value unchanged. Missing/corrupt/unrecognized values default to `"rainbow"` | plan steps 3, 7 |
+| I-17 | `gradientAnimation` preference | cycle row "Animate gradient" below the background row cycles `GRADIENT_ANIMATION_OPTIONS`; applying persists it atomically with the other three values and updates `state.gradientAnimation`, then starts the ticker only when a splash header is wired (`headerRenderState.requestRender`) and the animation is non-off (any background, rainbow included), stopping it otherwise; the gate's proceed teardown stops the ticker; the first `before_agent_start` of the process stops it permanently (`state.conversationStarted`) — the growing transcript scrolls the splash off-viewport, where each tick would force a full-screen redraw — and a mid-session apply persists the preference without restarting the ticker; missing/corrupt/unrecognized values default to `"off"` | plan; amended (animations extended to the rainbow backdrop); amended 2026-08-13 (off-screen animation leak: ticker stops at the first agent turn) |
 
 ## Deliberately not tested
 
