@@ -59,8 +59,8 @@ export class StartupGate {
 	/** Read-only inventory view: cursor and filter per pane, each preserved across pane switches. */
 	private inventoryPane: "skills" | "extensions" = "skills";
 	private readonly inventory = {
-		skills: { index: 0, filter: "" },
-		extensions: { index: 0, filter: "" },
+		skills: { index: 0, filter: "" as string, cachedFilter: null as string | null, cachedItems: [] as string[] },
+		extensions: { index: 0, filter: "" as string, cachedFilter: null as string | null, cachedItems: [] as string[] },
 	};
 
 	/** Set when the user changes model in the gate, so relaunches preserve the choice. */
@@ -184,6 +184,7 @@ export class StartupGate {
 	}
 
 	private loadSessions(): void {
+		if (this.sessionsLoading || this.sessions !== null) return;
 		this.sessionsLoading = true;
 		this.sessions = null;
 		this.sessionIndex = 0;
@@ -257,8 +258,8 @@ export class StartupGate {
 				headerRenderState.requestRender?.();
 				this.setView("menu");
 				this.tui.requestRender();
-			} catch {
-				this.ctx.ui.notify("Model change failed", "error");
+			} catch (e) {
+				this.ctx.ui.notify("Model change failed: " + sanitizeTuiText(e instanceof Error ? e.message : String(e)), "error");
 			}
 		})();
 	}
@@ -331,8 +332,12 @@ export class StartupGate {
 
 	/** Loaded names for one pane, narrowed by that pane's own filter. */
 	private filteredItems(pane: "skills" | "extensions"): string[] {
+		const slot = this.inventory[pane];
+		if (slot.cachedFilter === slot.filter) return slot.cachedItems;
 		const items = pane === "skills" ? state.loadedSkills : state.loadedExtensions;
-		return fuzzyRanked(items, this.inventory[pane].filter, (item) => item);
+		slot.cachedItems = fuzzyRanked(items, slot.filter, (item) => item);
+		slot.cachedFilter = slot.filter;
+		return slot.cachedItems;
 	}
 
 	private handleSkillsExtensions(data: string): void {

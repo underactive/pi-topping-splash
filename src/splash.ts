@@ -2,8 +2,9 @@ import { VERSION } from "@earendil-works/pi-coding-agent";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { backgroundSampler, RESET, panelBg, sgrBg, sgrFg, swatchColor } from "./color.ts";
 import type { BackgroundColor, GradientAnimation, Rgb, SwatchSampler } from "./color.ts";
+import type { ShortcutHint } from "./discovery.ts";
 import { LOGO_INK, LOGO_LINES, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "./logo.ts";
-import { fitCell, formatPromptSize, joinParts, padCenter, padRight, pickFitting, sanitizeTuiText, truncateVisible, visibleLength, wrapCommaDelimited } from "./text.ts";
+import { formatPromptSize, joinParts, padCenter, padRight, pickFitting, sanitizeTuiText, truncateVisible, visibleLength, wrapCommaDelimited } from "./text.ts";
 import { renderTagline } from "./reveal.ts";
 
 /**
@@ -24,7 +25,7 @@ export const PANEL_MIN_WIDTH = 34;
 export const PANEL_MARGIN_Y = 1;
 /**
  * Ceiling on how much of the terminal the splash may occupy, so the startup gate below it still
- * fits. Past this the two lists collapse to a counts line.
+ * fits. Past this the lists collapse to a wrapped counts summary.
  */
 export const MAX_SPLASH_ROW_SHARE = 0.6;
 
@@ -38,11 +39,56 @@ export function buildLabeledWrappedSection(theme: Theme, label: string, items: s
 	return [heading, ...wrapped.map((line) => theme.fg("text", line))];
 }
 
-/** All three lists collapsed to `[context] 2 · [skills] 22 · [extensions] 33`, for panels too small to spell them out. */
-export function buildCountsLine(theme: Theme, context: string[], skills: string[], extensions: string[], width: number): string {
-	const count = (label: string, items: string[]) => `${theme.fg("warning", label)} ${theme.fg("text", String(items.length))}`;
-	const line = `${count("[context]", context)}${theme.fg("dim", " · ")}${count("[skills]", skills)}${theme.fg("dim", " · ")}${count("[extensions]", extensions)}`;
-	return padCenter(fitCell(line, width), width);
+/**
+ * Shortcut hints rendered as a single line: `key1` dim `· description1 · key2` dim `· description2` …
+ * Keys are dimmed, descriptions are text; hints join with ` · `, wrapping only between complete hints.
+ */
+export function buildShortcutSection(theme: Theme, hints: ShortcutHint[], width: number, count?: number): string[] {
+	if (hints.length === 0) return [];
+	const safe = hints.map((h) => ({ key: sanitizeTuiText(h.key), description: sanitizeTuiText(h.description) }));
+	// Build each hint as "key description" with key dimmed.
+	const hintStrings = safe.map((h) => `${theme.fg("dim", h.key)} ${theme.fg("text", h.description)}`);
+	const hintWidths = safe.map((h) => visibleLength(h.key) + 1 + visibleLength(h.description));
+	const wrapped = wrapCommaDelimited(hintStrings, width, hintWidths);
+	const label = count === undefined ? "[shortcuts]" : `[shortcuts] ${count}`;
+	return [theme.fg("warning", label), ...wrapped.map((line) => line)];
+}
+
+/**
+ * All five lists collapsed to their counts — `[shortcuts] 5 · [context] 2 · [skills] 22 · [prompts] N · [extensions] 33` —
+ * for panels too small to spell them out. Wraps across as many centered lines as the width needs, breaking only between
+ * whole `[label] N` counts, so a narrow panel stacks the counts instead of truncating the last ones to an ellipsis.
+ */
+export function buildCountsLine(theme: Theme, context: string[], skills: string[], extensions: string[], shortcuts: ShortcutHint[], prompts: string[], width: number): string[] {
+	const counts: [string, unknown[]][] = [
+		["[shortcuts]", shortcuts],
+		["[context]", context],
+		["[skills]", skills],
+		["[prompts]", prompts],
+		["[extensions]", extensions],
+	];
+	const segments = counts.map(([label, items]) => {
+		const value = String(items.length);
+		return { text: `${theme.fg("warning", label)} ${theme.fg("text", value)}`, width: label.length + 1 + value.length };
+	});
+	const separator = theme.fg("dim", " · ");
+	const separatorWidth = 3;
+	const lines: string[] = [];
+	let current = "";
+	let currentWidth = 0;
+	for (const segment of segments) {
+		const added = current ? separatorWidth + segment.width : segment.width;
+		if (current && currentWidth + added > width) {
+			lines.push(current);
+			current = segment.text;
+			currentWidth = segment.width;
+			continue;
+		}
+		current += current ? `${separator}${segment.text}` : segment.text;
+		currentWidth += added;
+	}
+	if (current) lines.push(current);
+	return lines.map((line) => padCenter(line, width));
 }
 
 /** The settled tagline (model + prompt size) the panel centers; "" when there is nothing to show. The reveal wraps it in "- " / " -", so it must fit `innerWidth - 4`. */
@@ -63,18 +109,22 @@ function buildTaglineText(innerWidth: number, model?: { id: string; provider: st
  * version as a titled rule, the active model as a centered tagline, then `body` (the loaded
  * context, skills, and extensions, either listed in full or collapsed to counts).
  */
-export function buildPanelLines(theme: Theme, innerWidth: number, body: string[], model?: { id: string; provider: string }, systemPromptSize?: number): string[] {
+export function buildPanelLines(theme: Theme, innerWidth: number, body: string[], model?: { id: string; provider: string }, systemPromptSize?: number): { lines: string[]; taglineIndex: number } {
 	const title = `pi v${VERSION}`;
 	const rule = Math.max(0, innerWidth - title.length - 2);
 	const leftRule = Math.floor(rule / 2);
 	const heading = `${theme.fg("border", "─".repeat(leftRule))} ${theme.fg("accent", title)} ${theme.fg("border", "─".repeat(rule - leftRule))}`;
 	const tagline = buildTaglineText(innerWidth, model, systemPromptSize);
-	return [
-		heading,
-		...(tagline ? [padCenter(renderTagline(theme, tagline), innerWidth)] : []),
-		"",
-		...body,
-	];
+	const taglineIndex = tagline ? 1 : -1;
+	return {
+		lines: [
+			heading,
+			...(tagline ? [padCenter(renderTagline(theme, tagline), innerWidth)] : []),
+			"",
+			...body,
+		],
+		taglineIndex,
+	};
 }
 
 /** A logo cell painted over the swatch backdrop. */
@@ -188,15 +238,17 @@ export interface HeaderParts {
  * grows to whatever height the panel needs so every entry is listed in full; when that would
  * either overrun the row budget or cut off the longest name, the lists collapse to counts.
  *
- * The info panel lists the loaded context files (AGENTS.md/CLAUDE.md), skills and extensions,
- * each under a `[context] N`/`[skills] N`/`[extensions] N` heading, mirroring pi's /loaded
- * ordering. Every layout keeps a spare row below the logo, where its drop shadow lands.
+ * The info panel lists five inventory categories in startup order: shortcut hints, loaded context
+ * files (AGENTS.md/CLAUDE.md), skills, prompt templates, and extensions. Shortcut keys reflect
+ * Pi's effective global keybindings via `keyText()`. Each under a `[shortcuts] N`/`[context] N`/
+ * `[skills] N`/`[prompts] N`/`[extensions] N` heading, mirroring pi's /loaded ordering.
+ * Every layout keeps a spare row below the logo, where its drop shadow lands.
  *
  * Returns a `repaintTagline` hook so the reveal ticker can restyle just the tagline row instead
  * of rebuilding the whole O(W×H) splash on every 20ms tick, and a `repaintBackdrop` hook so the
  * gradient animation ticker can repaint the rows without redoing this layout work.
  */
-export function buildHeaderParts(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0): HeaderParts {
+export function buildHeaderParts(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0, prompts: string[] = [], shortcuts: ShortcutHint[] = []): HeaderParts {
 	let sample = backgroundSampler(background, theme, animation, timeMs);
 	const logoRows = LOGO_LINES.length;
 	const roomBesideLogo = width - SPLASH_MARGIN_X * 2 - LOGO_WIDTH - LOGO_GAP;
@@ -206,7 +258,10 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 		: Math.min(width, Math.max(PANEL_PADDING_X * 2 + 1, width - SPLASH_MARGIN_X * 2));
 	const innerWidth = Math.max(1, panelWidth - PANEL_PADDING_X * 2);
 
-	const frame = (body: string[]) => ["", ...buildPanelLines(theme, innerWidth, body, model, systemPromptSize), ""];
+	const frame = (body: string[]) => {
+		const panel = buildPanelLines(theme, innerWidth, body, model, systemPromptSize);
+		return { lines: ["", ...panel.lines, ""], taglineIndex: panel.taglineIndex === -1 ? -1 : panel.taglineIndex + 1 };
+	};
 	const splashHeight = (panelLines: string[]) => {
 		const band = panelLines.length + PANEL_MARGIN_Y * 2;
 		return sideBySide ? Math.max(logoRows + 2, band) : logoRows + 1 + band;
@@ -214,42 +269,56 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 
 	// The budget never drops below what the logo alone needs, since nothing can shrink past that.
 	const rowBudget = Math.max(logoRows + 2, Math.floor(termRows * MAX_SPLASH_ROW_SHARE));
-	const allItems = [...context, ...skills, ...extensions];
-	const allWidths = allItems.map(visibleLength);
+	const allItems = [...context, ...skills, ...extensions, ...prompts];
+	const shortcutHintStrings = shortcuts.map((h) => `${h.key} ${h.description}`);
+	const allWidths = [...allItems.map(visibleLength), ...shortcutHintStrings.map(visibleLength)];
 	const widestItem = allWidths.reduce((max, w) => Math.max(max, w), 0);
 	let offset = 0;
-	const contextWidths = allWidths.slice(offset, offset += context.length);
-	const skillsWidths = allWidths.slice(offset, offset += skills.length);
-	const extensionsWidths = allWidths.slice(offset, offset += extensions.length);
+	let end = offset + context.length;
+	const contextWidths = allWidths.slice(offset, end);
+	offset = end;
+	end = offset + skills.length;
+	const skillsWidths = allWidths.slice(offset, end);
+	offset = end;
+	end = offset + extensions.length;
+	const extensionsWidths = allWidths.slice(offset, end);
+	offset = end;
+	end = offset + prompts.length;
+	const promptWidths = allWidths.slice(offset, end);
 	const listed = widestItem <= innerWidth
 		? frame([
+			...buildShortcutSection(theme, shortcuts, innerWidth, shortcuts.length),
+			...(shortcuts.length > 0 ? [""] : []),
 			...buildLabeledWrappedSection(theme, "[context]", context, innerWidth, context.length, contextWidths),
 			"",
 			...buildLabeledWrappedSection(theme, "[skills]", skills, innerWidth, skills.length, skillsWidths),
 			"",
+			...buildLabeledWrappedSection(theme, "[prompts]", prompts, innerWidth, prompts.length, promptWidths),
+			"",
 			...buildLabeledWrappedSection(theme, "[extensions]", extensions, innerWidth, extensions.length, extensionsWidths),
 		])
 		: undefined;
-	const lines = listed && splashHeight(listed) <= rowBudget
-		? listed
-		: frame([buildCountsLine(theme, context, skills, extensions, innerWidth)]);
+	const countFrame = frame(buildCountsLine(theme, context, skills, extensions, shortcuts, prompts, innerWidth));
+	const selected = listed && splashHeight(listed.lines) <= rowBudget ? listed : countFrame;
+	const lines = selected.lines;
 	const height = splashHeight(lines);
 	const panelX = sideBySide ? width - SPLASH_MARGIN_X - panelWidth : Math.max(0, Math.floor((width - panelWidth) / 2));
 	const logoX = sideBySide ? Math.max(SPLASH_MARGIN_X, Math.floor((panelX - LOGO_WIDTH) / 2)) : Math.max(0, Math.floor((width - LOGO_WIDTH) / 2));
 	const logoY = sideBySide ? Math.floor((height - logoRows) / 2) : 0;
 	const panelY = sideBySide ? Math.floor((height - lines.length) / 2) : logoRows + 1 + PANEL_MARGIN_Y;
 	const taglineText = buildTaglineText(innerWidth, model, systemPromptSize);
-	const taglineRow = taglineText !== "" ? 2 : -1;
-	const panel: PanelPlacement = { x: panelX, y: panelY, width: panelWidth, bg: panelBg(theme), lines, taglineRow };
+	const taglineRow = selected.taglineIndex;
+	const panel: PanelPlacement = { x: panelX, y: panelY, width: panelWidth, bg: panelBg(theme), lines, taglineRow: taglineRow === -1 ? undefined : taglineRow };
 	const ink = new Map<number, Ink>();
 	stampLogo(ink, width, height, logoX, logoY);
 	const painted = Array.from({ length: height }, (_, y) => paintRow(y, width, height, ink, panel, sample));
 
-	const repaintTagline = taglineRow === -1
+	const taglineIdx = panel.taglineRow;
+	const repaintTagline = taglineIdx === undefined
 		? undefined
 		: () => {
-			panel.lines[taglineRow] = padCenter(renderTagline(theme, taglineText), innerWidth);
-			const row = panel.y + taglineRow;
+			panel.lines[taglineIdx] = padCenter(renderTagline(theme, taglineText), innerWidth);
+			const row = panel.y + taglineIdx;
 			return { row, line: paintRow(row, width, height, ink, panel, sample) };
 		};
 	const repaintBackdrop = animation !== "off"
@@ -263,6 +332,6 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 }
 
 /** The splash as flat lines. Use `buildHeaderParts` when you also need the tick-only repaint hooks. */
-export function buildHeader(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0): string[] {
-	return buildHeaderParts(width, termRows, theme, context, skills, extensions, model, systemPromptSize, background, animation, timeMs).lines;
+export function buildHeader(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0, prompts: string[] = [], shortcuts: ShortcutHint[] = []): string[] {
+	return buildHeaderParts(width, termRows, theme, context, skills, extensions, model, systemPromptSize, background, animation, timeMs, prompts, shortcuts).lines;
 }

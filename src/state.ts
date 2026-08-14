@@ -1,5 +1,6 @@
 
 import type { BackgroundColor, GradientAnimation } from "./color.ts";
+import type { ShortcutHint } from "./discovery.ts";
 
 /**
  * Module-scoped state that lives for the lifetime of the extension process (not per-session).
@@ -13,6 +14,10 @@ export const state = {
 	loadedSkills: [] as string[],
 	loadedExtensions: [] as string[],
 	loadedContext: [] as string[],
+	/** Discovered prompt template commands, formatted as `/name`. */
+	loadedPrompts: [] as string[],
+	/** Compact startup shortcut hints with effective keybindings. */
+	loadedShortcuts: [] as ShortcutHint[],
 	systemPromptSize: undefined as number | undefined,
 	/** Rows the splash header last rendered; the gate menu centers itself in the space below it. */
 	splashRows: 0,

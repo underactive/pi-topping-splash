@@ -37,7 +37,7 @@ cycle:
 - **Startup gate menu** — show the startup gate menu below the splash on launch (ON by default)
 - **Model + prompt size reveal animation** — shimmer-reveal the model · prompt-size tagline on
   the splash; when OFF the final text renders immediately, with no wipe (ON by default)
-- **Background color** — cycle with ←/→ through `rainbow` (the default animated sweep) and the
+- **Background color** — cycle with ←/→ through `rainbow` (a full-width hue sweep) and the
   seven active theme colors (`accent`, `border`, `borderAccent`, `borderMuted`, `success`,
   `error`, `warning`). A theme color fades vertically from the full color at the top of the
   splash to black at the bottom and stays constant horizontally, unlike the rainbow's left-right
@@ -53,6 +53,18 @@ cycle:
   session, since the splash scrolls away once the conversation grows.
 
 The gate and reveal toggles are read during startup and take effect on the next launch; the background color and gradient animation also apply immediately to an already-visible splash. All four are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless `PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (both toggles ON, background `rainbow`, animation `off`).
+
+## Splash Inventory
+
+The info panel lists five categories of loaded resources in startup order:
+
+1. **Shortcuts** — five compact Pi startup hints with effective keybindings (interrupt, clear/exit, commands `/`, bash `!`, more). Keys reflect user-customized bindings when Pi's global keybinding manager is initialized.
+2. **Context** — loaded context files (`AGENTS.md`/`CLAUDE.md`, `SYSTEM.md`, `APPEND_SYSTEM.md`), displayed as cwd-relative or `~`-shortened paths.
+3. **Skills** — names of every loaded skill, discovered from Pi's `skill:`-prefixed commands.
+4. **Prompts** — registered prompt templates displayed as `/name`, discovered from Pi's commands with `source === "prompt"`.
+5. **Extensions** — installed extensions with Pi's compact labels, discovered through Pi's own package-manager logic.
+
+When the panel would exceed 60% of the terminal height or any name/hint is too wide to fit, the lists collapse to a compact counts summary: `[shortcuts] 5 · [context] N · [skills] N · [prompts] N · [extensions] N`. The summary wraps onto as many lines as the panel width needs, breaking only between whole `[label] N` counts, so no count is truncated to an ellipsis.
 
 ## Troubleshooting
 

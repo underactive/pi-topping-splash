@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import { VERSION } from "@earendil-works/pi-coding-agent";
+import type { ShortcutHint } from "../src/discovery.ts";
 import {
 	buildCountsLine,
 	buildHeader,
 	buildHeaderParts,
 	buildLabeledWrappedSection,
 	buildPanelLines,
+	buildShortcutSection,
 	LOGO_GAP,
 	MAX_SPLASH_ROW_SHARE,
 	PANEL_MARGIN_Y,
@@ -24,7 +26,7 @@ import {
 } from "../src/splash.ts";
 import { LOGO_INK, LOGO_LINES, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "../src/logo.ts";
 import { PANEL_BG_DARK } from "../src/color.ts";
-import { sanitizeTuiText } from "../src/text.ts";
+import { sanitizeTuiText, visibleLength } from "../src/text.ts";
 import { resetModuleState } from "./helpers/reset.ts";
 import { makeTheme } from "./helpers/theme.ts";
 import { assertLinesAtMost, assertLinesExact } from "./helpers/width.ts";
@@ -70,24 +72,98 @@ describe("buildLabeledWrappedSection (S-02)", () => {
 });
 
 describe("buildCountsLine (S-03)", () => {
-	it("collapses all three lists to counts", () => {
+	const EMPTY_SHORTCUTS: ShortcutHint[] = [];
+	const EMPTY_PROMPTS: string[] = [];
+
+	it("collapses all five lists to counts", () => {
 		const context = ["AGENTS.md", "CLAUDE.md"];
 		const skills = ["a", "b", "c"];
 		const extensions = ["p", "q", "r", "s", "t"];
-		for (let width = 45; width <= 90; width += 5) {
-			const line = buildCountsLine(theme, context, skills, extensions, width);
-			const text = sanitizeTuiText(line);
+		const shortcuts: ShortcutHint[] = [
+			{ key: "Ctrl+C", description: "interrupt" },
+			{ key: "/", description: "commands" },
+		];
+		const prompts = ["/analyze", "/rewrite"];
+		for (let width = 75; width <= 120; width += 5) {
+			const lines = buildCountsLine(theme, context, skills, extensions, shortcuts, prompts, width);
+			const text = lines.map(sanitizeTuiText).join(" · ");
+			assert.ok(text.includes("[shortcuts] 2"), `width=${width}: ${JSON.stringify(text)}`);
 			assert.ok(text.includes("[context] 2"), `width=${width}: ${JSON.stringify(text)}`);
 			assert.ok(text.includes("[skills] 3"), `width=${width}: ${JSON.stringify(text)}`);
+			assert.ok(text.includes("[prompts] 2"), `width=${width}: ${JSON.stringify(text)}`);
 			assert.ok(text.includes("[extensions] 5"), `width=${width}`);
 			assert.ok(text.includes("·"), `width=${width}`);
-			assertLinesAtMost([line], width, `counts(width=${width})`);
+			assertLinesAtMost(lines, width, `counts(width=${width})`);
 		}
 	});
-	it("context comes first in the collapsed line", () => {
-		const text = sanitizeTuiText(buildCountsLine(theme, ["AGENTS.md"], ["a"], ["b"], 60));
+
+	it("wraps between whole counts instead of truncating when they overflow the width", () => {
+		const context = ["AGENTS.md", "CLAUDE.md"];
+		const skills = ["a", "b", "c"];
+		const extensions = ["p", "q", "r", "s", "t"];
+		const shortcuts: ShortcutHint[] = [
+			{ key: "Ctrl+C", description: "interrupt" },
+			{ key: "/", description: "commands" },
+		];
+		const prompts = ["/analyze", "/rewrite"];
+		for (const width of [30, 45, 60]) {
+			const lines = buildCountsLine(theme, context, skills, extensions, shortcuts, prompts, width);
+			assert.ok(lines.length >= 2, `width=${width}: expected the counts to wrap, got ${lines.length} line(s)`);
+			assertLinesAtMost(lines, width, `counts-wrap(width=${width})`);
+			const text = lines.map(sanitizeTuiText).join("\n");
+			for (const label of ["[shortcuts] 2", "[context] 2", "[skills] 3", "[prompts] 2", "[extensions] 5"]) {
+				assert.ok(text.includes(label), `width=${width}: ${label} missing from ${JSON.stringify(text)}`);
+			}
+			assert.equal(text.includes("..."), false, `width=${width}: counts must not truncate with an ellipsis`);
+			// A count is never split across the line break: every line ends on a complete `[label] N`.
+			for (const line of lines) assert.match(sanitizeTuiText(line).trim(), /\d$/, `width=${width}: line ends mid-count: ${JSON.stringify(line)}`);
+		}
+	});
+
+	it("shortcuts comes first in the collapsed counts", () => {
+		const text = buildCountsLine(theme, ["AGENTS.md"], ["a"], ["b"], [{ key: "K", description: "d" }], ["/p"], 80).map(sanitizeTuiText).join("\n");
+		assert.ok(text.indexOf("[shortcuts]") < text.indexOf("[context]"), text);
 		assert.ok(text.indexOf("[context]") < text.indexOf("[skills]"), text);
-		assert.ok(text.indexOf("[skills]") < text.indexOf("[extensions]"), text);
+		assert.ok(text.indexOf("[skills]") < text.indexOf("[prompts]"), text);
+		assert.ok(text.indexOf("[prompts]") < text.indexOf("[extensions]"), text);
+	});
+});
+
+describe("buildShortcutSection (S-13)", () => {
+	const hints: ShortcutHint[] = [
+		{ key: "Ctrl+C", description: "interrupt" },
+		{ key: "Ctrl+L/Ctrl+Q", description: "clear/exit" },
+		{ key: "/", description: "commands" },
+	];
+
+	it("renders keys dim and descriptions as text within width", () => {
+		for (let width = 40; width <= 90; width++) {
+			const lines = buildShortcutSection(theme, hints, width);
+			assertLinesAtMost(lines, width, `shortcuts(width=${width})`);
+			// First row is the heading
+			assert.equal(sanitizeTuiText(lines[0] ?? "").trim(), "[shortcuts]");
+			// All hints present in the output
+			const text = lines.map((l) => sanitizeTuiText(l)).join("\n");
+			for (const h of hints) {
+				assert.ok(text.includes(h.key), `width=${width}: key ${h.key} missing`);
+				assert.ok(text.includes(h.description), `width=${width}: description ${h.description} missing`);
+			}
+		}
+	});
+
+	it("wraps only between complete hints", () => {
+		const wideHints: ShortcutHint[] = [
+			{ key: "Ctrl+Shift+Alt+K", description: "very long action" },
+			{ key: "Ctrl+Shift+Alt+L", description: "another long action" },
+		];
+		for (let width = 40; width <= 80; width += 5) {
+			const lines = buildShortcutSection(theme, wideHints, width);
+			assertLinesAtMost(lines, width, `shortcuts/wrap(width=${width})`);
+		}
+	});
+
+	it("empty hints return no lines", () => {
+		assert.deepEqual(buildShortcutSection(theme, [], 60), []);
 	});
 });
 
@@ -95,7 +171,7 @@ describe("buildPanelLines (S-04)", () => {
 	it("carries version, model tagline and body within innerWidth", () => {
 		const body = ["[skills] one, two", "[extensions] three"];
 		for (let innerWidth = PANEL_MIN_WIDTH; innerWidth <= PANEL_MAX_WIDTH; innerWidth++) {
-			const lines = buildPanelLines(theme, innerWidth, body, MODEL, 4000);
+		const { lines } = buildPanelLines(theme, innerWidth, body, MODEL, 4000);
 			assertLinesAtMost(lines, innerWidth, `panel(innerWidth=${innerWidth})`);
 			const text = lines.map((l) => sanitizeTuiText(l)).join("\n");
 			assert.ok(text.includes(`pi v${VERSION}`), `innerWidth=${innerWidth}: version missing`);
@@ -113,7 +189,7 @@ describe("paint primitives (S-05, S-10)", () => {
 			y,
 			width: innerWidth + 2 * PANEL_PADDING_X,
 			bg: PANEL_BG_DARK,
-			lines: buildPanelLines(theme, innerWidth, ["[skills] 2 · [extensions] 3"], MODEL, 4000),
+			lines: buildPanelLines(theme, innerWidth, ["[skills] 2 · [extensions] 3"], MODEL, 4000).lines,
 		};
 	}
 
@@ -182,21 +258,26 @@ describe("shadow spare row (S-09)", () => {
 });
 
 describe("buildHeader width invariant (S-06) — the process-killer guard", () => {
-	const itemSets: [string, string[], string[], string[]][] = [
-		["empty", [], [], []],
-		["short", ["AGENTS.md"], ["alpha", "beta"], ["gamma-ext"]],
+	const EMPTY_SHORTCUTS: ShortcutHint[] = [];
+	const EMPTY_PROMPTS: string[] = [];
+
+	const itemSets: [string, string[], string[], string[], ShortcutHint[], string[]][] = [
+		["empty", [], [], [], EMPTY_SHORTCUTS, EMPTY_PROMPTS],
+		["short", ["AGENTS.md"], ["alpha", "beta"], ["gamma-ext"], [{ key: "Ctrl+C", description: "interrupt" }], ["/rewrite"]],
 		[
 			"many",
 			Array.from({ length: 3 }, (_, i) => `docs/CLAUDE-${i}.md`),
 			Array.from({ length: 24 }, (_, i) => `skill-${i}`),
 			Array.from({ length: 40 }, (_, i) => `extension-package-${i}`),
+			[{ key: "Ctrl+C", description: "interrupt" }, { key: "Ctrl+L", description: "clear/exit" }, { key: "/", description: "commands" }, { key: "!", description: "bash" }, { key: "Ctrl+T", description: "more" }],
+			Array.from({ length: 10 }, (_, i) => `/prompt-${i}`),
 		],
 	];
 	it("every line exactly fills the width, for widths 1..200", () => {
-		for (const [label, context, skills, extensions] of itemSets) {
+		for (const [label, context, skills, extensions, shortcuts, prompts] of itemSets) {
 			for (const termRows of [10, 24, 40, 120]) {
 				for (let width = 1; width <= 200; width++) {
-					const lines = buildHeader(width, termRows, theme, context, skills, extensions, MODEL, 4000);
+					const lines = buildHeader(width, termRows, theme, context, skills, extensions, MODEL, 4000, "rainbow", "off", 0, prompts, shortcuts);
 					assertLinesExact(lines, width, `buildHeader(${label}, rows=${termRows}, width=${width})`);
 				}
 			}
@@ -204,7 +285,7 @@ describe("buildHeader width invariant (S-06) — the process-killer guard", () =
 	});
 	it("holds without model or prompt size", () => {
 		for (let width = 1; width <= 200; width += 7) {
-			assertLinesExact(buildHeader(width, 40, theme, ["AGENTS.md"], ["a"], ["b"]), width, `no-model width=${width}`);
+			assertLinesExact(buildHeader(width, 40, theme, ["AGENTS.md"], ["a"], ["b"], undefined, undefined, "rainbow", "off", 0, [], []), width, `no-model width=${width}`);
 		}
 	});
 });
@@ -214,28 +295,33 @@ describe("collapse conditions (S-07)", () => {
 	const skills = ["alpha", "beta"];
 	const extensions = ["gamma", "delta"];
 
-	it("tall terminal with fitting names lists everything inline, context first", () => {
-		const lines = buildHeader(160, 60, theme, context, skills, extensions, MODEL, 4000);
+	it("tall terminal with fitting names lists everything inline, shortcuts first", () => {
+		const lines = buildHeader(160, 60, theme, context, skills, extensions, MODEL, 4000, "rainbow", "off", 0, ["/rewrite"], [{ key: "Ctrl+C", description: "interrupt" }]);
 		const text = lines.map((l) => sanitizeTuiText(l)).join("\n");
 		for (const name of [...context, ...skills, ...extensions]) {
 			assert.ok(text.includes(name), `${name} should be listed inline`);
 		}
+		assert.ok(text.includes("[shortcuts] 1"), "shortcuts heading with count");
 		assert.ok(text.includes("[context] 1"), "context heading with count");
+		assert.ok(text.indexOf("[shortcuts]") < text.indexOf("[context]"), "shortcuts section precedes context");
 		assert.ok(text.indexOf("[context]") < text.indexOf("[skills]"), "context section precedes skills");
-		assert.ok(text.indexOf("[skills]") < text.indexOf("[extensions]"), "skills precedes extensions");
+		assert.ok(text.indexOf("[skills]") < text.indexOf("[prompts]"), "skills precedes prompts");
+		assert.ok(text.indexOf("[prompts]") < text.indexOf("[extensions]"), "prompts precedes extensions");
 	});
 
 	it("row budget exceeded collapses to a counts line", () => {
 		const manySkills = Array.from({ length: 40 }, (_, i) => `skill-number-${i}`);
-		const lines = buildHeader(160, 12, theme, context, manySkills, extensions, MODEL, 4000);
+		const lines = buildHeader(160, 12, theme, context, manySkills, extensions, MODEL, 4000, "rainbow", "off", 0, ["/rewrite"], [{ key: "Ctrl+C", description: "interrupt" }]);
 		const text = lines.map((l) => sanitizeTuiText(l)).join("\n");
-		assert.ok(text.includes("[skills] 40"), "counts line expected");
+		assert.ok(text.includes("[shortcuts] 1"), "shortcuts count expected");
+		assert.ok(text.includes("[skills] 40"), "skills count expected");
+		assert.ok(text.includes("[prompts] 1"), "prompts count expected");
 		assert.equal(text.includes("skill-number-0"), false, "names must not be listed");
 	});
 
 	it("a context path wider than the panel collapses to a counts line", () => {
 		const wide = "an/extraordinarily-long/path/with-a-very-long-AGENTS-name-that-cannot-fit-any-panel.md";
-		const lines = buildHeader(100, 60, theme, [wide], skills, extensions, MODEL, 4000);
+		const lines = buildHeader(100, 60, theme, [wide], skills, extensions, MODEL, 4000, "rainbow", "off", 0, ["/rewrite"], [{ key: "Ctrl+C", description: "interrupt" }]);
 		const text = lines.map((l) => sanitizeTuiText(l)).join("\n");
 		assert.ok(text.includes("[context] 1"), "counts line expected");
 		assert.equal(text.includes(wide), false, "the overlong path must not be listed");
@@ -246,7 +332,7 @@ describe("collapse conditions (S-07)", () => {
 		let inlineSeen = false;
 		let collapsedSeen = false;
 		for (let termRows = 30; termRows <= 60; termRows += 2) {
-			const lines = buildHeader(160, termRows, theme, ["AGENTS.md"], mediumSet, extensions, MODEL, 4000);
+			const lines = buildHeader(160, termRows, theme, ["AGENTS.md"], mediumSet, extensions, MODEL, 4000, "rainbow", "off", 0, [], []);
 			if (lines.some((line) => sanitizeTuiText(line).includes(mediumSet[0]!))) {
 				inlineSeen = true;
 				assert.ok(
@@ -263,7 +349,7 @@ describe("collapse conditions (S-07)", () => {
 
 	it("a name wider than the panel collapses to a counts line", () => {
 		const wide = "an-extraordinarily-long-skill-name-that-cannot-possibly-fit-in-any-panel-column-budget";
-		const lines = buildHeader(100, 60, theme, ["AGENTS.md"], [wide], extensions, MODEL, 4000);
+		const lines = buildHeader(100, 60, theme, ["AGENTS.md"], [wide], extensions, MODEL, 4000, "rainbow", "off", 0, [], []);
 		const text = lines.map((l) => sanitizeTuiText(l)).join("\n");
 		assert.ok(text.includes("[skills] 1"), "counts line expected");
 		assert.equal(text.includes(wide), false, "the overlong name must not be listed");
@@ -276,7 +362,7 @@ describe("layout stacking (S-08)", () => {
 	const sideBySideMin = 2 * SPLASH_MARGIN_X + LOGO_WIDTH + LOGO_GAP + PANEL_MIN_WIDTH;
 
 	it("wide terminals put the panel beside the logo", () => {
-		const lines = buildHeader(sideBySideMin + 20, 50, theme, ["AGENTS.md"], ["alpha"], ["beta"], MODEL, 4000);
+		const lines = buildHeader(sideBySideMin + 20, 50, theme, ["AGENTS.md"], ["alpha"], ["beta"], MODEL, 4000, "rainbow", "off", 0, [], []);
 		assert.ok(
 			lines.some((l) => l.includes(logoFg) && l.includes(panelBgSgr)),
 			"some row should carry both logo ink and panel plate",
@@ -284,7 +370,7 @@ describe("layout stacking (S-08)", () => {
 	});
 
 	it("narrow terminals stack the panel under the logo", () => {
-		const lines = buildHeader(sideBySideMin - 6, 60, theme, ["AGENTS.md"], ["alpha"], ["beta"], MODEL, 4000);
+		const lines = buildHeader(sideBySideMin - 6, 60, theme, ["AGENTS.md"], ["alpha"], ["beta"], MODEL, 4000, "rainbow", "off", 0, [], []);
 		assert.equal(
 			lines.some((l) => l.includes(logoFg) && l.includes(panelBgSgr)),
 			false,
@@ -308,7 +394,7 @@ describe("custom sampler plumbing", () => {
 			y: 2,
 			width: innerWidth + 2 * PANEL_PADDING_X,
 			bg: PANEL_BG_DARK,
-			lines: buildPanelLines(theme, innerWidth, ["body"], MODEL, 4000),
+			lines: buildPanelLines(theme, innerWidth, ["body"], MODEL, 4000).lines,
 		};
 		const fixed: import("../src/color.ts").SwatchSampler = () => "9;9;9";
 		const row = paintRow(0, width, height, ink, panel, fixed);
@@ -320,7 +406,7 @@ describe("custom sampler plumbing", () => {
 	it("buildHeader accepts a background selection and stays exact-width for every mode", () => {
 		for (const background of ["rainbow", "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning"] as const) {
 			for (const width of [1, 40, 80, 160]) {
-				const lines = buildHeader(width, 40, theme, ["AGENTS.md"], ["a"], ["b"], MODEL, 4000, background);
+				const lines = buildHeader(width, 40, theme, ["AGENTS.md"], ["a"], ["b"], MODEL, 4000, background, "off", 0, [], []);
 				assertLinesExact(lines, width, `buildHeader(background=${background}, width=${width})`);
 			}
 		}

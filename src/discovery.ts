@@ -1,45 +1,25 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { CONFIG_DIR_NAME, getAgentDir, loadProjectContextFiles } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, getAgentDir, keyText, loadProjectContextFiles, parseArgs } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { Keybinding } from "@earendil-works/pi-tui";
+
 import { getLoadedExtensionLabels } from "./extensions.ts";
-import { normalizeSkillName, uniqueSorted } from "./text.ts";
+import { normalizeSkillName, sanitizeTuiText, uniqueSorted } from "./text.ts";
 
 /** True when the process was started with --no-context-files/-nc: pi then loads no context files. */
 export function cliContextFilesDisabled(): boolean {
-	const argv = process.argv.slice(2);
-	return argv.includes("--no-context-files") || argv.includes("-nc");
+	return parseArgs(process.argv.slice(2)).noContextFiles === true;
 }
 
 /**
- * Parse this process's argv for `--system-prompt` and `--append-system-prompt` values
- * (space and `=` forms). These override the discovered SYSTEM.md/APPEND_SYSTEM.md files.
+ * Parse this process's argv for `--system-prompt` and `--append-system-prompt` values.
+ * These override the discovered SYSTEM.md/APPEND_SYSTEM.md files.
  */
 export function cliSystemPromptSources(): { systemPrompt: string | undefined; appendSystemPrompt: string[] } {
-	const argv = process.argv.slice(2);
-	let systemPrompt: string | undefined;
-	const appendSystemPrompt: string[] = [];
-	for (let i = 0; i < argv.length; i++) {
-		const arg = argv[i];
-		if (arg === "--system-prompt") {
-			if (i + 1 < argv.length) systemPrompt = argv[++i];
-			continue;
-		}
-		if (arg.startsWith("--system-prompt=")) {
-			systemPrompt = arg.slice("--system-prompt=".length);
-			continue;
-		}
-		if (arg === "--append-system-prompt") {
-			if (i + 1 < argv.length) appendSystemPrompt.push(argv[++i]);
-			continue;
-		}
-		if (arg.startsWith("--append-system-prompt=")) {
-			appendSystemPrompt.push(arg.slice("--append-system-prompt=".length));
-			continue;
-		}
-	}
-	return { systemPrompt, appendSystemPrompt };
+	const parsed = parseArgs(process.argv.slice(2));
+	return { systemPrompt: parsed.systemPrompt, appendSystemPrompt: parsed.appendSystemPrompt ?? [] };
 }
 
 /**
@@ -66,7 +46,8 @@ export function discoverAppendSystemPromptFile(cwd: string, agentDir: string, pr
  * The system-prompt source files pi loads, mirroring its /loaded Context section: the
  * `--system-prompt` value when given (and it names an existing file), else the discovered
  * SYSTEM.md; then the `--append-system-prompt` values that name existing files, else the
- * discovered APPEND_SYSTEM.md.
+ * discovered APPEND_SYSTEM.md. Non-existent CLI values are dropped (they may be inline
+ * text and a fallback would misreport what pi actually loaded).
  */
 export function getSystemPromptSources(cwd: string, agentDir: string, projectTrusted: boolean): string[] {
 	const cli = cliSystemPromptSources();
@@ -109,6 +90,48 @@ export function getLoadedContextFiles(cwd: string, projectTrusted: boolean): str
 	].map((path) => formatContextPath(path, cwd));
 }
 
+/** A compact startup shortcut hint: an effective keybinding plus its description. */
+export interface ShortcutHint {
+	key: string;
+	description: string;
+}
+
+/**
+ * Prompt template commands discovered from pi, formatted as `/name`.
+ * Filters `pi.getCommands()` for `source === "prompt"`, prefixes names with `/`,
+ * then sanitizes, deduplicates, and sorts through `uniqueSorted`.
+ */
+export function getLoadedPrompts(pi: ExtensionAPI, commands: ReturnType<ExtensionAPI["getCommands"]> = pi.getCommands()): string[] {
+	const prompts = commands
+		.filter((command) => command.source === "prompt")
+		.map((command) => `/${command.name}`);
+	return uniqueSorted(prompts);
+}
+
+/**
+ * The five compact startup shortcut hints, using pi's exported `keyText()` to resolve
+ * the effective, user-customized keybindings rather than copied defaults.
+ */
+export function getShortcutHints(): ShortcutHint[] {
+	const keyFor = (binding: Keybinding, fallback: string): string => {
+		try {
+			const formatted = keyText(binding);
+			if (formatted) return sanitizeTuiText(formatted);
+		} catch {
+			// Binding not registered — fall back to literal.
+		}
+		return fallback;
+	};
+
+	return [
+		{ key: keyFor("app.interrupt", "Ctrl+C"), description: "interrupt" },
+		{ key: `${keyFor("app.clear", "Ctrl+L")}/${keyFor("app.exit", "Ctrl+Q")}`, description: "clear/exit" },
+		{ key: "/", description: "commands" },
+		{ key: "!", description: "bash" },
+		{ key: keyFor("app.tools.expand", "Ctrl+T"), description: "more" },
+	];
+}
+
 /**
  * Names of every currently loaded skill and extension, plus the loaded context files, for the
  * splash info panel. Skills come from the `skill:`-prefixed commands pi registers per loaded
@@ -116,7 +139,7 @@ export function getLoadedContextFiles(cwd: string, projectTrusted: boolean): str
  * labeled with its startup-screen compact labels; context comes from loadProjectContextFiles
  * with `cwd` as the session's working directory.
  */
-export function getLoadedHeaderItems(pi: ExtensionAPI, cwd: string, projectTrusted: boolean): { skills: string[]; extensions: string[]; context: string[] } {
+export function getLoadedHeaderItems(pi: ExtensionAPI, cwd: string, projectTrusted: boolean): { skills: string[]; extensions: string[]; context: string[]; prompts: string[]; shortcuts: ShortcutHint[] } {
 	const commands = pi.getCommands();
 
 	const skills = commands
@@ -127,5 +150,7 @@ export function getLoadedHeaderItems(pi: ExtensionAPI, cwd: string, projectTrust
 		skills: uniqueSorted(skills),
 		extensions: getLoadedExtensionLabels(cwd, getAgentDir(), projectTrusted),
 		context: getLoadedContextFiles(cwd, projectTrusted),
+		prompts: getLoadedPrompts(pi, commands),
+		shortcuts: getShortcutHints(),
 	};
 }

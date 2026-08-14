@@ -245,9 +245,8 @@ describe("renderTagline (R-11, R-12, R-13)", () => {
 		assert.equal(sanitizeTuiText(renderTagline(dumb, LONG_TAGLINE)), `- ${LONG_TAGLINE} -`);
 	});
 	it("FINDING F-4: SGR-carrying taglines are sanitized and revealed, not settled (R-12)", (t) => {
-		// Doc lists escape-carrying taglines among the settled-fallback conditions; observed
-		// behavior strips the escapes and reveals anyway. The safety purpose (escapes are
-		// never split per character) still holds, asserted here; divergence goes in the report.
+		// ANSI escapes in the tagline are sanitized before the fallback check, so the reveal
+		// proceeds on the cleaned text rather than falling back to settled.
 		const timers = enableTimers(t);
 		startTaglineReveal();
 		const holdTicks = REVEAL_HOLD_MS / REVEAL_TICK_MS;

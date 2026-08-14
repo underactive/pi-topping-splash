@@ -9,16 +9,17 @@ import { readPreferences } from "./preferences.ts";
 import { getLoadedHeaderItems } from "./discovery.ts";
 import { buildHeaderParts } from "./splash.ts";
 
-/** Runs `fn` with a `SettingsManager` for `cwd`, swallowing errors to avoid corrupting the TUI with console output. */
+/** Runs `fn` with a `SettingsManager` for `cwd`, logging errors to stderr rather than corrupting the TUI. */
 export function withSettings(cwd: string, fn: (settings: SettingsManager) => void): void {
 	try {
 		const settings = SettingsManager.create(cwd);
 		fn(settings);
-	} catch {
-		// Avoid corrupting the TUI with console output.
+	} catch (e) {
+		console.error("withSettings failed:", e);
 	}
 }
 
+/** Enables Pi's quietStartup setting for cwd when not already enabled. Returns true when the setting was changed (first call only per agent dir). */
 export function ensureQuietStartup(cwd: string): boolean {
 	let changed = false;
 	withSettings(cwd, (settings) => {
@@ -30,8 +31,11 @@ export function ensureQuietStartup(cwd: string): boolean {
 	return changed;
 }
 
+/** Wires the splash header component factory via ctx.ui.setHeader, seeds shared state (loaded skills/extensions/context/prompts/shortcuts, system prompt size, background color and gradient animation from preferences), and starts the tagline reveal and gradient animation tickers when enabled. */
 export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext) {
-	({ skills: state.loadedSkills, extensions: state.loadedExtensions, context: state.loadedContext } = getLoadedHeaderItems(pi, ctx.cwd, ctx.isProjectTrusted()));
+	try {
+		({ skills: state.loadedSkills, extensions: state.loadedExtensions, context: state.loadedContext, prompts: state.loadedPrompts, shortcuts: state.loadedShortcuts } = getLoadedHeaderItems(pi, ctx.cwd, ctx.isProjectTrusted()));
+	} catch { /* discovery is display-only; never abort the startup */ }
 	const prefs = readPreferences();
 	state.backgroundColor = prefs.backgroundColor;
 	state.gradientAnimation = prefs.gradientAnimation;
@@ -67,7 +71,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext) {
 					cachedBackground = state.backgroundColor;
 					cachedAnimation = state.gradientAnimation;
 					cachedAnimTick = gradientAnimation.tick;
-					const parts = buildHeaderParts(width, rows, theme, state.loadedContext, state.loadedSkills, state.loadedExtensions, ctx.model ? { id: ctx.model.id, provider: ctx.model.provider } : undefined, state.systemPromptSize, state.backgroundColor, state.gradientAnimation, gradientAnimation.timeMs);
+					const parts = buildHeaderParts(width, rows, theme, state.loadedContext, state.loadedSkills, state.loadedExtensions, ctx.model ? { id: ctx.model.id, provider: ctx.model.provider } : undefined, state.systemPromptSize, state.backgroundColor, state.gradientAnimation, gradientAnimation.timeMs, state.loadedPrompts, state.loadedShortcuts);
 					cachedLines = parts.lines;
 					cachedRepaintTagline = parts.repaintTagline;
 					cachedRepaintBackdrop = parts.repaintBackdrop;

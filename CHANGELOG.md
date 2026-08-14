@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-14
+
+### Added
+
+- Prompt templates listed in the splash panel under `[prompts] N`, discovered from Pi's
+  registered prompt commands (`source === "prompt"`) and displayed as `/name`.
+- Compact startup shortcuts listed first in the splash panel under `[shortcuts] 5`, with
+  effective keybindings resolved via Pi's exported `keyText()` (so user-customized bindings
+  are reflected). Five hints: interrupt, clear/exit, commands (`/`), bash (`!`), more.
+
+### Changed
+
+- Collapsed counts summary now wraps onto multiple lines, breaking only between whole
+  `[label] N` counts and centering each line, so a narrow panel stacks the counts instead of
+  truncating the last categories to an ellipsis.
+
+### Fixed
+
+- Header discovery is wrapped in try/catch so a display-only failure can no longer abort
+  startup, and the tagline reveal now stops when the conversation begins. The gate's filtered
+  inventory is cached and `loadSessions` re-entry is guarded, and `shimmerCell` emits the bold
+  reset only when bold was applied.
+- CLI flags (`--system-prompt`, `--append-system-prompt`, `--no-context-files`) are parsed via
+  Pi's `parseArgs` instead of hand-rolled argv scanning, and `keyText()` output is sanitized
+  before shortcut hints are rendered.
+- `withSettings` failures are logged to stderr and the model-change failure notification now
+  surfaces the sanitized error message, instead of being swallowed silently.
+- The header no longer re-renders on every `model_select`; it invalidates and repaints only
+  when the system prompt size actually changes.
+
 ## [0.3.0] - 2026-08-14
 
 ### Added

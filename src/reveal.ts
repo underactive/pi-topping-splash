@@ -67,6 +67,7 @@ export function startTaglineReveal(): void {
 	taglineReveal.timer.unref();
 }
 
+/** Stops the reveal ticker, clears the interval, and bumps the tick to trigger a final settled-tagline repaint. Idempotent — safe to call when the reveal is already stopped. */
 export function stopTaglineReveal(): void {
 	if (!taglineReveal.timer) return;
 	clearInterval(taglineReveal.timer);
@@ -99,7 +100,7 @@ export function shimmerCell(ch: string, dist: number, palette: ShimmerPalette): 
 	const alpha = t * REVEAL_PEAK_ALPHA;
 	const blend = (channel: 0 | 1 | 2) =>
 		Math.round(palette.highlight[channel] * alpha + palette.base[channel] * (1 - alpha));
-	return `${t > 0.2 ? "\x1b[1m" : ""}${sgrFg(`${blend(0)};${blend(1)};${blend(2)}`)}${ch}\x1b[22m`;
+	return t > 0.2 ? `\x1b[1m${sgrFg(`${blend(0)};${blend(1)};${blend(2)}`)}${ch}\x1b[22m` : `${sgrFg(`${blend(0)};${blend(1)};${blend(2)}`)}${ch}`;
 }
 
 /**
@@ -108,6 +109,9 @@ export function shimmerCell(ch: string, dist: number, palette: ShimmerPalette): 
  * becomes legible exactly as the crest passes it. The brackets hug the content, so the row holds the
  * placeholder's width until the wipe outgrows it and then widens toward the finished tagline, being
  * recentered in the panel by the caller throughout.
+ *
+ * The input tagline is sanitized via sanitizeTuiText (stripping ANSI escape sequences and control
+ * characters) before the fallback check.
  *
  * Falls back to the settled line whenever a frame could not be drawn faithfully: a 256-color
  * theme has no channels to interpolate, a surrogate pair would desynchronize the code point index

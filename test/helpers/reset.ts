@@ -31,6 +31,8 @@ export function resetModuleState(): void {
 	state.loadedSkills = [];
 	state.loadedExtensions = [];
 	state.loadedContext = [];
+	state.loadedPrompts = [];
+	state.loadedShortcuts = [];
 	state.systemPromptSize = undefined;
 	state.splashRows = 0;
 	state.backgroundColor = "rainbow";

@@ -8,6 +8,7 @@ import { GATE_DONE_ENV } from "./src/relaunch.ts";
 import { runStartupGate } from "./src/gate.ts";
 import { showSplashSettings } from "./src/settings.ts";
 
+/** Pi extension: replaces the default startup header with a full-color splash, optionally adds an interactive startup gate menu, and registers the /topping-splash-settings command. Listens to model_select (refresh prompt size), before_agent_start (stop animations on first turn), and session_start (gate the session launch). */
 export default function piStartupGreeter(pi: ExtensionAPI) {
 	pi.on("model_select", (_event, ctx) => {
 		// Model rotation may change the base system prompt — refresh the size.
@@ -16,18 +17,19 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 			const newSize = Buffer.byteLength(ctx.getSystemPrompt(), "utf8");
 			if (newSize !== state.systemPromptSize) {
 				state.systemPromptSize = newSize;
+				headerRenderState.invalidate?.();
+				headerRenderState.requestRender?.();
 			}
 		} catch (err) {
 			if (!(err instanceof Error && /not (?:available|ready)/i.test(err.message))) throw err;
 		}
-		headerRenderState.invalidate?.();
-		headerRenderState.requestRender?.();
 	});
 
 	pi.on("before_agent_start", (event) => {
 		if (!state.conversationStarted) {
 			state.conversationStarted = true;
 			stopGradientAnimation();
+			stopTaglineReveal();
 		}
 		const newSize = Buffer.byteLength(event.systemPrompt, "utf8");
 		if (newSize !== state.systemPromptSize) {

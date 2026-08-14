@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
+import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type KeybindingDefinitions } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
 import { ensureQuietStartup, installHeader, withSettings } from "../src/header.ts";
@@ -15,9 +16,19 @@ import { tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { createFakeCtx, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
 import { createFakePi } from "./helpers/fake-api.ts";
 import { createFakeTui, type FakeTuiHarness } from "./helpers/fake-tui.ts";
+import type { FakePiBag } from "./helpers/fake-api.ts";
 import { resetModuleState } from "./helpers/reset.ts";
 import { makeTheme } from "./helpers/theme.ts";
 import { assertLinesExact } from "./helpers/width.ts";
+
+/** App keybindings merged with TUI base, since KEYBINDINGS is not exported from the main package. */
+const APP_KEYBINDINGS_HEADER = {
+	"app.interrupt": { defaultKeys: "ctrl+c", description: "Interrupt" },
+	"app.clear": { defaultKeys: "ctrl+l", description: "Clear screen" },
+	"app.exit": { defaultKeys: "ctrl+q", description: "Exit" },
+	"app.tools.expand": { defaultKeys: "ctrl+t", description: "Expand tools" },
+} as KeybindingDefinitions;
+const ALL_KEYBINDINGS_HEADER = { ...TUI_KEYBINDINGS, ...APP_KEYBINDINGS_HEADER };
 
 let env: TempAgentEnv;
 beforeEach(() => {
@@ -60,7 +71,7 @@ describe("ensureQuietStartup (H-02, H-03)", () => {
 });
 
 describe("installHeader (H-04, H-05)", () => {
-	function install(options: { projectTrusted?: boolean } = {}): { tui: FakeTuiHarness; ctx: FakeCtxHarness; component: Component } {
+	function install(options: { projectTrusted?: boolean; piOverrides?: Partial<FakePiBag> } = {}): { tui: FakeTuiHarness; ctx: FakeCtxHarness; component: Component } {
 		// A project context file so the splash has something to list under [context].
 		writeFileSync(join(env.cwd, "AGENTS.md"), "# project context");
 		const tui = createFakeTui({ rows: 40, columns: 120 });
@@ -72,7 +83,7 @@ describe("installHeader (H-04, H-05)", () => {
 			systemPrompt: "x".repeat(4000),
 			projectTrusted: options.projectTrusted ?? false,
 		});
-		const pi = createFakePi({
+		const piDefaults = {
 			commandsInfo: [
 				{
 					name: "my-skill",
@@ -80,7 +91,8 @@ describe("installHeader (H-04, H-05)", () => {
 					sourceInfo: { path: "/skills/my-skill/SKILL.md", source: "skill", scope: "user", origin: "top-level" },
 				},
 			],
-		});
+		};
+		const pi = createFakePi({ ...piDefaults, ...options.piOverrides });
 		installHeader(pi.pi, ctx.ctx);
 		assert.equal(ctx.setHeaderCalls.length, 1, "must install a header factory");
 		const factory = ctx.setHeaderCalls[0] as (tui: TUI, theme: Theme) => Component;
@@ -193,5 +205,36 @@ describe("installHeader (H-04, H-05)", () => {
 		assertLinesExact(second, 120, "after animation tick");
 		assert.equal(second.length, first.length, "row count stable across ticks");
 		assert.notDeepEqual(second, first, "the backdrop must move");
+	});
+
+	it("seeds prompts and shortcuts in state, renders them in order (H-08)", () => {
+		const kb = new KeybindingsManager(ALL_KEYBINDINGS_HEADER, {});
+		setKeybindings(kb);
+		const { component } = install({
+			piOverrides: {
+				commandsInfo: [
+					{
+						name: "my-skill",
+						source: "skill",
+						sourceInfo: { path: "/skills/my-skill/SKILL.md", source: "skill", scope: "user", origin: "top-level" },
+					},
+					{
+						name: "rewrite",
+						source: "prompt",
+						sourceInfo: { path: "/prompts/rewrite", source: "prompt", scope: "user", origin: "top-level" },
+					},
+				],
+			},
+		});
+		stopTaglineReveal();
+		assert.ok(state.loadedPrompts.includes("/rewrite"), `prompts: ${JSON.stringify(state.loadedPrompts)}`);
+		assert.equal(state.loadedShortcuts.length, 5, `shortcuts: ${JSON.stringify(state.loadedShortcuts)}`);
+		const text = component.render(120).map(sanitizeTuiText).join("\n");
+		assert.ok(text.includes("[shortcuts] 5"), `shortcuts heading: ${text.slice(0, 200)}`);
+		assert.ok(text.includes("[prompts] 1"), `prompts heading: ${text.slice(0, 200)}`);
+		assert.ok(text.indexOf("[shortcuts]") < text.indexOf("[context]"), "shortcuts precedes context");
+		assert.ok(text.indexOf("[context]") < text.indexOf("[skills]"), "context precedes skills");
+		assert.ok(text.indexOf("[skills]") < text.indexOf("[prompts]"), "skills precedes prompts");
+		assert.ok(text.indexOf("[prompts]") < text.indexOf("[extensions]"), "prompts precedes extensions");
 	});
 });

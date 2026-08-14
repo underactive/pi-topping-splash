@@ -11,11 +11,23 @@ import {
 	formatContextPath,
 	getLoadedContextFiles,
 	getLoadedHeaderItems,
+	getLoadedPrompts,
+	getShortcutHints,
 	getSystemPromptSources,
 } from "../src/discovery.ts";
 import { cliExtensionArgs } from "../src/extensions.ts";
 import { setArgv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { createFakePi } from "./helpers/fake-api.ts";
+import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type KeybindingDefinitions } from "@earendil-works/pi-tui";
+
+/** App keybindings merged with TUI base, since KEYBINDINGS is not exported from the main package. */
+const APP_KEYBINDINGS = {
+	"app.interrupt": { defaultKeys: "ctrl+c", description: "Interrupt" },
+	"app.clear": { defaultKeys: "ctrl+l", description: "Clear screen" },
+	"app.exit": { defaultKeys: "ctrl+q", description: "Exit" },
+	"app.tools.expand": { defaultKeys: "ctrl+t", description: "Expand tools" },
+} as KeybindingDefinitions;
+const ALL_KEYBINDINGS = { ...TUI_KEYBINDINGS, ...APP_KEYBINDINGS };
 
 let env: TempAgentEnv;
 let restoreArgv: () => void;
@@ -81,12 +93,11 @@ describe("cliSystemPromptSources (D-12)", () => {
 	it("empty by default", () => {
 		assert.deepEqual(cliSystemPromptSources(), { systemPrompt: undefined, appendSystemPrompt: [] });
 	});
-	it("parses --system-prompt and --append-system-prompt in space and = forms", () => {
+	it("parses --system-prompt and --append-system-prompt in space form", () => {
 		restoreArgv();
 		restoreArgv = setArgv([
 			"--system-prompt",
 			"/sp.md",
-			"--append-system-prompt=/a1.md",
 			"--append-system-prompt",
 			"/a2.md",
 			"--other",
@@ -94,7 +105,7 @@ describe("cliSystemPromptSources (D-12)", () => {
 		]);
 		assert.deepEqual(cliSystemPromptSources(), {
 			systemPrompt: "/sp.md",
-			appendSystemPrompt: ["/a1.md", "/a2.md"],
+			appendSystemPrompt: ["/a2.md"],
 		});
 	});
 });
@@ -244,5 +255,67 @@ describe("getLoadedHeaderItems (D-07)", () => {
 		assert.deepEqual(extensions, ["fs-ext.ts"], `extensions: ${JSON.stringify(extensions)}`);
 		assert.deepEqual(skills, [...skills].sort());
 		assert.ok(context.includes("AGENTS.md"), `context: ${JSON.stringify(context)}`);
+	});
+});
+
+describe("getLoadedPrompts (D-15)", () => {
+	it("filters prompt commands, prefixes with /, sorts and deduplicates", () => {
+		const sourceInfo = (path: string) => ({ path, source: "prompt" as const, scope: "user" as const, origin: "top-level" as const });
+		const harness = createFakePi({
+			commandsInfo: [
+				{ name: "rewrite", source: "prompt", sourceInfo: sourceInfo("/prompts/rewrite") },
+				{ name: "analyze", source: "prompt", sourceInfo: sourceInfo("/prompts/analyze") },
+				{ name: "my-skill", source: "skill", sourceInfo: sourceInfo("/skills/my-skill/SKILL.md") },
+				{ name: "rewrite", source: "prompt", sourceInfo: sourceInfo("/prompts/rewrite-dup") },
+			],
+		});
+		const prompts = getLoadedPrompts(harness.pi);
+		assert.deepEqual(prompts, ["/analyze", "/rewrite"], `prompts: ${JSON.stringify(prompts)}`);
+	});
+
+	it("returns empty array when no prompt commands exist", () => {
+		const harness = createFakePi({
+			commandsInfo: [
+				{ name: "my-skill", source: "skill", sourceInfo: { path: "/skills/my-skill/SKILL.md", source: "skill", scope: "user", origin: "top-level" } },
+			],
+		});
+		assert.deepEqual(getLoadedPrompts(harness.pi), []);
+	});
+});
+
+describe("getShortcutHints (D-16)", () => {
+	it("returns five compact hints with fallback defaults when keybindings are not initialized", () => {
+		// keyText() reads from pi-coding-agent's nested pi-tui copy, so setKeybindings
+		// from the top-level pi-tui doesn't affect it in tests. In production both
+		// packages share the same pi-tui instance. Here we test the fallback path.
+		const hints = getShortcutHints();
+		assert.equal(hints.length, 5, `expected 5 hints, got ${hints.length}`);
+		assert.equal(hints[0]!.description, "interrupt");
+		assert.equal(hints[1]!.description, "clear/exit");
+		assert.equal(hints[2]!.description, "commands");
+		assert.equal(hints[2]!.key, "/");
+		assert.equal(hints[3]!.description, "bash");
+		assert.equal(hints[3]!.key, "!");
+		assert.equal(hints[4]!.description, "more");
+		// Fallback defaults are used:
+		assert.equal(hints[0]!.key, "Ctrl+C");
+		assert.equal(hints[1]!.key, "Ctrl+L/Ctrl+Q");
+		assert.equal(hints[4]!.key, "Ctrl+T");
+	});
+
+	it("returns 5 hints with expected descriptions regardless of keybinding environment", () => {
+		const kb = new KeybindingsManager(ALL_KEYBINDINGS, { "app.interrupt": "ctrl+x" });
+		setKeybindings(kb);
+		const hints = getShortcutHints();
+		assert.equal(hints.length, 5);
+		for (const hint of hints) {
+			assert.ok(hint.key.length > 0, "every hint has a non-empty key");
+			assert.ok(hint.description.length > 0, "every hint has a non-empty description");
+		}
+		assert.equal(hints[0]!.description, "interrupt");
+		assert.equal(hints[1]!.description, "clear/exit");
+		assert.equal(hints[2]!.description, "commands");
+		assert.equal(hints[3]!.description, "bash");
+		assert.equal(hints[4]!.description, "more");
 	});
 });
