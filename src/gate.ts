@@ -40,6 +40,10 @@ export class StartupGate {
 		{ label: "Settings", action: "settings", icon: "", hotkey: "s" }, // nf-fa-cog
 		{ label: "Quit", action: "quit", icon: "\u{f0a48}", hotkey: "q" }, // nf-md-exit_run
 	];
+	private readonly menuBlockWidth =
+		Math.max(...this.menu.map((entry) => visibleWidth(`❯ ${entry.icon}  ${entry.label}`))) +
+		StartupGate.MENU_HOTKEY_GAP +
+		1;
 
 	private sessions: SessionListItem[] | null = null;
 	private sessionsLoading = false;
@@ -400,8 +404,6 @@ export class StartupGate {
 		// Two spaces between icon and label: wide Nerd Font artwork (e.g. the Material Design
 		// glyphs in non-Mono font variants) advances one cell but paints into the next, so a
 		// single space would be swallowed and the label would sit flush against the icon.
-		const widestLeft = Math.max(...menu.map((entry) => visibleWidth(`❯ ${entry.icon}  ${entry.label}`)));
-		const blockWidth = widestLeft + StartupGate.MENU_HOTKEY_GAP + 1;
 		const lines: string[] = [];
 		menu.forEach((entry, i) => {
 			if (spacious && i > 0) lines.push("");
@@ -409,7 +411,7 @@ export class StartupGate {
 			const chevron = selected ? this.theme.fg("accent", "❯") : " ";
 			const label = selected ? this.theme.fg("accent", entry.label) : this.theme.fg("text", entry.label);
 			const left = `${chevron} ${entry.icon}  ${label}`;
-			const gap = " ".repeat(Math.max(1, blockWidth - visibleWidth(left) - 1));
+			const gap = " ".repeat(Math.max(1, this.menuBlockWidth - visibleWidth(left) - 1));
 			lines.push(`${left}${gap}${this.theme.fg("warning", entry.hotkey)}`);
 		});
 		lines.push("", this.hint("↑↓ move · enter select · hotkey jump · esc = new session"));
