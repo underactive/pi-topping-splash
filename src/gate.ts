@@ -40,6 +40,8 @@ export class StartupGate {
 		{ label: "Settings", action: "settings", icon: "", hotkey: "s" }, // nf-fa-cog
 		{ label: "Quit", action: "quit", icon: "\u{f0a48}", hotkey: "q" }, // nf-md-exit_run
 	];
+	/** Columns between the widest `❯ icon label` cell and the right-aligned hotkey. */
+	private static readonly MENU_HOTKEY_GAP = 8;
 	private readonly menuBlockWidth =
 		Math.max(...this.menu.map((entry) => visibleWidth(`❯ ${entry.icon}  ${entry.label}`))) +
 		StartupGate.MENU_HOTKEY_GAP +
@@ -391,9 +393,6 @@ export class StartupGate {
 		const rows = this.tui.terminal.rows;
 		return rows > 0 && rows <= SHORT_TERMINAL_ROWS;
 	}
-
-	/** Columns between the widest `❯ icon label` cell and the right-aligned hotkey. */
-	private static readonly MENU_HOTKEY_GAP = 8;
 
 	private renderMenu(width: number): string[] {
 		const menu = this.menu;
