@@ -20,7 +20,7 @@ export interface FakeTuiHarness {
 
 /**
  * Implements only the TUI surface the extension touches; anything else fails loudly.
- * Cast is unavoidable: TUI is a class with private fields.
+ * Cast is unavoidable: the fake implements only part of the TUI surface.
  */
 export function createFakeTui(options: { rows?: number; columns?: number } = {}): FakeTuiHarness {
 	const overlays: FakeOverlay[] = [];

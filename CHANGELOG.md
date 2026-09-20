@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Gate menu centering no longer reserves a row for the gate's own zero-row footer. Pi's
+  fullscreen input dock gives a footer that renders nothing no space at all, so the menu sat
+  one row below center; the menu is centered between the splash and the bottom again.
+- `package.json` manifests written with a UTF-8 byte order mark are parsed when discovering
+  extensions, matching Pi's own manifest reader — a BOM previously dropped the package from
+  the splash's `[extensions]` list even though Pi loaded it.
+
 ## [0.3.1] - 2026-08-14
 
 ### Added

@@ -48,6 +48,18 @@ describe("discoverLoadedExtensions: agent extensions dir (E-01)", () => {
 		assert.equal(discovered[0]!.scope, "user");
 		assert.equal(discovered[0]!.baseDir, env.agentDir);
 	});
+	it("a package.json written with a UTF-8 BOM still resolves its manifest entries", () => {
+		const pkgRoot = join(env.agentDir, "extensions", "bom-ext");
+		mkdirSync(join(pkgRoot, "src"), { recursive: true });
+		writeFileSync(
+			join(pkgRoot, "package.json"),
+			`\uFEFF${JSON.stringify({ name: "bom-ext", pi: { extensions: ["src/entry.ts"] } })}`,
+		);
+		writeFileSync(join(pkgRoot, "src", "entry.ts"), "");
+		writeFileSync(join(pkgRoot, "index.ts"), "");
+		const discovered = discoverLoadedExtensions(env.cwd, env.agentDir, false);
+		assert.deepEqual(discovered.map((e) => e.path), [join(pkgRoot, "src", "entry.ts")]);
+	});
 	it("dirs without a pi manifest fall back to index.ts/index.js", () => {
 		const plain = join(env.agentDir, "extensions", "plain-ext");
 		mkdirSync(plain, { recursive: true });

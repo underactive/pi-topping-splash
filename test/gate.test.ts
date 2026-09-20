@@ -192,12 +192,12 @@ describe("menu (GA-04..GA-08)", () => {
 		state.splashRows = 15;
 		const harness = makeGate({ rows: 40 });
 		const lines = harness.gate.render(90);
-		// free rows = 40 - 15 splash - 16 menu = 9; one below-row is the footer's,
-		// so ceil(9/2) - 1 = 4 trailing blanks push the menu up into the middle.
+		// free rows = 40 - 15 splash - 16 menu = 9; the gate's zero-row footer claims no row,
+		// so 9 - floor(9/2) = 5 trailing blanks push the menu up into the middle.
 		let lastVisible = lines.length - 1;
 		while (lastVisible >= 0 && lines[lastVisible] === "") lastVisible--;
 		const trailing = lines.length - 1 - lastVisible;
-		assert.equal(trailing, 4);
+		assert.equal(trailing, 5);
 		assert.ok(sanitizeTuiText(lines[lines.length - trailing - 1] ?? "").includes("↑↓ move"), "hint stays the last visible row");
 	});
 	it("no centering padding without a splash or without free rows", () => {

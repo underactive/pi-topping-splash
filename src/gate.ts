@@ -423,11 +423,13 @@ export class StartupGate {
 		// pi's fullscreen layout pins the editor region (hosting this menu) to the screen bottom
 		// and stretches the transcript above it, so the menu would hug the terminal's bottom edge.
 		// Trailing blank rows grow this region upward, vertically centering the visible menu in
-		// the space between the splash and the bottom. One of the rows below the menu is the
-		// footer's; splashRows === 0 means no splash is installed, so there is nothing to center in.
+		// the space between the splash and the bottom. The gate's zero-row footer claims no row of
+		// its own — pi's fullscreen dock gives the footer slot minSize: 0 — so every free row is
+		// split here; splashRows === 0 means no splash is installed, so there is nothing to center in.
 		const free = this.tui.terminal.rows - state.splashRows - block.length;
 		if (state.splashRows > 0 && free > 1) {
-			const below = free - Math.floor(free / 2) - 1;
+			// An odd count puts the extra row below, so the menu sits one row above true center.
+			const below = free - Math.floor(free / 2);
 			for (let i = 0; i < below; i++) block.push("");
 		}
 		return block;

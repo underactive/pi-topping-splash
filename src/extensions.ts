@@ -251,7 +251,9 @@ function readPiManifest(dir: string): { extensions?: string[] } | null {
 	try {
 		const pkgPath = join(dir, "package.json");
 		if (!existsSync(pkgPath)) return null;
-		const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { pi?: { extensions?: unknown } };
+		// pi strips a leading UTF-8 BOM before parsing (core/pi-manifest.js); without this a
+		// BOM-prefixed package.json loads in pi but goes missing from the splash's list.
+		const pkg = JSON.parse(readFileSync(pkgPath, "utf-8").replace(/^\uFEFF/, "")) as { pi?: { extensions?: unknown } };
 		const manifest = pkg.pi;
 		if (!manifest) return null;
 		const extensions = manifest.extensions;
