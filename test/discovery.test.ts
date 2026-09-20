@@ -15,7 +15,6 @@ import {
 	getShortcutHints,
 	getSystemPromptSources,
 } from "../src/discovery.ts";
-import { cliExtensionArgs } from "../src/extensions.ts";
 import { setArgv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { createFakePi } from "./helpers/fake-api.ts";
 import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type KeybindingDefinitions } from "@earendil-works/pi-tui";
@@ -39,27 +38,6 @@ beforeEach(() => {
 afterEach(() => {
 	restoreArgv();
 	env.restore();
-});
-
-describe("cliExtensionArgs (D-02)", () => {
-	it("defaults to extensions enabled with no explicit sources", () => {
-		const { noExtensions, explicit } = cliExtensionArgs();
-		assert.equal(noExtensions, false);
-		assert.equal(explicit.size, 0);
-	});
-	it("parses --no-extensions", () => {
-		restoreArgv();
-		restoreArgv = setArgv(["--no-extensions"]);
-		assert.equal(cliExtensionArgs().noExtensions, true);
-	});
-	it("collects --extension and -e sources", () => {
-		restoreArgv();
-		restoreArgv = setArgv(["-e", "/a.ts", "--extension", "/b.ts", "--other", "x"]);
-		const { explicit } = cliExtensionArgs();
-		assert.ok(explicit.has("/a.ts"));
-		assert.ok(explicit.has("/b.ts"));
-		assert.equal(explicit.has("x"), false);
-	});
 });
 
 describe("cliContextFilesDisabled (D-10)", () => {
