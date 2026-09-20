@@ -133,11 +133,12 @@ export function getShortcutHints(): ShortcutHint[] {
 }
 
 /**
- * Names of every currently loaded skill and extension, plus the loaded context files, for the
- * splash info panel. Skills come from the `skill:`-prefixed commands pi registers per loaded
- * skill (its `skill.name`); extensions are discovered with pi's own package-manager logic and
- * labeled with its startup-screen compact labels; context comes from loadProjectContextFiles
- * with `cwd` as the session's working directory.
+ * Names of every currently loaded skill, extension, prompt, and shortcut, plus the loaded
+ * context files, for the splash info panel. Skills come from the `skill:`-prefixed commands pi
+ * registers per loaded skill (its `skill.name`); extensions are discovered with pi's own
+ * package-manager logic and labeled with its startup-screen compact labels; context comes from
+ * loadProjectContextFiles with `cwd` as the session's working directory; prompts come from
+ * getLoadedPrompts; shortcuts come from getShortcutHints.
  */
 export function getLoadedHeaderItems(pi: ExtensionAPI, cwd: string, projectTrusted: boolean): { skills: string[]; extensions: string[]; context: string[]; prompts: string[]; shortcuts: ShortcutHint[] } {
 	const commands = pi.getCommands();
