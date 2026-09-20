@@ -246,8 +246,20 @@ function resolvePathFromBase(input: string, baseDir: string): string {
 	return isAbsolute(normalized) ? resolve(normalized) : resolve(baseDir, normalized);
 }
 
+/** Manifests are immutable within a process run, so caching by resolved dir is safe. */
+const manifestCache = new Map<string, { extensions?: string[] } | null>();
+
 /** pi's `readPiManifest`: the `pi` field of a package.json, null when absent. */
 function readPiManifest(dir: string): { extensions?: string[] } | null {
+	const key = resolve(dir);
+	const cached = manifestCache.get(key);
+	if (cached !== undefined) return cached;
+	const result = readPiManifestUncached(key);
+	manifestCache.set(key, result);
+	return result;
+}
+
+function readPiManifestUncached(dir: string): { extensions?: string[] } | null {
 	try {
 		const pkgPath = join(dir, "package.json");
 		if (!existsSync(pkgPath)) return null;
