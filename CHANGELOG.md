@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-20
+
+### Changed
+
+- Gate menu layout now caches its fixed block width instead of recomputing it on every render.
+- Extension discovery caches parsed Pi manifests by resolved directory, avoiding repeated file reads
+  and JSON parsing during a process run.
+- Development and CI now typecheck and test against Pi 0.86.0; the
+  `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 0.82.1.
+  Runtime peer dependencies remain unrestricted.
+
 ### Fixed
 
 - Gate menu centering no longer reserves a row for the gate's own zero-row footer. Pi's

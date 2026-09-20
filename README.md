@@ -13,6 +13,11 @@ pi install npm:@underactive/pi-topping-splash
 
 Restart Pi (or run `/reload`) to pick it up.
 
+## Compatibility
+
+Requires Node.js 22.19.0 or newer. The current release is developed and tested against Pi
+0.86.0; Pi package peer dependency ranges remain unrestricted.
+
 ## Settings
 
 Run `/topping-splash-settings` (TUI mode only) or pick **Settings** in the startup gate menu
