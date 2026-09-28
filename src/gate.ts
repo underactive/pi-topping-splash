@@ -21,6 +21,28 @@ export type GateResolution = "proceed" | "quit";
 export type MenuAction = "new" | "resume" | "model" | "theme" | "skills-extensions" | "settings" | "quit";
 export type GateView = "menu" | "resume" | "model" | "theme" | "skills-extensions";
 
+/** Shared menu definition so height calculation and rendering cannot drift apart. */
+const GATE_MENU: { label: string; action: MenuAction; icon: string; hotkey: KeyId }[] = [
+	{ label: "New session", action: "new", icon: "", hotkey: "n" }, // nf-fa-file
+	{ label: "Resume session", action: "resume", icon: "", hotkey: "r" }, // nf-fa-history
+	{ label: "Model", action: "model", icon: "\u{f1719}", hotkey: "m" }, // nf-md-robot_happy
+	{ label: "Skills and Extensions", action: "skills-extensions", icon: "\u{f0431}", hotkey: "x" }, // nf-md-puzzle
+	{ label: "Theme", action: "theme", icon: "", hotkey: "t" }, // nf-fa-paint_brush
+	{ label: "Settings", action: "settings", icon: "", hotkey: "s" }, // nf-fa-cog
+	{ label: "Quit", action: "quit", icon: "\u{f0a48}", hotkey: "q" }, // nf-md-exit_run
+];
+
+/**
+ * Height of the visible gate menu block, excluding any trailing centering rows. Spacing is
+ * dropped while the startup changes block shares the space below the splash.
+ */
+export function gateMenuRows(terminalRows: number): number {
+	const n = GATE_MENU.length;
+	const isCompactShape = terminalRows > 0 && terminalRows <= SHORT_TERMINAL_ROWS;
+	const spacious = terminalRows >= 30 && state.changes === null;
+	return n + (spacious ? n - 1 : 0) + 2 + (isCompactShape ? 0 : 1);
+}
+
 /**
  * The blocking startup gate component. The main menu renders inline under the splash; the
  * Resume/Theme/Model drill-in views render in a bordered popup overlay centered (vertically
@@ -31,15 +53,7 @@ export class StartupGate {
 	private view: GateView = "menu";
 	private menuIndex = 0;
 	/** Icons are Nerd Font glyphs (all width 1) so the label column stays aligned across rows. */
-	private readonly menu: { label: string; action: MenuAction; icon: string; hotkey: KeyId }[] = [
-		{ label: "New session", action: "new", icon: "", hotkey: "n" }, // nf-fa-file
-		{ label: "Resume session", action: "resume", icon: "", hotkey: "r" }, // nf-fa-history
-		{ label: "Model", action: "model", icon: "\u{f1719}", hotkey: "m" }, // nf-md-robot_happy
-		{ label: "Skills and Extensions", action: "skills-extensions", icon: "\u{f0431}", hotkey: "x" }, // nf-md-puzzle
-		{ label: "Theme", action: "theme", icon: "", hotkey: "t" }, // nf-fa-paint_brush
-		{ label: "Settings", action: "settings", icon: "", hotkey: "s" }, // nf-fa-cog
-		{ label: "Quit", action: "quit", icon: "\u{f0a48}", hotkey: "q" }, // nf-md-exit_run
-	];
+	private readonly menu = GATE_MENU;
 	/** Columns between the widest `❯ icon label` cell and the right-aligned hotkey. */
 	private static readonly MENU_HOTKEY_GAP = 8;
 	private readonly menuBlockWidth =
@@ -396,8 +410,9 @@ export class StartupGate {
 
 	private renderMenu(width: number): string[] {
 		const menu = this.menu;
-		// Terminals 30 rows or taller get a blank row between items for a more relaxed layout.
-		const spacious = this.tui.terminal.rows >= 30;
+		// Terminals 30 rows or taller get a blank row between items unless the changes block
+		// occupies the same below-splash budget.
+		const spacious = this.tui.terminal.rows >= 30 && state.changes === null;
 		// Every row is laid out to the same block width (icon + label column, hotkey right-
 		// aligned), so centering each row keeps the block's internal columns aligned.
 		// Two spaces between icon and label: wide Nerd Font artwork (e.g. the Material Design

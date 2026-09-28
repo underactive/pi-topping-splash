@@ -2,12 +2,14 @@ import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import type { BackgroundColor, GradientAnimation } from "./color.ts";
-import { headerRenderState, state } from "./state.ts";
+import { changesRenderState, headerRenderState, state } from "./state.ts";
 import { gradientAnimation, startGradientAnimation } from "./animate.ts";
 import { startTaglineReveal, taglineReveal } from "./reveal.ts";
 import { readPreferences } from "./preferences.ts";
 import { getLoadedHeaderItems } from "./discovery.ts";
 import { buildHeaderParts } from "./splash.ts";
+import { EDITOR_RESERVED_ROWS, renderChangesBlock } from "./changes-summary.ts";
+import { gateMenuRows } from "./gate.ts";
 
 /** Runs `fn` with a `SettingsManager` for `cwd`, logging errors to stderr rather than corrupting the TUI. */
 export function withSettings(cwd: string, fn: (settings: SettingsManager) => void): void {
@@ -31,8 +33,8 @@ export function ensureQuietStartup(cwd: string): boolean {
 	return changed;
 }
 
-/** Wires the splash header component factory via ctx.ui.setHeader, seeds shared state (loaded skills/extensions/context/prompts/shortcuts, system prompt size, background color and gradient animation from preferences), and starts the tagline reveal and gradient animation tickers when enabled. */
-export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext) {
+/** Wires the splash header, seeds shared state, and starts the configured reveal/gradient tickers. */
+export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext): void {
 	try {
 		({ skills: state.loadedSkills, extensions: state.loadedExtensions, context: state.loadedContext, prompts: state.loadedPrompts, shortcuts: state.loadedShortcuts } = getLoadedHeaderItems(pi, ctx.cwd, ctx.isProjectTrusted()));
 	} catch { /* discovery is display-only; never abort the startup */ }
@@ -41,6 +43,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext) {
 	state.gradientAnimation = prefs.gradientAnimation;
 	ctx.ui.setHeader((tui: TUI, theme: Theme) => {
 		headerRenderState.requestRender = () => tui.requestRender();
+		changesRenderState.requestRender = () => tui.requestRender();
 		// force=true resets the differential renderer and repaints from a cleared screen
 		// (the TUI emits \x1b[2J\x1b[H\x1b[3J before redrawing all content at the top).
 		headerRenderState.forceRedraw = () => tui.requestRender(true);
@@ -52,11 +55,13 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext) {
 		let cachedBackground: BackgroundColor | undefined = undefined;
 		let cachedAnimation: GradientAnimation | undefined = undefined;
 		let cachedAnimTick = -1;
-		let cachedLines: string[] = [];
+		let cachedSplashLines: string[] = [];
+		let cachedChangesKey = "";
+		let cachedChangesLines: string[] = [];
 		let cachedRepaintTagline: (() => { row: number; line: string }) | undefined = undefined;
 		let cachedRepaintBackdrop: ((timeMs: number) => string[]) | undefined = undefined;
 		const component = {
-			render: (width: number) => {
+			render: (width: number): string[] => {
 				const rows = tui.terminal.rows;
 				const modelKey = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "";
 				const structural = width !== cachedWidth || rows !== cachedRows || modelKey !== cachedModelKey
@@ -72,32 +77,43 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext) {
 					cachedAnimation = state.gradientAnimation;
 					cachedAnimTick = gradientAnimation.tick;
 					const parts = buildHeaderParts(width, rows, theme, state.loadedContext, state.loadedSkills, state.loadedExtensions, ctx.model ? { id: ctx.model.id, provider: ctx.model.provider } : undefined, state.systemPromptSize, state.backgroundColor, state.gradientAnimation, gradientAnimation.timeMs, state.loadedPrompts, state.loadedShortcuts);
-					cachedLines = parts.lines;
+					cachedSplashLines = parts.lines;
 					cachedRepaintTagline = parts.repaintTagline;
 					cachedRepaintBackdrop = parts.repaintBackdrop;
-					state.splashRows = cachedLines.length;
+					cachedChangesKey = "";
+					cachedChangesLines = [];
 				} else {
 					if (gradientAnimation.tick !== cachedAnimTick) {
-						// Animation tick with nothing structural changed: repaint the rows, keep the layout.
+						// Animation tick with nothing structural changed: repaint only the splash rows.
 						cachedAnimTick = gradientAnimation.tick;
-						if (cachedRepaintBackdrop) cachedLines = cachedRepaintBackdrop(gradientAnimation.timeMs);
+						if (cachedRepaintBackdrop) cachedSplashLines = cachedRepaintBackdrop(gradientAnimation.timeMs);
 					}
 					if (taglineReveal.tick !== cachedTick) {
 						// Reveal tick with nothing structural changed: restyle only the tagline row.
 						cachedTick = taglineReveal.tick;
 						if (cachedRepaintTagline) {
 							const { row, line } = cachedRepaintTagline();
-							if (row >= 0 && row < cachedLines.length) {
-								// Fresh array with one row replaced, so the differential renderer sees the change.
-								cachedLines = cachedLines.slice();
-								cachedLines[row] = line;
+							if (row >= 0 && row < cachedSplashLines.length) {
+								cachedSplashLines = cachedSplashLines.slice();
+								cachedSplashLines[row] = line;
 							}
 						}
 					}
 				}
-				return cachedLines;
+
+				const splashRows = cachedSplashLines.length;
+				const reserve = prefs.menuGate === "on" ? gateMenuRows(rows) : EDITOR_RESERVED_ROWS;
+				const changesVersion = state.changes?.version ?? -1;
+				const changesKey = `${width}:${rows}:${splashRows}:${changesVersion}`;
+				if (changesKey !== cachedChangesKey) {
+					cachedChangesKey = changesKey;
+					cachedChangesLines = renderChangesBlock(theme, state.changes, width, Math.max(0, rows - splashRows - reserve));
+				}
+				const combined = cachedChangesLines.length > 0 ? [...cachedSplashLines, ...cachedChangesLines] : cachedSplashLines;
+				state.splashRows = combined.length;
+				return combined;
 			},
-			invalidate() {
+			invalidate(): void {
 				cachedWidth = -1;
 				cachedRows = -1;
 				cachedModelKey = "";
@@ -106,6 +122,9 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext) {
 				cachedBackground = undefined;
 				cachedAnimation = undefined;
 				cachedAnimTick = -1;
+				cachedSplashLines = [];
+				cachedChangesKey = "";
+				cachedChangesLines = [];
 				cachedRepaintTagline = undefined;
 				cachedRepaintBackdrop = undefined;
 			},

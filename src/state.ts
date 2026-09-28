@@ -1,6 +1,7 @@
 
 import type { BackgroundColor, GradientAnimation } from "./color.ts";
 import type { ShortcutHint } from "./discovery.ts";
+import type { ChangesPresentation } from "./changes-summary.ts";
 
 /**
  * Module-scoped state that lives for the lifetime of the extension process (not per-session).
@@ -19,8 +20,12 @@ export const state = {
 	/** Compact startup shortcut hints with effective keybindings. */
 	loadedShortcuts: [] as ShortcutHint[],
 	systemPromptSize: undefined as number | undefined,
-	/** Rows the splash header last rendered; the gate menu centers itself in the space below it. */
+	/** Rows the splash/header block last rendered; the gate menu centers itself below it. */
 	splashRows: 0,
+	/** Published startup changes listing/summary, or null before a dirty repository is found. */
+	changes: null as ChangesPresentation | null,
+	/** Guards the one startup collection attempt for the current extension process. */
+	changesStarted: false,
 	/** Current render-time splash backdrop, seeded from preferences and updated immediately on apply. */
 	backgroundColor: "rainbow" as BackgroundColor,
 	/** Current render-time backdrop animation, seeded from preferences and updated immediately on apply. */
@@ -39,4 +44,9 @@ export const headerRenderState = {
 	requestRender: null as (() => void) | null,
 	/** Clears the terminal (screen + scrollback) and repaints all TUI content from the top row. */
 	forceRedraw: null as (() => void) | null,
+};
+
+/** Changes-only redraw callback; kept apart so it never signals that a splash is wired. */
+export const changesRenderState = {
+	requestRender: null as (() => void) | null,
 };

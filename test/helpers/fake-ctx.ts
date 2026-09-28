@@ -1,6 +1,6 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import type { Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, Model, SimpleStreamOptions, StopReason } from "@earendil-works/pi-ai";
 
 export interface FakeCtxBag {
 	theme: Theme;
@@ -12,6 +12,8 @@ export interface FakeCtxBag {
 	mode: string;
 	hasUI: boolean;
 	projectTrusted: boolean;
+	streamSimple: (model: Model<any>, context: Context, options?: SimpleStreamOptions) => Promise<AssistantMessage>;
+	streamCalls: { model: Model<any>; context: Context; options?: SimpleStreamOptions }[];
 }
 
 export interface FakeCtxHarness {
@@ -24,6 +26,7 @@ export interface FakeCtxHarness {
 	/** Components created through ui.custom, in creation order. */
 	customComponents: Component[];
 	shutdownCount: number;
+	streamCalls: { model: Model<any>; context: Context; options?: SimpleStreamOptions }[];
 }
 
 export interface FakeCtxOptions {
@@ -38,6 +41,7 @@ export interface FakeCtxOptions {
 	mode?: string;
 	hasUI?: boolean;
 	projectTrusted?: boolean;
+	streamSimple?: (model: Model<any>, context: Context, options?: SimpleStreamOptions) => Promise<AssistantMessage>;
 }
 
 /** Implements only the ExtensionContext surface the extension touches. */
@@ -52,6 +56,10 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 		mode: options.mode ?? "tui",
 		hasUI: options.hasUI ?? true,
 		projectTrusted: options.projectTrusted ?? false,
+		streamSimple: options.streamSimple ?? (async () => {
+			throw new Error("no stream configured");
+		}),
+		streamCalls: [],
 	};
 	const harness = {
 		bag,
@@ -61,6 +69,7 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 		setFooterCalls: [],
 		customComponents: [],
 		shutdownCount: 0,
+		streamCalls: bag.streamCalls,
 	} as unknown as FakeCtxHarness;
 
 	const ui = {
@@ -83,6 +92,7 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 				keybindings: unknown,
 				done: (result: T) => void,
 			) => Component,
+			_options?: unknown,
 		): Promise<T> {
 			return new Promise<T>((resolve) => {
 				const component = factory(options.tui, bag.theme, {} as never, resolve);
@@ -114,6 +124,10 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 			getAvailable: () => bag.models,
 			find: (provider: string, id: string) =>
 				bag.models.find((m) => m.provider === provider && m.id === id),
+			streamSimple: (model: Model<any>, context: Context, options?: SimpleStreamOptions) => {
+				bag.streamCalls.push({ model, context, options });
+				return { result: () => bag.streamSimple(model, context, options) };
+			},
 		},
 		get model() {
 			return bag.model;
@@ -147,4 +161,19 @@ export function makeModel(provider: string, id: string): Model<any> {
 		contextWindow: 128000,
 		maxTokens: 8192,
 	} as unknown as Model<any>;
+}
+
+/** Minimal assistant response fixture for summary-stream tests. */
+export function makeAssistantMessage(text: string, stopReason: StopReason = "stop", errorMessage?: string): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "text", text }],
+		api: "openai-completions",
+		provider: "test",
+		model: "test-model",
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason,
+		errorMessage,
+		timestamp: Date.now(),
+	} as unknown as AssistantMessage;
 }

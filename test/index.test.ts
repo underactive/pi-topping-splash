@@ -1,19 +1,24 @@
 import assert from "node:assert/strict";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
 import piStartupGreeter from "../index.ts";
 import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
+import { summarizeChanges } from "../src/changes-summary.ts";
 import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
 import { stopTaglineReveal, taglineReveal } from "../src/reveal.ts";
 import { headerRenderState, state } from "../src/state.ts";
+import { sanitizeTuiText } from "../src/text.ts";
 import { setArgv, setEnv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
-import { createFakeCtx, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
-import { createFakePi, type FakePiHarness } from "./helpers/fake-api.ts";
+import { createFakeCtx, makeAssistantMessage, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
+import { createFakePi, type FakePiBag, type FakePiHarness } from "./helpers/fake-api.ts";
 import { createFakeTui, type FakeTuiHarness } from "./helpers/fake-tui.ts";
 import { KEY } from "./helpers/keys.ts";
 import { resetModuleState } from "./helpers/reset.ts";
 import { bootstrapGlobalTheme, makeTheme } from "./helpers/theme.ts";
+import { deferred } from "./helpers/deferred.ts";
+import { initRepo } from "./helpers/git.ts";
 import { until } from "./helpers/wait.ts";
 
 bootstrapGlobalTheme();
@@ -41,20 +46,67 @@ interface Wired {
 	tui: FakeTuiHarness;
 }
 
-function wire(options: { mode?: string; hasUI?: boolean } = {}): Wired {
-	const tui = createFakeTui({ rows: 40, columns: 100 });
+type TestModel = ReturnType<typeof makeModel>;
+type SummaryResponder = NonNullable<Parameters<typeof createFakeCtx>[0]["streamSimple"]>;
+
+interface WireOptions {
+	mode?: string;
+	hasUI?: boolean;
+	projectTrusted?: boolean;
+	cwd?: string;
+	rows?: number;
+	model?: TestModel | null;
+	models?: TestModel[];
+	streamSimple?: SummaryResponder;
+	execHandler?: FakePiBag["execHandler"];
+}
+
+function wire(options: WireOptions = {}): Wired {
+	const tui = createFakeTui({ rows: options.rows ?? 40, columns: 100 });
+	const model = options.model === null ? undefined : options.model ?? makeModel("anthropic", "claude-opus-4");
+	const models = options.models ?? (model ? [model] : []);
 	const ctx = createFakeCtx({
-		cwd: env.cwd,
+		cwd: options.cwd ?? env.cwd,
 		theme: makeTheme(),
 		tui: tui.tui,
-		model: makeModel("anthropic", "claude-opus-4"),
+		model,
+		models,
+		streamSimple: options.streamSimple,
 		systemPrompt: "p".repeat(2000),
 		mode: options.mode ?? "tui",
 		hasUI: options.hasUI ?? true,
+		projectTrusted: options.projectTrusted ?? false,
 	});
-	const pi = createFakePi({ thinkingLevel: "medium" });
+	const pi = createFakePi({ thinkingLevel: "medium", execHandler: options.execHandler });
 	piStartupGreeter(pi.pi);
 	return { pi, ctx, tui };
+}
+
+const DIRTY_STATUS = "?? added.ts\0 M changed.ts\0 D deleted.ts\0";
+
+function scriptedGit(root: string, status: string | null): FakePiBag["execHandler"] {
+	return (_command, args) => {
+		if (args.includes("rev-parse")) {
+			return status === null
+				? { stdout: "", stderr: "not a repository", code: 128, killed: false }
+				: { stdout: `${root}\n`, stderr: "", code: 0, killed: false };
+		}
+		if (args.includes("status")) return { stdout: status ?? "", stderr: "", code: 0, killed: false };
+		if (args.includes("--numstat")) return { stdout: "1\t1\tchanged.ts\0", stderr: "", code: 0, killed: false };
+		if (args.includes("changed.ts")) return { stdout: "@@\n+changed\n", stderr: "", code: 0, killed: false };
+		return { stdout: "", stderr: "", code: 0, killed: false };
+	};
+}
+
+function mountedHeader(wired: Wired, index = 0): { render(width: number): string[] } {
+	const factory = wired.ctx.setHeaderCalls[index] as (tui: unknown, theme: unknown) => { render(width: number): string[] };
+	return factory(wired.tui.tui, makeTheme());
+}
+
+async function waitForSummary(wired: Wired): Promise<void> {
+	await until(() => state.changes !== null);
+	await until(() => wired.ctx.streamCalls.length > 0 || state.changes?.summary.status === "failed");
+	assert.ok(state.changes, "dirty status must publish a presentation");
 }
 
 function startup(wired: Wired, reason = "startup"): Promise<void> {
@@ -81,10 +133,10 @@ async function persist(target: Partial<SplashPreferences>): Promise<void> {
 }
 
 describe("registration (I-01)", () => {
-	it("registers no flags, three handlers and the topping-splash-settings command", () => {
+	it("registers no flags, four handlers and the topping-splash-settings command", () => {
 		const { pi } = wire();
 		assert.deepEqual(pi.registeredFlags, [], "the slash command is the only toggle — no CLI flags");
-		for (const event of ["model_select", "before_agent_start", "session_start"]) {
+		for (const event of ["model_select", "before_agent_start", "session_shutdown", "session_start"]) {
 			assert.ok(pi.handlers.has(event), `handler for ${event}`);
 		}
 		assert.ok(pi.commands.has("topping-splash-settings"));
@@ -152,6 +204,8 @@ describe("session_start gating (I-02, I-03, I-10)", () => {
 		(wired.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput("\x1b");
 		await emitted;
 		assert.equal(wired.ctx.setHeaderCalls.length, 2, "splash header swapped for an empty one");
+		const emptyFactory = wired.ctx.setHeaderCalls[1] as (tui: unknown, theme: unknown) => { render(width: number): string[] };
+		assert.deepEqual(emptyFactory(wired.tui.tui, makeTheme()).render(100), []);
 		assert.equal(headerRenderState.requestRender, null, "render callbacks released");
 		assert.equal(headerRenderState.invalidate, null);
 	});
@@ -298,6 +352,297 @@ describe("commands (I-06, I-07)", () => {
 		assert.ok(wired.ctx.notifications.some((n) => n.type === "error"), "user notified TUI is required");
 		assert.equal(wired.ctx.customComponents.length, 0, "no menu shown");
 		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false, "no file written");
+	});
+});
+
+describe("startup changes settings (I-18)", () => {
+	it("toggles the feature at cursor 4 and persists a selected summary model", async () => {
+		const wired = wire();
+		wired.ctx.bag.models.push(makeModel("provider", "fast"));
+		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
+		const menu = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		for (let index = 0; index < 4; index++) menu.handleInput(KEY.down);
+		menu.handleInput(KEY.space);
+		menu.handleInput(KEY.down);
+		menu.handleInput(KEY.space);
+		await until(() => wired.ctx.customComponents.length >= 2);
+		const picker = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+		for (const character of "provider/fast") picker.handleInput(character);
+		picker.handleInput(KEY.enter);
+		await until(() => wired.ctx.customComponents.length >= 3);
+		const reopened = wired.ctx.customComponents.at(-1) as { render(width: number): string[]; handleInput(data: string): void };
+		assert.ok(reopened.render(80).map(sanitizeTuiText).join("\n").includes("provider/fast"));
+		reopened.handleInput(KEY.enter);
+		await handlerPromise;
+		const prefs = readPreferences();
+		assert.equal(prefs.changesSummary, "on");
+		assert.deepEqual(prefs.changesSummaryModel, { provider: "provider", id: "fast" });
+	});
+
+	it("picker Escape keeps the prior value and menu Escape writes nothing", async () => {
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "on", changesSummaryModel: { provider: "provider", id: "fast" } });
+		const wired = wire();
+		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
+		const menu = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		for (let index = 0; index < 5; index++) menu.handleInput(KEY.down);
+		menu.handleInput(KEY.space);
+		await until(() => wired.ctx.customComponents.length >= 2);
+		const picker = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+		picker.handleInput(KEY.esc);
+		await until(() => wired.ctx.customComponents.length >= 3);
+		const reopened = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+		reopened.handleInput(KEY.esc);
+		await handlerPromise;
+		assert.deepEqual(readPreferences().changesSummaryModel, { provider: "provider", id: "fast" });
+	});
+});
+
+describe("startup changes integration (AC2-AC8)", () => {
+	function changesPreferences(menuGate: "on" | "off" = "off", changesSummaryModel?: SplashPreferences["changesSummaryModel"]): void {
+		writePreferences({
+			menuGate,
+			taglineReveal: "off",
+			backgroundColor: "rainbow",
+			gradientAnimation: "off",
+			changesSummary: "on",
+			changesSummaryModel,
+		});
+	}
+
+	it("does not collect disabled dirty changes or render a block", async () => {
+		writePreferences({ menuGate: "off", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
+		const wired = wire({ projectTrusted: true, execHandler: scriptedGit(env.cwd, DIRTY_STATUS) });
+		await startup(wired);
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(wired.pi.execCalls.length, 0, "disabled startup must not run git");
+		assert.equal(wired.ctx.streamCalls.length, 0, "disabled startup must not call a model");
+		const header = mountedHeader(wired);
+		assert.equal(state.changes, null);
+		assert.ok(!header.render(100).map(sanitizeTuiText).join("\n").includes("[uncommitted]"));
+	});
+
+	it("stays silent for clean, empty, non-repository, and untrusted projects", async () => {
+		const cleanRoot = join(env.cwd, "clean-repository");
+		const emptyRoot = join(env.cwd, "empty-repository");
+		mkdirSync(cleanRoot, { recursive: true });
+		mkdirSync(emptyRoot, { recursive: true });
+		initRepo(cleanRoot, { "tracked.txt": "baseline\n" });
+		initRepo(emptyRoot, {});
+		const cases: { label: string; cwd: string; root: string; status: string | null; trusted: boolean; expectedGitCalls: number }[] = [
+			{ label: "clean repository", cwd: cleanRoot, root: cleanRoot, status: "", trusted: true, expectedGitCalls: 2 },
+			{ label: "empty repository", cwd: emptyRoot, root: emptyRoot, status: "", trusted: true, expectedGitCalls: 2 },
+			{ label: "non-repository directory", cwd: join(env.cwd, "not-a-repository"), root: join(env.cwd, "not-a-repository"), status: null, trusted: true, expectedGitCalls: 1 },
+			{ label: "untrusted project", cwd: env.cwd, root: env.cwd, status: DIRTY_STATUS, trusted: false, expectedGitCalls: 0 },
+		];
+		for (const [index, testCase] of cases.entries()) {
+			if (index > 0) resetModuleState();
+			changesPreferences();
+			const wired = wire({ cwd: testCase.cwd, projectTrusted: testCase.trusted, execHandler: scriptedGit(testCase.root, testCase.status) });
+			await startup(wired);
+			await until(() => wired.pi.execCalls.length >= testCase.expectedGitCalls);
+			const header = mountedHeader(wired);
+			const first = header.render(100);
+			const second = header.render(100);
+			assert.deepEqual(second, first, testCase.label);
+			assert.equal(state.changes, null, testCase.label);
+			assert.equal(wired.ctx.streamCalls.length, 0, testCase.label);
+			assert.ok(!first.map(sanitizeTuiText).join("\n").includes("[uncommitted]"), testCase.label);
+		}
+	});
+
+	it("publishes dirty paths while the gate is open, then fills the same block", async () => {
+		changesPreferences("on");
+		const response = deferred<ReturnType<typeof makeAssistantMessage>>();
+		const wired = wire({
+			projectTrusted: true,
+			execHandler: scriptedGit(env.cwd, DIRTY_STATUS),
+			streamSimple: async () => response.promise,
+		});
+		const emitted = startup(wired);
+		await until(() => wired.ctx.customComponents.length > 0);
+		assert.equal(wired.ctx.customComponents.length, 1, "gate mounts without waiting for the model");
+		await waitForSummary(wired);
+		const header = mountedHeader(wired);
+		const pendingText = header.render(100).map(sanitizeTuiText).join("\n");
+		assert.ok(pendingText.includes("+ added.ts"), pendingText);
+		assert.ok(pendingText.includes("~ changed.ts"), pendingText);
+		assert.ok(pendingText.includes("- deleted.ts"), pendingText);
+		assert.ok(pendingText.includes("summarizing with anthropic/claude-opus-4"), pendingText);
+		response.resolve(makeAssistantMessage("The changes add, modify, and delete startup files."));
+		await until(() => state.changes?.summary.status === "done");
+		const doneText = header.render(100).map(sanitizeTuiText).join("\n");
+		assert.ok(doneText.includes("The changes add, modify"), doneText);
+		assert.equal((doneText.match(/\[uncommitted\]/g) ?? []).length, 1);
+		(wired.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput(KEY.esc);
+		await emitted;
+	});
+
+	it("resolves configured, session, missing-configured, and no-model cases", async () => {
+		const session = makeModel("provider", "session");
+		const configured = makeModel("provider", "configured");
+		const cases: {
+			label: string;
+			model: TestModel | null;
+			models: TestModel[];
+			configured?: SplashPreferences["changesSummaryModel"];
+			expected?: TestModel;
+		}[] = [
+			{ label: "configured model", model: session, models: [session, configured], configured: { provider: "provider", id: "configured" }, expected: configured },
+			{ label: "session model", model: session, models: [session], expected: session },
+			{ label: "missing configured model falls back", model: session, models: [session], configured: { provider: "missing", id: "model" }, expected: session },
+			{ label: "no models", model: null, models: [] },
+		];
+		for (const [index, testCase] of cases.entries()) {
+			if (index > 0) resetModuleState();
+			changesPreferences("off", testCase.configured);
+			const wired = wire({
+				projectTrusted: true,
+				model: testCase.model,
+				models: testCase.models,
+				execHandler: scriptedGit(env.cwd, DIRTY_STATUS),
+				streamSimple: async () => makeAssistantMessage("ok"),
+			});
+			await startup(wired);
+			await until(() => wired.ctx.streamCalls.length > 0 || state.changes?.summary.status === "failed");
+			assert.ok(state.changes, testCase.label);
+			if (testCase.expected) {
+				assert.equal(wired.ctx.streamCalls.length, 1, testCase.label);
+				assert.equal(wired.ctx.streamCalls[0]?.model, testCase.expected, testCase.label);
+			} else {
+				assert.equal(wired.ctx.streamCalls.length, 0, testCase.label);
+				assert.equal(state.changes?.summary.status, "failed", testCase.label);
+				assert.ok(mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n").includes("summary unavailable: no model selected"));
+			}
+		}
+	});
+
+	it("keeps headings and file rows idempotent across redraws and repeated starts", async () => {
+		changesPreferences();
+		const response = deferred<ReturnType<typeof makeAssistantMessage>>();
+		const wired = wire({ projectTrusted: true, execHandler: scriptedGit(env.cwd, DIRTY_STATUS), streamSimple: async () => response.promise });
+		await startup(wired);
+		const header = mountedHeader(wired);
+		await waitForSummary(wired);
+		const assertStable = () => {
+			const text = header.render(100).map(sanitizeTuiText).join("\n");
+			assert.equal((text.match(/\[uncommitted\]/g) ?? []).length, 1);
+			for (const path of ["added.ts", "changed.ts", "deleted.ts"]) {
+				assert.equal((text.match(new RegExp(path, "g")) ?? []).length, 1, path);
+			}
+		};
+		for (let index = 0; index < 20; index++) assertStable();
+		response.resolve(makeAssistantMessage("Summary complete."));
+		await until(() => state.changes?.summary.status === "done");
+		for (let index = 0; index < 20; index++) assertStable();
+		const gitCalls = wired.pi.execCalls.length;
+		const streamCalls = wired.ctx.streamCalls.length;
+		await startup(wired, "startup");
+		await startup(wired, "reload");
+		assert.equal(wired.pi.execCalls.length, gitCalls);
+		assert.equal(wired.ctx.streamCalls.length, streamCalls);
+	});
+
+	it("keeps the listing on model failures and reports each failure reason", async () => {
+		const cases: { label: string; streamSimple: SummaryResponder }[] = [
+			{ label: "rejection", streamSimple: async () => { throw new Error("provider exploded"); } },
+			{ label: "error stop", streamSimple: async () => makeAssistantMessage("", "error", "provider refused") },
+			{ label: "aborted stop", streamSimple: async () => makeAssistantMessage("", "aborted") },
+			{ label: "empty text", streamSimple: async () => makeAssistantMessage("") },
+		];
+		for (const [index, testCase] of cases.entries()) {
+			if (index > 0) resetModuleState();
+			changesPreferences();
+			const wired = wire({ projectTrusted: true, execHandler: scriptedGit(env.cwd, DIRTY_STATUS), streamSimple: testCase.streamSimple });
+			await startup(wired);
+			await until(() => state.changes?.summary.status === "failed");
+			const text = mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n");
+			assert.ok(text.includes("[uncommitted]"), testCase.label);
+			assert.ok(text.includes("summary unavailable:"), testCase.label);
+		}
+	});
+
+	it("maps an aborted request to cancellation and an aborted timeout to timeout", async () => {
+		const model = makeModel("provider", "model");
+		const ctx = createFakeCtx({ cwd: env.cwd, theme: makeTheme(), tui: createFakeTui().tui, model, models: [model], streamSimple: async () => makeAssistantMessage("", "aborted") });
+		const prompt = { systemPrompt: "system", text: "text" };
+		const cancelled = await summarizeChanges(ctx.ctx, model, prompt, new AbortController().signal);
+		assert.deepEqual(cancelled, { status: "failed", reason: "cancelled" });
+
+		const originalTimeout = Object.getOwnPropertyDescriptor(AbortSignal, "timeout");
+		assert.ok(originalTimeout, "AbortSignal.timeout must exist");
+		try {
+			Object.defineProperty(AbortSignal, "timeout", {
+				configurable: true,
+				value: () => {
+					const controller = new AbortController();
+					controller.abort();
+					return controller.signal;
+				},
+			});
+			const timedOut = await summarizeChanges(ctx.ctx, model, prompt, new AbortController().signal);
+			assert.deepEqual(timedOut, { status: "failed", reason: "timed out" });
+		} finally {
+			Object.defineProperty(AbortSignal, "timeout", originalTimeout);
+		}
+	});
+
+	it("aborts the provider signal on session shutdown", async () => {
+		changesPreferences();
+		const response = deferred<ReturnType<typeof makeAssistantMessage>>();
+		let requestSignal: AbortSignal | undefined;
+		const wired = wire({
+			projectTrusted: true,
+			execHandler: scriptedGit(env.cwd, DIRTY_STATUS),
+			streamSimple: async (_model, _context, options?: SimpleStreamOptions) => {
+				requestSignal = options?.signal;
+				return response.promise;
+			},
+		});
+		await startup(wired);
+		await waitForSummary(wired);
+		assert.ok(requestSignal);
+		await wired.pi.emit("session_shutdown", { type: "session_shutdown" }, wired.ctx.ctx);
+		assert.equal(requestSignal?.aborted, true);
+		response.resolve(makeAssistantMessage("late result"));
+		await new Promise((resolve) => setImmediate(resolve));
+	});
+
+	it("keeps the changes-only header after gate proceed", async () => {
+		changesPreferences("on");
+		const response = deferred<ReturnType<typeof makeAssistantMessage>>();
+		const wired = wire({ projectTrusted: true, execHandler: scriptedGit(env.cwd, DIRTY_STATUS), streamSimple: async () => response.promise });
+		const emitted = startup(wired);
+		await until(() => wired.ctx.customComponents.length > 0);
+		await waitForSummary(wired);
+		(wired.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput(KEY.esc);
+		await emitted;
+		assert.equal(wired.ctx.setHeaderCalls.length, 2);
+		const slim = mountedHeader(wired, 1);
+		assert.ok(slim.render(100).map(sanitizeTuiText).join("\n").includes("[uncommitted]"));
+		assert.equal(headerRenderState.requestRender, null, "slim header must not masquerade as splash wiring");
+		response.resolve(makeAssistantMessage("post-gate summary"));
+		await until(() => state.changes?.summary.status === "done");
+		assert.ok(slim.render(100).map(sanitizeTuiText).join("\n").includes("post-gate summary"));
+	});
+
+	it("clears the summary model to the session-model option", async () => {
+		const selected = { provider: "provider", id: "fast" };
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "on", changesSummaryModel: selected });
+		const wired = wire({ models: [makeModel("provider", "fast")] });
+		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
+		const menu = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		for (let index = 0; index < 5; index++) menu.handleInput(KEY.down);
+		menu.handleInput(KEY.space);
+		await until(() => wired.ctx.customComponents.length >= 2);
+		const picker = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+		picker.handleInput(KEY.up);
+		picker.handleInput(KEY.enter);
+		await until(() => wired.ctx.customComponents.length >= 3);
+		const reopened = wired.ctx.customComponents.at(-1) as { render(width: number): string[]; handleInput(data: string): void };
+		assert.ok(reopened.render(80).map(sanitizeTuiText).join("\n").includes("session model"));
+		reopened.handleInput(KEY.enter);
+		await handlerPromise;
+		assert.equal(readPreferences().changesSummaryModel, undefined);
 	});
 });
 
@@ -556,7 +901,7 @@ describe("gradient animation setting (I-17)", () => {
 	});
 
 	it("the first agent turn stops the ticker; a later apply persists but cannot restart it", async () => {
-		writePreferences({ menuGate: "off", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow" });
+		writePreferences({ menuGate: "off", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow", changesSummary: "off" });
 		const wired = wire();
 		await startup(wired);
 		const factory = wired.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
@@ -572,7 +917,7 @@ describe("gradient animation setting (I-17)", () => {
 	});
 
 	it("startup with an animated preference runs the ticker; the gate's proceed teardown stops it", async () => {
-		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow" });
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow", changesSummary: "off" });
 		const wired = wire();
 		const emitted = startup(wired);
 		await until(() => wired.ctx.customComponents.length > 0);

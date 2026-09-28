@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Optional startup summary of uncommitted changes beneath the splash: an immediate added/changed/deleted listing followed by an asynchronous model summary, with an off-by-default settings toggle and summary-model picker.
+
 ## [0.3.2] - 2026-09-20
 
 ### Changed

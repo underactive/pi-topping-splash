@@ -1,4 +1,5 @@
-import { headerRenderState, state } from "../../src/state.ts";
+import { changesRenderState, headerRenderState, state } from "../../src/state.ts";
+import { abortChangesSummary } from "../../src/changes-summary.ts";
 import { gradientAnimation, stopGradientAnimation } from "../../src/animate.ts";
 import {
 	REVEAL_BAND_HALF,
@@ -13,6 +14,7 @@ import {
  * per file, so cross-file isolation is free, but within a file every test must start clean.
  */
 export function resetModuleState(): void {
+	abortChangesSummary();
 	stopTaglineReveal();
 	stopGradientAnimation();
 	gradientAnimation.lastTickAt = 0;
@@ -35,6 +37,9 @@ export function resetModuleState(): void {
 	state.loadedShortcuts = [];
 	state.systemPromptSize = undefined;
 	state.splashRows = 0;
+	state.changes = null;
+	state.changesStarted = false;
+	changesRenderState.requestRender = null;
 	state.backgroundColor = "rainbow";
 	state.gradientAnimation = "off";
 	state.conversationStarted = false;

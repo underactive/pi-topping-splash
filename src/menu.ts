@@ -6,8 +6,9 @@
  * contract and `ctx.ui.custom()` overlay API.
  *
  * Renders a titled box containing one or more sections of boolean toggle or
- * multi-value cycle items. Boolean rows space-toggle ON/OFF; cycle rows step
- * through their values with the left/right arrows, e.g.:
+ * multi-value cycle or model-pick items. Boolean rows space-toggle ON/OFF; cycle rows step
+ * through their values with the left/right arrows, and pick rows hand control to a separate
+ * selector on Space, e.g.:
  *
  *   ╔═[ Pi Topping: Settings ]═════════════════════╗
  *   ╟─ Decorations ────────────────────────────────╢
@@ -15,7 +16,7 @@
  *   ║    [ ] "Working..." text shimmer     OFF      ║
  *   ║    [■] Background color        ‹ rainbow ›    ║
  *   ╟──────────────────────────────────────────────╢
- *   ║  ↑↓ move  ␣ toggle  ⏎ apply  esc cancel       ║
+ *   ║  ↑↓ move  ␣ toggle/pick  ⏎ apply  esc cancel ║
  *   ╚═════════════════════════════════════[ 1/3 ]═╝
  *
  * Intended to be reused by any extension that needs a simple modal toggle
@@ -33,6 +34,8 @@ export interface MenuItem {
 	value: MenuValue;
 	/** Values cycled with left/right arrows. Omit for a boolean space-toggle. */
 	cycleValues?: readonly string[];
+	/** Space resolves the menu with this item id so the caller can open a dedicated picker. */
+	pick?: boolean;
 }
 
 export interface MenuSection {
@@ -44,11 +47,15 @@ export interface MenuConfig {
 	title: string;
 	sections: MenuSection[];
 	hints?: string[];
+	/** Item id to select when a staged menu is reopened. */
+	initialCursor?: string;
 }
 
 export interface MenuResult<T> {
 	applied: boolean;
 	values: T;
+	/** Set when Space activated a pick row instead of applying the menu. */
+	picked?: string;
 }
 
 const DEFAULT_HINTS = ["\u2191\u2193 move", "\u2423 toggle", "\u23ce apply", "esc cancel"];
@@ -107,6 +114,8 @@ export class MenuComponent implements Component {
 				this.flat.push({ id: item.id, label: item.label, cycleValues: item.cycleValues, item, sectionIndex });
 			}
 		}
+		const initialIndex = config.initialCursor ? this.flat.findIndex((item) => item.id === config.initialCursor) : -1;
+		if (initialIndex >= 0) this.cursor = initialIndex;
 		this.initialValues = { ...this.values };
 	}
 
@@ -143,6 +152,10 @@ export class MenuComponent implements Component {
 			[Key.right]: () => this.cycleCurrentValue(1),
 			[Key.space]: () => {
 				const item = this.flat[this.cursor]!;
+				if (item.item.pick) {
+					this.done({ applied: false, values: { ...this.values }, picked: item.id });
+					return;
+				}
 				if (!item.cycleValues) this.values[item.id] = !this.values[item.id] as boolean;
 				this.invalidate();
 			},
@@ -352,8 +365,8 @@ export class MenuComponent implements Component {
 		const marker = selected ? "\u276f" : " ";
 		const markerColored = selected ? th.fg("accent", marker) : marker;
 
-		if (item.cycleValues) {
-			const stateWord = `‹ ${value} ›`;
+		if (item.cycleValues || item.pick) {
+			const stateWord = item.pick ? `${value} ›` : `‹ ${value} ›`;
 			const maxLabelLen = Math.max(0, innerWidth - ROW_PREFIX_WIDTH - visibleWidth(stateWord) - 1);
 			const label = visibleWidth(item.label) > maxLabelLen ? truncateToWidth(item.label, maxLabelLen) : item.label;
 			const leftPlain = `  ${marker} [■] ${label}`;

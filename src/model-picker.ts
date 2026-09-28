@@ -2,10 +2,10 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { SelectList, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { SelectList, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { sanitizeTuiText } from "./text.ts";
-import { GATE_LIST_HEIGHT, fuzzyRanked, isPrintableInput } from "./gate-ui.ts";
+import { GATE_LIST_HEIGHT, fuzzyRanked, isPrintableInput, renderPopupBox } from "./gate-ui.ts";
 
 /**
  * pi's thinking-level vocabulary, kept structurally identical to agent-core's `ThinkingLevel`
@@ -26,6 +26,14 @@ export function isThinkingLevel(value: string): value is ThinkingLevel {
 export interface ModelRef {
 	provider: string;
 	id: string;
+}
+
+/** True for the persisted provider/id shape; extra properties are intentionally ignored. */
+export function isModelRef(value: unknown): value is ModelRef {
+	if (!value || typeof value !== "object") return false;
+	const candidate = value as { provider?: unknown; id?: unknown };
+	return typeof candidate.provider === "string" && candidate.provider.length > 0
+		&& typeof candidate.id === "string" && candidate.id.length > 0;
 }
 
 export function modelRefLabel(ref: ModelRef): string {
@@ -51,6 +59,93 @@ export function defaultThinkingForModel(options: ThinkingLevel[], currentLevel: 
 	if (options.includes(currentLevel)) return currentLevel;
 	if (options.includes("medium")) return "medium";
 	return options[0] ?? "medium";
+}
+
+/**
+ * Single-pane, filterable model picker used by settings rows that store a provider/id.
+ * The empty value is the explicit session-model fallback and is always offered first.
+ * Render is pure: input mutates only picker state; the owner decides when to repaint.
+ */
+export class SummaryModelPicker {
+	private readonly theme: Theme;
+	private readonly items: SelectItem[];
+	private list!: SelectList;
+	private filter = "";
+
+	constructor(theme: Theme, ctx: ExtensionContext, current?: ModelRef) {
+		this.theme = theme;
+		let refs: ModelRef[] = [];
+		try {
+			refs = availableModelRefs(ctx);
+		} catch {
+			// A registry read is display-only; the session-model option remains usable.
+		}
+		this.items = [
+			{ value: "", label: "Session model (default)" },
+			...refs.map((ref) => {
+				const value = modelRefLabel(ref);
+				return { value, label: sanitizeTuiText(value) || "(invalid model)" };
+			}),
+		];
+		this.rebuildList();
+		if (current) {
+			const index = this.items.findIndex((item) => item.value === modelRefLabel(current));
+			if (index >= 0) this.list.setSelectedIndex(index);
+		}
+	}
+
+	private rebuildList(): void {
+		const items = this.filter.trim() ? fuzzyRanked(this.items, this.filter, (item) => item.label) : this.items;
+		this.list = new SelectList(items, Math.min(Math.max(items.length, 1), GATE_LIST_HEIGHT), getSelectListTheme());
+	}
+
+	handleInput(data: string): "confirm" | "back" | undefined {
+		if (matchesKey(data, "escape")) return "back";
+		if (matchesKey(data, "return")) return this.list.getSelectedItem() ? "confirm" : undefined;
+		if (matchesKey(data, "backspace")) {
+			if (this.filter.length > 0) {
+				this.filter = this.filter.slice(0, -1);
+				this.rebuildList();
+			}
+			return undefined;
+		}
+		if (isPrintableInput(data)) {
+			this.filter += data;
+			this.rebuildList();
+			return undefined;
+		}
+		this.list.handleInput(data);
+		return undefined;
+	}
+
+	/** Returns null when the user selected the session model. */
+	getSelected(): ModelRef | null {
+		const value = this.list.getSelectedItem()?.value ?? "";
+		if (!value) return null;
+		const separator = value.indexOf("/");
+		if (separator <= 0 || separator === value.length - 1) return null;
+		return { provider: value.slice(0, separator), id: value.slice(separator + 1) };
+	}
+
+	render(width: number): string[] {
+		const bodyWidth = Math.max(1, width - 4);
+		const description = "Summarizes uncommitted changes at startup. Always called with thinking off, so pick a cheap, fast model.";
+		const filter = this.filter
+			? `${this.theme.fg("dim", "filter: ")}${this.theme.fg("text", sanitizeTuiText(this.filter))}`
+			: this.theme.fg("dim", "type to filter");
+		const body = [
+			...wrapTextWithAnsi(this.theme.fg("muted", description), bodyWidth),
+			filter,
+			...this.list.render(bodyWidth),
+			"",
+			this.theme.fg("dim", "↑↓ move · enter select · esc back"),
+		];
+		return renderPopupBox(this.theme, Math.max(width, 1), "Summary Model", body);
+	}
+
+	invalidate(): void {
+		this.list.invalidate();
+	}
 }
 
 /**

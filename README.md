@@ -21,8 +21,8 @@ Requires Node.js 22.19.0 or newer. The current release is developed and tested a
 ## Settings
 
 Run `/topping-splash-settings` (TUI mode only) or pick **Settings** in the startup gate menu
-to open a settings menu with two toggles, a background color cycle and a gradient animation
-cycle:
+to open a settings menu with two toggles, a background color cycle, a gradient animation
+cycle, and an opt-in startup changes summary:
 
 ```text
 ╔═[ Pi Topping Splash: Settings ]══════════════════════════════════════════╗
@@ -34,9 +34,13 @@ cycle:
 ║    [■] Background color                                     ‹ rainbow ›  ║
 ║    [■] Animate gradient                                         ‹ off ›  ║
 ║                                                                          ║
+╟─ Startup Changes ────────────────────────────────────────────────────────╢
+║    [ ] Summarize uncommitted changes                                  OFF ║
+║    Summary model                                      session model ›      ║
+║                                                                          ║
 ╟──────────────────────────────────────────────────────────────────────────╢
-║  ↑↓ move  ␣ toggle  ←→ cycle  ⏎ apply  esc cancel                        ║
-╚═══════════════════════════════════════════════════════════════════[ 1/4 ]╝
+║  ↑↓ move  ␣ toggle/pick  ←→ cycle  ⏎ apply  esc cancel                    ║
+╚═══════════════════════════════════════════════════════════════════[ 1/6 ]╝
 ```
 
 - **Startup gate menu** — show the startup gate menu below the splash on launch (ON by default)
@@ -56,8 +60,10 @@ cycle:
   they modulate the vertical fade. The animation runs while the splash is on screen — during
   the gate, or with the gate off until the first agent turn — then stops for the rest of the
   session, since the splash scrolls away once the conversation grows.
+- **Summarize uncommitted changes** — opt in to the startup changes block (OFF by default).
+- **Summary model** — choose a configured provider/id, or `session model` to use the active model.
 
-The gate and reveal toggles are read during startup and take effect on the next launch; the background color and gradient animation also apply immediately to an already-visible splash. All four are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless `PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (both toggles ON, background `rainbow`, animation `off`).
+The gate, reveal, changes-summary toggle, and summary-model choice are read during startup and take effect on the next launch; the background color and gradient animation also apply immediately to an already-visible splash. All six keys are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless `PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (gate/reveal ON, changes summary OFF, session model, background `rainbow`, animation `off`).
 
 ## Splash Inventory
 
@@ -70,6 +76,22 @@ The info panel lists five categories of loaded resources in startup order:
 5. **Extensions** — installed extensions with Pi's compact labels, discovered through Pi's own package-manager logic.
 
 When the panel would exceed 60% of the terminal height or any name/hint is too wide to fit, the lists collapse to a compact counts summary: `[shortcuts] 5 · [context] N · [skills] N · [prompts] N · [extensions] N`. The summary wraps onto as many lines as the panel width needs, breaking only between whole `[label] N` counts, so no count is truncated to an ellipsis.
+
+## Startup changes summary
+
+When enabled, a genuine TUI startup with the splash and a trusted project shows a bounded
+`[uncommitted]` listing beneath the splash immediately. Added, changed, and deleted paths appear
+before the model request finishes. Clean repositories, non-repository directories, disabled or
+untrusted projects produce no block and no model request. The pending line is
+`summarizing with provider/id…`; failures remain visible as `summary unavailable: <reason>` while
+the path listing stays on screen.
+
+The block survives the startup gate's **New session** choice as a slim changes-only header. The
+summary uses the session model by default, or the configured picker choice, and always requests
+with thinking off. Bounded file lists and diff excerpts are sent to the selected model provider.
+Sensitive-looking file contents are withheld and common secrets are redacted best-effort; this is
+not a guarantee, so enable the feature only when that privacy trade-off is acceptable. Pi's
+project-trust setting is also required because Git filters can execute during status/diff.
 
 ## Troubleshooting
 

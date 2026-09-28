@@ -3,12 +3,13 @@ import { headerRenderState, state } from "./src/state.ts";
 import { stopTaglineReveal } from "./src/reveal.ts";
 import { stopGradientAnimation } from "./src/animate.ts";
 import { ensureQuietStartup, installHeader } from "./src/header.ts";
+import { abortChangesSummary, installChangesHeader, startChangesSummary } from "./src/changes-summary.ts";
 import { readPreferences } from "./src/preferences.ts";
 import { GATE_DONE_ENV } from "./src/relaunch.ts";
 import { runStartupGate } from "./src/gate.ts";
 import { showSplashSettings } from "./src/settings.ts";
 
-/** Pi extension: replaces the default startup header with a full-color splash, optionally adds an interactive startup gate menu, and registers the /topping-splash-settings command. Listens to model_select (refresh prompt size), before_agent_start (stop animations on first turn), and session_start (gate the session launch). */
+/** Pi extension: replaces the default startup header with a full-color splash, optionally adds an interactive startup gate menu and an opt-in uncommitted-changes summary, and registers the /topping-splash-settings command. Listens to model_select, before_agent_start, session_shutdown (abort summary work), and session_start. */
 export default function piStartupGreeter(pi: ExtensionAPI) {
 	pi.on("model_select", (_event, ctx) => {
 		// Model rotation may change the base system prompt — refresh the size.
@@ -23,6 +24,10 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 		} catch (err) {
 			if (!(err instanceof Error && /not (?:available|ready)/i.test(err.message))) throw err;
 		}
+	});
+
+	pi.on("session_shutdown", () => {
+		abortChangesSummary();
 	});
 
 	pi.on("before_agent_start", (event) => {
@@ -61,6 +66,8 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 		// shell output.
 		installHeader(pi, ctx);
 		headerRenderState.forceRedraw?.();
+		// Start before the menuGate off-return so splash-only launches receive the same listing.
+		startChangesSummary(pi, ctx);
 
 		// Splash-only mode: keep the header wired (model/prompt-size lines keep refreshing)
 		// and open the editor beneath it. The tagline reveal stops itself when the wipe ends.
@@ -68,15 +75,18 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 
 		const resolution = await runStartupGate(pi, ctx);
 		if (resolution === "quit") {
+			stopTaglineReveal();
+			stopGradientAnimation();
 			ctx.shutdown();
 			return;
 		}
-		// "proceed" (New session / esc): swap the splash for an empty header and clear again
-		// so the session itself starts at the top of a clean screen, without the logo.
+		// "proceed" (New session / esc): stop the splash, but retain a slim changes-only header
+		// when the opt-in feature is enabled.
 		stopTaglineReveal();
 		stopGradientAnimation();
 		const clearScreen = headerRenderState.forceRedraw;
-		ctx.ui.setHeader(() => ({ render: () => [], invalidate() {} }));
+		if (readPreferences().changesSummary === "on") installChangesHeader(ctx);
+		else ctx.ui.setHeader(() => ({ render: () => [], invalidate() {} }));
 		headerRenderState.invalidate = null;
 		headerRenderState.requestRender = null;
 		headerRenderState.forceRedraw = null;

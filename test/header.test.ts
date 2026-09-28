@@ -8,9 +8,12 @@ import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type KeybindingDef
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
 import { ensureQuietStartup, installHeader, withSettings } from "../src/header.ts";
+import { installChangesHeader } from "../src/changes-summary.ts";
+import type { ChangesPresentation } from "../src/changes-summary.ts";
 import { writePreferences } from "../src/preferences.ts";
+import { gateMenuRows } from "../src/gate.ts";
 import { stopTaglineReveal, TAGLINE_PLACEHOLDER, taglineReveal } from "../src/reveal.ts";
-import { headerRenderState, state } from "../src/state.ts";
+import { changesRenderState, headerRenderState, state } from "../src/state.ts";
 import { sanitizeTuiText } from "../src/text.ts";
 import { tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { createFakeCtx, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
@@ -115,7 +118,7 @@ describe("installHeader (H-04, H-05)", () => {
 	});
 
 	it("taglineReveal:off never starts the reveal and settles the tagline on frame one (I-15)", () => {
-		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "off" });
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
 		const { component } = install();
 		assert.equal(taglineReveal.timer, null, "reveal must not start");
 		const text = component.render(120).map(sanitizeTuiText).join("\n");
@@ -178,24 +181,24 @@ describe("installHeader (H-04, H-05)", () => {
 	});
 
 	it("an animated background preference seeds state and starts the gradient ticker (H-07)", () => {
-		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "breathe" });
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "breathe", changesSummary: "off" });
 		install();
 		assert.equal(state.gradientAnimation, "breathe", "state seeded from preferences");
 		assert.notEqual(gradientAnimation.timer, null, "gradient ticker running");
 	});
 
 	it("an animated rainbow also starts the ticker; animation off never does (H-07)", () => {
-		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "breathe" });
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "breathe", changesSummary: "off" });
 		install();
 		assert.notEqual(gradientAnimation.timer, null, "rainbow animates too");
 		resetModuleState();
-		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off" });
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", changesSummary: "off" });
 		install();
 		assert.equal(gradientAnimation.timer, null, "off stays static");
 	});
 
 	it("an animation tick repaints the backdrop rows and holds the width invariant (H-07)", () => {
-		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "breathe" });
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "breathe", changesSummary: "off" });
 		const { component } = install();
 		const first = component.render(120);
 		assertLinesExact(first, 120, "initial animated frame");
@@ -205,6 +208,54 @@ describe("installHeader (H-04, H-05)", () => {
 		assertLinesExact(second, 120, "after animation tick");
 		assert.equal(second.length, first.length, "row count stable across ticks");
 		assert.notDeepEqual(second, first, "the backdrop must move");
+	});
+
+	it("appends the startup changes block, tracks total splash rows, and survives animation ticks", () => {
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "breathe", changesSummary: "on" });
+		const { component } = install();
+		const presentation: ChangesPresentation = {
+			entries: [
+				{ path: "added.ts", kind: "added", untracked: false },
+				{ path: "changed.ts", kind: "changed", untracked: false },
+				{ path: "deleted.ts", kind: "deleted", untracked: false },
+			],
+			summary: { status: "pending", modelLabel: "provider/model" },
+			version: 1,
+		};
+		state.changes = presentation;
+		const first = component.render(120);
+		assertLinesExact(first, 120, "splash + changes");
+		assert.equal(state.splashRows, first.length);
+		assert.ok(first.map(sanitizeTuiText).join("\n").includes("changed.ts"));
+		gradientAnimation.timeMs = 2000;
+		gradientAnimation.tick += 1;
+		const second = component.render(120);
+		assertLinesExact(second, 120, "animated splash + changes");
+		assert.equal(second.map(sanitizeTuiText).join("\n").split("changed.ts").length - 1, 1);
+	});
+
+	it("reserves gate rows for the changes block and keeps the changes-only header separate", () => {
+		const { tui, ctx } = install();
+		state.changes = {
+			entries: [{ path: "file.ts", kind: "changed", untracked: false }],
+			summary: { status: "failed", reason: "request failed" },
+			version: 1,
+		};
+		for (const rows of [24, 40]) {
+			(tui.tui.terminal as { rows: number }).rows = rows;
+			const factory = ctx.setHeaderCalls[0] as (tui: TUI, theme: Theme) => Component;
+			const component = factory(tui.tui, makeTheme());
+			const rendered = component.render(100);
+			assert.ok(rendered.length <= rows);
+			assert.equal(state.splashRows, rendered.length);
+			assert.ok(gateMenuRows(rows) >= 1);
+		}
+		const beforeHeader = headerRenderState.requestRender;
+		installChangesHeader(ctx.ctx);
+		const slimFactory = ctx.setHeaderCalls.at(-1) as (tui: TUI, theme: Theme) => Component;
+		slimFactory(tui.tui, makeTheme());
+		assert.equal(headerRenderState.requestRender, beforeHeader);
+		assert.notEqual(changesRenderState.requestRender, null);
 	});
 
 	it("seeds prompts and shortcuts in state, renders them in order (H-08)", () => {

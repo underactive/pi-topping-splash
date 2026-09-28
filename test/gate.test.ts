@@ -6,6 +6,7 @@ import {
 	runStartupGate,
 	sessionPreview,
 	StartupGate,
+	gateMenuRows,
 	type GateResolution,
 	type SessionListItem,
 } from "../src/gate.ts";
@@ -137,6 +138,18 @@ function popupText(harness: GateHarness, width = 80): string {
 }
 
 describe("menu (GA-04..GA-08)", () => {
+	it("gateMenuRows matches rendered height and compacts beside a changes block", () => {
+		for (const rows of [20, 24, 29, 30, 40]) {
+			state.changes = null;
+			const harness = makeGate({ rows });
+			assert.equal(gateMenuRows(rows), harness.gate.render(90).length, `rows=${rows}`);
+		}
+		state.changes = { entries: [{ path: "file.ts", kind: "changed", untracked: false }], summary: { status: "pending", modelLabel: "p/m" }, version: 1 };
+		const compact = makeGate({ rows: 40 });
+		assert.equal(gateMenuRows(40), compact.gate.render(90).length);
+		assert.equal(gateMenuRows(40), 10);
+	});
+
 	it("lists the README menu items", () => {
 		const harness = makeGate();
 		const text = menuText(harness);
