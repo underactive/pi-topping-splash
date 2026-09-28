@@ -73,5 +73,10 @@ export function renderPopupBox(theme: Theme, width: number, title: string, bodyL
 		const fitted = truncateToWidth(line, innerW);
 		return `${border("│")} ${fitted}${" ".repeat(Math.max(0, innerW - visibleWidth(fitted)))} ${border("│")}`;
 	});
-	return [top, ...rows, bottom];
+	const lines = [top, ...rows, bottom];
+	if (width >= 5) return lines;
+	// The rounded chrome needs five columns at its natural size, but callers still rely on the
+	// exact-width invariant for narrower terminals. Keep the first visible columns rather than
+	// allowing the popup to widen the terminal layout.
+	return lines.map((line) => truncateToWidth(line, Math.max(0, width), "", true));
 }

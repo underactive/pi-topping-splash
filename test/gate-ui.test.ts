@@ -117,16 +117,8 @@ describe("renderPopupBox (G-05)", () => {
 	const theme = makeTheme();
 	const body = ["hello", "a considerably longer body line that will need truncation somewhere", ""];
 
-	it("every line is exactly the requested width, for widths 5..200", () => {
-		for (let width = 5; width <= 200; width++) {
-			const lines = renderPopupBox(theme, width, "Test Title", body);
-			assertLinesExact(lines, width, `renderPopupBox(width=${width})`);
-		}
-	});
-	it.todo("FINDING F-3: widths below the 5-column chrome minimum still emit 5 columns", () => {
-		// Doc promises "exactly `width` columns wide" unconditionally; observed minimum is
-		// the bare chrome. Kept as a todo per the report-don't-reconcile protocol.
-		for (let width = 1; width <= 4; width++) {
+	it("every line is exactly the requested width, for widths 1..200", () => {
+		for (let width = 1; width <= 200; width++) {
 			const lines = renderPopupBox(theme, width, "Test Title", body);
 			assertLinesExact(lines, width, `renderPopupBox(width=${width})`);
 		}
