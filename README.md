@@ -80,9 +80,15 @@ When the panel would exceed 60% of the terminal height or any name/hint is too w
 ## Startup changes summary
 
 When enabled, a genuine TUI startup with the splash and a trusted project shows a bounded
-`[uncommitted]` listing beneath the splash immediately. Added, changed, and deleted paths appear
-before the model request finishes. Clean repositories, non-repository directories, disabled or
-untrusted projects produce no block and no model request. The pending line is
+`uncommitted` box beneath the splash immediately. Its top border carries the per-kind counts
+(`+added ~changed -deleted`, in pi-topping-statusline's git colors), and each row lists a path with
+a churn bar and its line counts against `HEAD`, which fill in just after the listing appears.
+Untracked files show `new` and binary files `bin`; narrow terminals drop the bars, then the line
+counts, then the box. If one to three rows remain below the splash, the block becomes one line:
+`● 10 uncommitted [+3 · ~4 · -3] ~ src/changes-summary.ts +12 · Refactors…` (counts, most
+changed file, and summary preview, as space permits). Added, changed, and deleted paths appear
+before the model request finishes, and the summary appears beneath the box when room permits. Clean repositories, non-repository directories, disabled
+or untrusted projects produce no block and no model request. The pending line is
 `summarizing with provider/id…`; failures remain visible as `summary unavailable: <reason>` while
 the path listing stays on screen.
 

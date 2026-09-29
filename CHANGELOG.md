@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Optional startup summary of uncommitted changes beneath the splash: an immediate added/changed/deleted listing followed by an asynchronous model summary, with an off-by-default settings toggle and summary-model picker.
+- Optional startup summary of uncommitted changes beneath the splash: an immediate boxed listing of added/changed/deleted paths, with per-kind counts in the border and per-file line counts and churn bars against `HEAD` filling in just after; short terminals show a one-line count, featured file and summary preview instead. Includes an asynchronous model summary, an off-by-default settings toggle, and a summary-model picker.
+
+### Changed
+
+- Per-file line counts in the uncommitted listing, and the `+lines` in its single-line fallback, now use
+  the theme's `text` color instead of the dimmed statusline git colors. The added half of each churn bar
+  in the uncommitted listing, and its `added` legend swatch, use the
+  theme's `text` color instead of `success`.
 
 ## [0.3.2] - 2026-09-20
 

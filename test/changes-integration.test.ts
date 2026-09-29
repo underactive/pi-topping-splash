@@ -111,7 +111,7 @@ describe("startup changes lifecycle", () => {
 		await until(() => harness.ctx.streamCalls.length === 1);
 		assert.ok(state.changes);
 		const pendingText = header.render(100).map(sanitizeTuiText).join("\n");
-		assert.match(pendingText, /\[uncommitted\]/);
+		assert.match(pendingText, /┌─ uncommitted ─/);
 		assert.match(pendingText, /\+|~/);
 		assert.match(pendingText, /summarizing with session\/model-a/);
 		assert.equal(harness.ctx.streamCalls[0]?.options?.reasoning, undefined);
@@ -120,7 +120,7 @@ describe("startup changes lifecycle", () => {
 		response.resolve(makeAssistantMessage("Added a new path and changed the existing implementation."));
 		await until(() => state.changes?.summary.status === "done");
 		const doneText = header.render(100).map(sanitizeTuiText).join("\n");
-		assert.equal((doneText.match(/\[uncommitted\]/g) ?? []).length, 1);
+		assert.equal((doneText.match(/uncommitted/g) ?? []).length, 1);
 		assert.ok(doneText.includes("Added a new path"));
 		assert.ok(doneText.includes("changed.ts"));
 	});

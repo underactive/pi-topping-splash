@@ -5,11 +5,20 @@ import type { ExecResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 /** The category assigned to an uncommitted path. */
 export type ChangeKind = "added" | "changed" | "deleted";
 
+/** Line counts for one path from `git diff --numstat`; binary diffs report no counts, so both stay 0. */
+export interface LineStat {
+	added: number;
+	deleted: number;
+	binary: boolean;
+}
+
 /** A categorized path from git status. */
 export interface ChangeEntry {
 	path: string;
 	kind: ChangeKind;
 	untracked: boolean;
+	/** Lines changed versus HEAD; absent for untracked paths, before the counts land, or when git cannot count. */
+	stat?: LineStat;
 }
 
 /** The repository root and its uncommitted paths. */
@@ -55,7 +64,8 @@ function isFailed(result: ExecResult | undefined): result is undefined {
 	return result === undefined || result.code !== 0 || result.killed;
 }
 
-function boundedStatus(stdout: string): string {
+/** Clip NUL-delimited git output to whole records within the status byte bound. */
+function boundedRecords(stdout: string): string {
 	const bytes = Buffer.from(stdout, "utf8");
 	if (bytes.byteLength <= STATUS_MAX_BYTES) return stdout;
 	const end = bytes.lastIndexOf(0, STATUS_MAX_BYTES - 1);
@@ -78,7 +88,18 @@ export async function collectChanges(pi: ExtensionAPI, cwd: string, signal?: Abo
 		signal,
 	);
 	if (isFailed(statusResult)) return undefined;
-	return { root, entries: parseStatusZ(boundedStatus(statusResult.stdout)) };
+	return { root, entries: parseStatusZ(boundedRecords(statusResult.stdout)) };
+}
+
+/**
+ * Line counts for every tracked path that differs from HEAD. Undefined when git cannot say: an
+ * unborn HEAD, a timeout, or any other failure leaves the listing without counts.
+ */
+export async function collectLineStats(pi: ExtensionAPI, root: string, signal?: AbortSignal): Promise<Map<string, LineStat> | undefined> {
+	if (signal?.aborted) return undefined;
+	const result = await runGit(pi, ["diff", "HEAD", "--numstat", "-z", "--no-ext-diff", "--no-textconv", "--no-renames"], root, signal);
+	if (isFailed(result)) return undefined;
+	return parseNumstatZ(boundedRecords(result.stdout));
 }
 
 /** Parse git porcelain-v1 NUL-delimited status records into sorted, merged entries. */
@@ -143,7 +164,7 @@ export function redactSecrets(text: string): string {
 	return redacted.replace(/AKIA[0-9A-Z]{16}|gh[pousr]_\w{20,}|sk-[A-Za-z0-9_-]{20,}|xox[abpr]-\S+/g, "[redacted]");
 }
 
-function splitNumstatRecord(record: string): { added: number; deleted: number; path: string } | undefined {
+function parseNumstatRecord(record: string): { path: string; stat: LineStat } | undefined {
 	const firstTab = record.indexOf("\t");
 	if (firstTab < 0) return undefined;
 	const secondTab = record.indexOf("\t", firstTab + 1);
@@ -151,11 +172,22 @@ function splitNumstatRecord(record: string): { added: number; deleted: number; p
 	const addedText = record.slice(0, firstTab);
 	const deletedText = record.slice(firstTab + 1, secondTab);
 	const path = record.slice(secondTab + 1);
-	if (!path || addedText === "-" || deletedText === "-") return undefined;
+	if (!path) return undefined;
+	if (addedText === "-" && deletedText === "-") return { path, stat: { added: 0, deleted: 0, binary: true } };
 	const added = Number(addedText);
 	const deleted = Number(deletedText);
-	if (!Number.isSafeInteger(added) || !Number.isSafeInteger(deleted)) return undefined;
-	return { added, deleted, path };
+	if (!addedText || !deletedText || !Number.isSafeInteger(added) || !Number.isSafeInteger(deleted)) return undefined;
+	return { path, stat: { added, deleted, binary: false } };
+}
+
+/** Parse NUL-delimited `git diff --numstat -z` records (renames disabled) into per-path line counts. */
+export function parseNumstatZ(stdout: string): Map<string, LineStat> {
+	const stats = new Map<string, LineStat>();
+	for (const record of stdout.split("\0")) {
+		const parsed = parseNumstatRecord(record);
+		if (parsed) stats.set(parsed.path, parsed.stat);
+	}
+	return stats;
 }
 
 function utf8Prefix(bytes: Buffer, limit: number): string {
@@ -203,8 +235,8 @@ export async function collectChangeDetails(pi: ExtensionAPI, snapshot: ChangeSna
 		if (isFailed(result)) continue;
 		for (const record of result.stdout.split("\0")) {
 			if (candidates.length >= MAX_DIFF_FILES) break;
-			const numstat = splitNumstatRecord(record);
-			if (!numstat || numstat.added + numstat.deleted > MAX_DIFF_LINES_PER_FILE || isSensitivePath(numstat.path)) continue;
+			const numstat = parseNumstatRecord(record);
+			if (!numstat || numstat.stat.binary || numstat.stat.added + numstat.stat.deleted > MAX_DIFF_LINES_PER_FILE || isSensitivePath(numstat.path)) continue;
 			const candidateKey = `${cached ? "cached" : "worktree"}\0${numstat.path}`;
 			if (seenCandidates.has(candidateKey)) continue;
 			seenCandidates.add(candidateKey);
