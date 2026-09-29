@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	DETAIL_BUDGET_BYTES,
@@ -25,12 +25,18 @@ import {
 	CHANGES_MAX_WIDTH,
 	LISTING_MIN_ROWS,
 	PATH_MIN_WIDTH,
+	SUMMARY_MS_PER_CHAR,
 	layoutChangesSection,
 	renderChangesBlock,
+	startSummaryStream,
+	stopSummaryStream,
+	summaryStream,
 	type ChangesPresentation,
 	type SummaryState,
 } from "../src/changes-summary.ts";
 import { SPLASH_MARGIN_X } from "../src/splash.ts";
+import { REVEAL_MS_PER_CHAR, REVEAL_TICK_MS } from "../src/reveal.ts";
+import { changesRenderState } from "../src/state.ts";
 import { createFakePi } from "./helpers/fake-api.ts";
 import { initRepo, mixedChanges, git } from "./helpers/git.ts";
 import { bootstrapGlobalTheme, makeTheme } from "./helpers/theme.ts";
@@ -338,7 +344,7 @@ describe("listing", () => {
 	const rowFor = (lines: string[], path: string) => lines.find((line) => sanitizeTuiText(line).includes(` ${path} `)) ?? "";
 	const fills = (row: string) => (sanitizeTuiText(row).match(/▇/g) ?? []).length;
 	/** The summary's first row, which follows the last file row directly. */
-	const summaryIndex = (lines: string[], head = "summarizing with") => plain(lines).findIndex((line) => line.trimStart().startsWith(head));
+	const summaryIndex = (lines: string[], head = "summarizing local changes with") => plain(lines).findIndex((line) => line.trimStart().startsWith(head));
 	/** Narrowest width whose rows hold the whole `[local changes] +1, ~3, -1` heading between the margins. */
 	const headingFrom = SPLASH_MARGIN_X * 2 + "[local changes] +1, ~3, -1".length;
 
@@ -372,11 +378,12 @@ describe("listing", () => {
 		}
 	});
 
-	it("puts the summary right under the last file row, with no rule between them", () => {
+	it("parts the last file row from the summary with a blank row, and no rule", () => {
 		for (const width of [40, 60, 99, 100, 140]) {
 			const lines = plain(renderChangesBlock(theme, counted(), width, 20));
 			const index = summaryIndex(lines);
-			assert.ok(lines[index - 1].trim().startsWith("- gone.ts"), `width ${width}: under the last file row`);
+			assert.equal(lines[index - 1].trim(), "", `width ${width}: a blank row above the summary`);
+			assert.ok(lines[index - 2].trim().startsWith("- gone.ts"), `width ${width}: under the last file row`);
 			assert.equal(lines.some((line) => line.includes("─")), false, `width ${width}: no rule`);
 		}
 	});
@@ -476,7 +483,8 @@ describe("listing", () => {
 			"",
 			"   [local changes] +1, ~3, -1",
 			"   … 5 more",
-			"   summarizing with provider/model…",
+			"",
+			"   summarizing local changes with provider/model…",
 		]);
 	});
 
@@ -525,7 +533,7 @@ describe("listing", () => {
 			}
 		}
 		const pending = plain(renderChangesBlock(theme, bare, 100, 1))[0];
-		assert.ok(pending.includes(" · + new.ts new · summarizing with provider/model…"), pending);
+		assert.ok(pending.includes(" · + new.ts new · summarizing local changes with provider/model…"), pending);
 		const compact = renderChangesBlock(theme, counted(), 100, 1)[0];
 		assert.ok(plain([compact])[0].includes(" · ~ src/big.ts +30 -10"));
 		assert.ok(compact.includes("\x1b[38;2;232;232;232m+30") && compact.includes("\x1b[38;2;224;96;96m-10"), "compact line counts match the bar halves");
@@ -543,7 +551,7 @@ describe("panel section (CS-05)", () => {
 	const theme = makeTheme();
 	const plain = (lines: string[]) => lines.map(sanitizeTuiText);
 	/** The summary's first row, which follows the last file row directly. */
-	const summaryIndex = (lines: string[], head = "summarizing with") => plain(lines).findIndex((line) => line.trimStart().startsWith(head));
+	const summaryIndex = (lines: string[], head = "summarizing local changes with") => plain(lines).findIndex((line) => line.trimStart().startsWith(head));
 	const bare: ChangesPresentation = {
 		...counted(),
 		entries: counted().entries.map(({ path, kind, untracked }) => ({ path, kind, untracked })),
@@ -567,7 +575,8 @@ describe("panel section (CS-05)", () => {
 		assert.deepEqual(lines.map((line) => line.trimEnd()).filter((line, index) => index < 2 || index > 6), [
 			"",
 			"[local changes] +1, ~3, -1",
-			"summarizing with provider/model…",
+			"",
+			"summarizing local changes with provider/model…",
 		]);
 		assert.match(lines[2], /^\+ new\.ts +[·]+ +new$/);
 		assert.match(lines[4], /^~ src\/big\.ts +▇+ \+30 -10$/);
@@ -582,7 +591,7 @@ describe("panel section (CS-05)", () => {
 		assert.deepEqual(shape(1), { rows: 1, gap: false, listed: false });
 		for (let rows = 2; rows <= LISTING_MIN_ROWS; rows++) assert.deepEqual(shape(rows), { rows: 2, gap: true, listed: false }, `rows ${rows}`);
 		assert.deepEqual(shape(LISTING_MIN_ROWS + 1), { rows: LISTING_MIN_ROWS + 1, gap: true, listed: true });
-		assert.equal(plain(layoutChangesSection(theme, counted(), 68, 1))[0], "[local changes] +1, ~3, -1 · ~ src/big.ts +30 -10 · summarizing w...");
+		assert.equal(plain(layoutChangesSection(theme, counted(), 68, 1))[0], "[local changes] +1, ~3, -1 · ~ src/big.ts +30 -10 · summarizing l...");
 	});
 
 	it("never spends more rows than it is given", () => {
@@ -618,5 +627,118 @@ describe("panel section (CS-05)", () => {
 				}
 			}
 		}
+	});
+});
+
+describe("summary stream (CS-06)", () => {
+	const theme = makeTheme();
+	const plain = (lines: string[]) => lines.map(sanitizeTuiText);
+	const text = "Streams the summary one character at a time, like a chat reply.";
+	const done = () => counted({ status: "done", text });
+	/** The summary rows of the panel section: everything after the gap, the heading, the five file rows, and the blank row. */
+	const summaryRows = (width = 68) => plain(layoutChangesSection(theme, done(), width, 20)).slice(8).map((line) => line.trimEnd());
+	type TimerCtx = { mock: { timers: { enable(opts: { apis: string[] }): void; tick(ms: number): void } } };
+	// Single cast site for @types/node's untyped t.mock.timers, as in reveal.test.ts.
+	const enableTimers = (t: unknown): TimerCtx["mock"]["timers"] => {
+		const timers = (t as TimerCtx).mock.timers;
+		timers.enable({ apis: ["setInterval", "Date"] });
+		return timers;
+	};
+	afterEach(() => {
+		stopSummaryStream();
+		changesRenderState.requestRender = null;
+	});
+
+	it("streams twice as fast as the tagline reveal, on the reveal's tick", () => {
+		assert.equal(SUMMARY_MS_PER_CHAR, REVEAL_MS_PER_CHAR / 2);
+	});
+
+	it("is settled until a summary lands, so a done summary renders whole", () => {
+		assert.equal(summaryStream.timer, null);
+		assert.equal(summaryStream.shown, Number.POSITIVE_INFINITY);
+		assert.equal(summaryRows()[0], text);
+	});
+
+	it("prints nothing as the summary lands, then one character per SUMMARY_MS_PER_CHAR, settling on the whole text", (t) => {
+		const timers = enableTimers(t);
+		startSummaryStream(text);
+		assert.equal(summaryRows().join(""), "");
+		for (let i = 0; i < 10; i++) timers.tick(REVEAL_TICK_MS);
+		assert.equal(summaryRows()[0], text.slice(0, (10 * REVEAL_TICK_MS) / SUMMARY_MS_PER_CHAR).trimEnd());
+		for (let i = 0; i < text.length; i++) timers.tick(REVEAL_TICK_MS);
+		assert.equal(summaryStream.timer, null, "the stream stops itself once the text is out");
+		assert.equal(summaryStream.shown, Number.POSITIVE_INFINITY);
+		assert.equal(summaryRows()[0], text);
+	});
+
+	it("keeps the section's rows fixed while the text streams in, wrapped as the whole text", (t) => {
+		const timers = enableTimers(t);
+		const settledRows = summaryRows(30);
+		const settledLength = layoutChangesSection(theme, done(), 30, 20).length;
+		assert.ok(settledRows.length > 1, "the text wraps at 30 columns");
+		startSummaryStream(text);
+		while (summaryStream.timer) {
+			assert.equal(layoutChangesSection(theme, done(), 30, 20).length, settledLength, `shown ${summaryStream.shown}`);
+			summaryRows(30).forEach((row, index) => assert.ok(settledRows[index].startsWith(row), `shown ${summaryStream.shown}, row ${index}: ${row}`));
+			timers.tick(REVEAL_TICK_MS);
+		}
+		assert.deepEqual(summaryRows(30), settledRows);
+	});
+
+	it("pauses across an event-loop block instead of printing the rest at once", (t) => {
+		const timers = enableTimers(t);
+		startSummaryStream(text);
+		for (let i = 0; i < 5; i++) timers.tick(REVEAL_TICK_MS);
+		const before = summaryStream.shown;
+		timers.tick(2000);
+		assert.notEqual(summaryStream.timer, null, "a block pauses the stream, not finishes it");
+		assert.ok(summaryStream.shown - before <= 4, `a 2000ms block printed ${summaryStream.shown - before} characters`);
+	});
+
+	it("bumps the tick and requests a repaint on every tick, and once more when it settles", (t) => {
+		const timers = enableTimers(t);
+		let renders = 0;
+		changesRenderState.requestRender = () => {
+			renders++;
+		};
+		// Two characters a tick: six take three ticks, the last of which settles.
+		startSummaryStream("abcdef");
+		const tick = summaryStream.tick;
+		timers.tick(REVEAL_TICK_MS);
+		timers.tick(REVEAL_TICK_MS);
+		assert.equal(summaryStream.tick, tick + 2);
+		assert.equal(renders, 2);
+		timers.tick(REVEAL_TICK_MS);
+		assert.equal(summaryStream.timer, null);
+		assert.equal(summaryStream.tick, tick + 3, "settling bumps the tick for the final repaint");
+		assert.equal(renders, 3);
+	});
+
+	it("settles at once on stopSummaryStream, idempotently", (t) => {
+		enableTimers(t);
+		startSummaryStream(text);
+		stopSummaryStream();
+		assert.equal(summaryStream.timer, null);
+		assert.equal(summaryRows()[0], text);
+		const tick = summaryStream.tick;
+		stopSummaryStream();
+		assert.equal(summaryStream.tick, tick, "a second stop does nothing");
+	});
+
+	it("streams the one-line preview too, leaving the heading and featured file whole", (t) => {
+		const timers = enableTimers(t);
+		startSummaryStream(text);
+		const preview = () => plain(renderChangesBlock(theme, done(), 100, 1))[0].trimEnd();
+		assert.equal(preview(), "   [local changes] +1, ~3, -1 · ~ src/big.ts +30 -10");
+		for (let i = 0; i < 4; i++) timers.tick(REVEAL_TICK_MS);
+		assert.equal(preview(), "   [local changes] +1, ~3, -1 · ~ src/big.ts +30 -10 · Streams");
+	});
+
+	it("leaves pending and failed lines alone while a stream runs", (t) => {
+		enableTimers(t);
+		startSummaryStream(text);
+		const lines = (summary: SummaryState) => plain(layoutChangesSection(theme, counted(summary), 68, 20)).slice(8).map((line) => line.trimEnd());
+		assert.deepEqual(lines({ status: "pending", modelLabel: "provider/model" }), ["summarizing local changes with provider/model…"]);
+		assert.deepEqual(lines({ status: "failed", reason: "timed out" }), ["summary unavailable: timed out"]);
 	});
 });

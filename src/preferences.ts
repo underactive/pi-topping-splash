@@ -11,7 +11,7 @@ export type ToggleMode = "on" | "off";
 export interface SplashPreferences {
 	/** "on" shows the startup gate menu below the splash; "off" opens the editor directly beneath it. */
 	menuGate: ToggleMode;
-	/** "on" shimmer-reveals the model · prompt-size tagline; "off" renders the settled text immediately. */
+	/** "on" shimmer-reveals the model · prompt-size tagline and streams in the changes summary; "off" renders both settled immediately. */
 	taglineReveal: ToggleMode;
 	/** Splash backdrop; defaults to "rainbow" when missing or unrecognized. */
 	backgroundColor: BackgroundColor;

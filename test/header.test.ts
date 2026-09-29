@@ -8,7 +8,7 @@ import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type KeybindingDef
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
 import { ensureQuietStartup, installHeader, withSettings } from "../src/header.ts";
-import { installChangesHeader } from "../src/changes-summary.ts";
+import { installChangesHeader, summaryStream } from "../src/changes-summary.ts";
 import type { ChangesPresentation } from "../src/changes-summary.ts";
 import { writePreferences } from "../src/preferences.ts";
 import { gateMenuRows } from "../src/gate.ts";
@@ -273,12 +273,35 @@ describe("installHeader (H-04, H-05)", () => {
 		setRows(tui, 60);
 		state.changes = changesPresentation();
 		const pending = component.render(120).map(sanitizeTuiText).join("\n");
-		assert.ok(pending.includes("summarizing with provider/model"));
+		assert.ok(pending.includes("summarizing local changes with provider/model"));
 		assert.equal(component.render(120).map(sanitizeTuiText).join("\n"), pending, "an unchanged version is served from the cache");
 		state.changes = changesPresentation({ status: "done", text: "All three files moved." }, 2);
 		const done = component.render(120).map(sanitizeTuiText).join("\n");
 		assert.ok(done.includes("All three files moved."));
-		assert.equal(done.includes("summarizing with"), false);
+		assert.equal(done.includes("summarizing local changes with"), false);
+	});
+
+	it("repaints only the summary row a stream tick touched, holding the row count", () => {
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", changesSummary: "on" });
+		const { tui, component } = install();
+		setRows(tui, 60);
+		// Drive the stream by hand: nothing printed, then the first word, then settled.
+		summaryStream.shown = 0;
+		summaryStream.tick++;
+		state.changes = changesPresentation({ status: "done", text: "Streamed summary text." }, 2);
+		const blank = component.render(120);
+		assert.equal(blank.map(sanitizeTuiText).join("\n").includes("Streamed"), false);
+		summaryStream.shown = "Streamed".length;
+		summaryStream.tick++;
+		const partial = component.render(120);
+		assertLinesExact(partial, 120, "mid-stream frame");
+		assert.equal(partial.length, blank.length, "streaming never adds rows");
+		const changed = partial.flatMap((line, index) => (line === blank[index] ? [] : [index]));
+		assert.equal(changed.length, 1, `a stream tick touched ${changed.length} rows`);
+		assert.match(sanitizeTuiText(partial[changed[0]]), /  Streamed +▀/);
+		summaryStream.shown = Number.POSITIVE_INFINITY;
+		summaryStream.tick++;
+		assert.ok(component.render(120).map(sanitizeTuiText).join("\n").includes("Streamed summary text."));
 	});
 
 	it("reserves gate rows for the changes block and keeps the changes-only header separate", () => {

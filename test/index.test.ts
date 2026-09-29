@@ -7,7 +7,7 @@ import type { ExecResult } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import piStartupGreeter from "../index.ts";
 import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
-import { EDITOR_RESERVED_ROWS, summarizeChanges } from "../src/changes-summary.ts";
+import { EDITOR_RESERVED_ROWS, startSummaryStream, stopSummaryStream, summarizeChanges, summaryStream } from "../src/changes-summary.ts";
 import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
 import { stopTaglineReveal, taglineReveal } from "../src/reveal.ts";
 import { headerRenderState, state } from "../src/state.ts";
@@ -587,10 +587,11 @@ describe("startup changes settings (I-18)", () => {
 });
 
 describe("startup changes integration (AC2-AC8)", () => {
-	function changesPreferences(menuGate: "on" | "off" = "off", changesSummaryModel?: SplashPreferences["changesSummaryModel"]): void {
+	function changesPreferences(options: { menuGate?: "on" | "off"; taglineReveal?: "on" | "off"; changesSummaryModel?: SplashPreferences["changesSummaryModel"] } = {}): void {
+		const { menuGate = "off", taglineReveal = "off", changesSummaryModel } = options;
 		writePreferences({
 			menuGate,
-			taglineReveal: "off",
+			taglineReveal,
 			backgroundColor: "rainbow",
 			gradientAnimation: "off",
 			changesSummary: "on",
@@ -640,7 +641,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 	});
 
 	it("publishes dirty paths while the gate is open, then fills the same block", async () => {
-		changesPreferences("on");
+		changesPreferences({ menuGate: "on", taglineReveal: "on" });
 		const response = deferred<ReturnType<typeof makeAssistantMessage>>();
 		const wired = wire({
 			rows: 50,
@@ -657,9 +658,13 @@ describe("startup changes integration (AC2-AC8)", () => {
 		assert.ok(pendingText.includes("+ added.ts"), pendingText);
 		assert.ok(pendingText.includes("~ changed.ts"), pendingText);
 		assert.ok(pendingText.includes("- deleted.ts"), pendingText);
-		assert.ok(pendingText.includes("summarizing with anthropic/claude-opus-4"), pendingText);
+		assert.ok(pendingText.includes("summarizing local changes with anthropic/claude-opus-4"), pendingText);
 		response.resolve(makeAssistantMessage("The changes add, modify, and delete startup files."));
 		await until(() => state.changes?.summary.status === "done");
+		// The summary streams in: nothing of it is printed as it lands, all of it once the stream settles.
+		assert.notEqual(summaryStream.timer, null, "the summary streams rather than landing whole");
+		assert.equal(header.render(100).map(sanitizeTuiText).join("\n").includes("The changes add, modify"), false);
+		stopSummaryStream();
 		const doneText = header.render(100).map(sanitizeTuiText).join("\n");
 		assert.ok(doneText.includes("The changes add, modify"), doneText);
 		assert.equal((doneText.match(/\[local changes\]/g) ?? []).length, 1);
@@ -747,7 +752,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 		];
 		for (const [index, testCase] of cases.entries()) {
 			if (index > 0) resetModuleState();
-			changesPreferences("off", testCase.configured);
+			changesPreferences({ changesSummaryModel: testCase.configured });
 			const wired = wire({
 				projectTrusted: true,
 				model: testCase.model,
@@ -860,8 +865,33 @@ describe("startup changes integration (AC2-AC8)", () => {
 		await new Promise((resolve) => setImmediate(resolve));
 	});
 
+	it("prints a landed summary whole when the reveal animation is off", async () => {
+		changesPreferences();
+		const text = "A summary that lands whole with the reveal animation off.";
+		const wired = wire({ projectTrusted: true, execHandler: scriptedGit(env.cwd, DIRTY_STATUS), streamSimple: async () => makeAssistantMessage(text) });
+		await startup(wired);
+		await until(() => state.changes?.summary.status === "done");
+		assert.equal(summaryStream.timer, null, "no stream starts");
+		assert.ok(mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n").includes("A summary that lands whole"));
+	});
+
+	it("settles a streaming summary at the first agent turn and on session shutdown", async () => {
+		changesPreferences({ taglineReveal: "on" });
+		const text = "A summary long enough to still be streaming when the first prompt goes out.";
+		const wired = wire({ projectTrusted: true, execHandler: scriptedGit(env.cwd, DIRTY_STATUS), streamSimple: async () => makeAssistantMessage(text) });
+		await startup(wired);
+		await until(() => state.changes?.summary.status === "done");
+		assert.notEqual(summaryStream.timer, null, "the landed summary is streaming");
+		await wired.pi.emit("before_agent_start", { type: "before_agent_start", systemPrompt: "x" }, wired.ctx.ctx);
+		assert.equal(summaryStream.timer, null, "the first agent turn stops the ticker");
+		assert.ok(mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n").includes("A summary long enough"), "and prints the whole text");
+		startSummaryStream(text);
+		await wired.pi.emit("session_shutdown", { type: "session_shutdown" }, wired.ctx.ctx);
+		assert.equal(summaryStream.timer, null, "shutdown stops the ticker");
+	});
+
 	it("keeps the changes-only header after gate proceed", async () => {
-		changesPreferences("on");
+		changesPreferences({ menuGate: "on", taglineReveal: "on" });
 		const response = deferred<ReturnType<typeof makeAssistantMessage>>();
 		const wired = wire({ projectTrusted: true, execHandler: scriptedGit(env.cwd, DIRTY_STATUS), streamSimple: async () => response.promise });
 		const emitted = startup(wired);
@@ -873,7 +903,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 		const slim = mountedHeader(wired, 1);
 		const full = slim.render(100).map(sanitizeTuiText);
 		assert.equal(full[1].trimEnd(), "   [local changes] +1, ~1, -1");
-		assert.equal(full.findIndex((line) => line.trimStart().startsWith("summarizing with")), full.findIndex((line) => line.includes("- deleted.ts")) + 1, "the summary sits right under the last file row");
+		assert.equal(full.findIndex((line) => line.trimStart().startsWith("summarizing local changes with")), full.findIndex((line) => line.includes("- deleted.ts")) + 2, "the summary sits a blank row under the last file row");
 		wired.tui.resizeRows(EDITOR_RESERVED_ROWS + 2);
 		const compact = slim.render(100).map(sanitizeTuiText);
 		assert.equal(compact.length, 2);
@@ -883,6 +913,9 @@ describe("startup changes integration (AC2-AC8)", () => {
 		assert.equal(headerRenderState.requestRender, null, "slim header must not masquerade as splash wiring");
 		response.resolve(makeAssistantMessage("post-gate summary"));
 		await until(() => state.changes?.summary.status === "done");
+		// The slim header streams the summary too, and prints all of it once the real ticker finishes.
+		assert.notEqual(summaryStream.timer, null);
+		await until(() => summaryStream.timer === null);
 		assert.ok(slim.render(100).map(sanitizeTuiText).join("\n").includes("post-gate summary"));
 	});
 });

@@ -242,6 +242,11 @@ export interface HeaderParts {
 	repaintTagline?: () => { row: number; line: string };
 	/** Repaints every row with the backdrop advanced to `timeMs`; undefined when the backdrop is static. */
 	repaintBackdrop?: (timeMs: number) => string[];
+	/**
+	 * Asks `section` for its rows again and repaints only the ones that changed; undefined when the
+	 * panel has no section. Null when the section's row count moved, which only a rebuild can place.
+	 */
+	repaintSection?: () => { row: number; line: string }[] | null;
 }
 
 /**
@@ -262,8 +267,10 @@ export interface HeaderParts {
  * runs over the whole splash.
  *
  * Returns a `repaintTagline` hook so the reveal ticker can restyle just the tagline row instead
- * of rebuilding the whole O(W×H) splash on every 20ms tick, and a `repaintBackdrop` hook so the
- * gradient animation ticker can repaint the rows without redoing this layout work.
+ * of rebuilding the whole O(W×H) splash on every 20ms tick, a `repaintBackdrop` hook so the
+ * gradient animation ticker can repaint the rows without redoing this layout work, and a
+ * `repaintSection` hook so a section that changes in place (a streaming summary) repaints only
+ * the rows it touched.
  */
 export function buildHeaderParts(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0, prompts: string[] = [], shortcuts: ShortcutHint[] = [], section?: (band: SplashBand) => string[]): HeaderParts {
 	let sample = backgroundSampler(background, theme, animation, timeMs);
@@ -322,7 +329,8 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 	// The section's budget is measured against the lists alone. Centering the taller panel afterwards
 	// never needs more rows than that budget allowed, since the lists' panel sits at least a margin down.
 	const listsY = sideBySide ? Math.floor((splashHeight(selected.lines) - selected.lines.length) / 2) : logoRows + 1 + PANEL_MARGIN_Y;
-	const appended = section?.({ width: innerWidth, rows: listsY + selected.lines.length + PANEL_MARGIN_Y }) ?? [];
+	const band: SplashBand = { width: innerWidth, rows: listsY + selected.lines.length + PANEL_MARGIN_Y };
+	const appended = section?.(band) ?? [];
 	const lines = appended.length > 0 ? [...selected.lines.slice(0, -1), ...appended, ""] : selected.lines;
 	const height = splashHeight(lines);
 	// Side by side, the logo and the panel are both centered on the finished splash, section included.
@@ -350,7 +358,23 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 			return Array.from({ length: height }, (_, y) => paintRow(y, width, height, ink, panel, sample));
 		}
 		: undefined;
-	return { lines: painted, repaintTagline, repaintBackdrop };
+	// The section's rows start where the lists' closing padding row was.
+	const sectionStart = selected.lines.length - 1;
+	const repaintSection = section && appended.length > 0
+		? () => {
+			const next = section(band);
+			if (next.length !== appended.length) return null;
+			const repainted: { row: number; line: string }[] = [];
+			next.forEach((text, index) => {
+				if (panel.lines[sectionStart + index] === text) return;
+				panel.lines[sectionStart + index] = text;
+				const row = panel.y + sectionStart + index;
+				repainted.push({ row, line: paintRow(row, width, height, ink, panel, sample) });
+			});
+			return repainted;
+		}
+		: undefined;
+	return { lines: painted, repaintTagline, repaintBackdrop, repaintSection };
 }
 
 /** The splash as flat lines. Use `buildHeaderParts` when you also need the tick-only repaint hooks. */

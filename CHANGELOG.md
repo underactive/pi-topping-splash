@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Optional startup summary of uncommitted changes, closing the splash's info panel as a `[local changes]` section after `[extensions]`: an immediate listing of added/changed/deleted paths under a heading carrying the per-kind counts, with per-file line counts and churn bars against `HEAD` filling in just after and the model summary beneath them; short terminals show a one-line heading, featured file and summary preview instead. Includes an asynchronous model summary, an off-by-default settings toggle, and a summary-model picker.
+- Optional startup summary of uncommitted changes, closing the splash's info panel as a `[local changes]` section after `[extensions]`: an immediate listing of added/changed/deleted paths under a heading carrying the per-kind counts, with per-file line counts and churn bars against `HEAD` filling in just after and the model summary streaming in beneath them a character at a time, at twice the tagline's pace (or landing whole when the reveal animation setting is off); short terminals show a one-line heading, featured file and summary preview instead. Includes an asynchronous model summary, an off-by-default settings toggle, and a summary-model picker.
 - The **Summary model** settings row opens the startup gate's two-pane model picker with Enter or Space
   (its thinking pane is ignored, since summaries always run with thinking off). Backspace or Delete on
   the row resets it to the session model.
@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The startup uncommitted block is now the info panel's last section, after `[extensions]`, instead of
   a box under the splash. It drops the border and the `N files` key row, heads the listing
-  `[local changes] +a, ~c, -d` in the other headings' colors, and follows the file rows with the
-  summary directly. The panel and the gradient grow downward as the section fills in, the lists above
+  `[local changes] +a, ~c, -d` in the other headings' colors, and sets the summary a blank row below
+  the file rows. The panel and the gradient grow downward as the section fills in, the lists above
   stay put, and the logo stays centered beside the taller panel. The slim changes-only header after
   **New session** uses the same layout, left-aligned and stopped at 100 columns.
 - Per-file line counts in the uncommitted listing, and the `+lines` in its single-line fallback, no longer

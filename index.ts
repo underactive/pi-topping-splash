@@ -3,13 +3,13 @@ import { headerRenderState, state } from "./src/state.ts";
 import { stopTaglineReveal } from "./src/reveal.ts";
 import { stopGradientAnimation } from "./src/animate.ts";
 import { ensureQuietStartup, installHeader } from "./src/header.ts";
-import { abortChangesSummary, installChangesHeader, startChangesSummary } from "./src/changes-summary.ts";
+import { abortChangesSummary, installChangesHeader, startChangesSummary, stopSummaryStream } from "./src/changes-summary.ts";
 import { readPreferences } from "./src/preferences.ts";
 import { GATE_DONE_ENV } from "./src/relaunch.ts";
 import { runStartupGate } from "./src/gate.ts";
 import { showSplashSettings } from "./src/settings.ts";
 
-/** Pi extension: replaces the default startup header with a full-color splash, optionally adds an interactive startup gate menu and an opt-in uncommitted-changes summary, and registers the /topping-splash-settings command. Listens to model_select, before_agent_start, session_shutdown (abort summary work), and session_start. */
+/** Pi extension: replaces the default startup header with a full-color splash, optionally adds an interactive startup gate menu and an opt-in uncommitted-changes summary, and registers the /topping-splash-settings command. Listens to model_select, before_agent_start, session_shutdown (abort summary work and settle its stream), and session_start. */
 export default function piStartupGreeter(pi: ExtensionAPI) {
 	pi.on("model_select", (_event, ctx) => {
 		// Model rotation may change the base system prompt — refresh the size.
@@ -35,6 +35,8 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 			state.conversationStarted = true;
 			stopGradientAnimation();
 			stopTaglineReveal();
+			// The header scrolls away from here, so a summary still streaming settles instead of redrawing it.
+			stopSummaryStream();
 		}
 		const newSize = Buffer.byteLength(event.systemPrompt, "utf8");
 		if (newSize !== state.systemPromptSize) {

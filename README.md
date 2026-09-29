@@ -52,7 +52,8 @@ picker.
 
 - **Startup gate menu** — show the startup gate menu below the splash on launch (ON by default)
 - **Model + prompt size reveal animation** — shimmer-reveal the model · prompt-size tagline on
-  the splash; when OFF the final text renders immediately, with no wipe (ON by default)
+  the splash, and stream the changes summary in a character at a time; when OFF both render their
+  final text immediately (ON by default)
 - **Background color** — cycle with ←/→ through `rainbow` (a full-width hue sweep) and the
   seven active theme colors (`accent`, `border`, `borderAccent`, `borderMuted`, `success`,
   `error`, `warning`). A theme color fades vertically from the full color at the top of the
@@ -95,16 +96,19 @@ with a `[local changes]` section after `[extensions]`, styled like the panel's o
 heading carries the per-kind path counts (`[local changes] +3, ~4, -3`: added, changed, deleted, zero
 kinds omitted), and each row below it lists a path in pi-topping-statusline's git colors with a
 churn bar and its line counts against `HEAD`, which fill in just after the listing appears, and the
-summary follows the last file row. Untracked files show `new` and binary files `bin`; narrow panels
-drop the bars, then the line counts. The section spends only the rows the gate or editor leaves free
-below the splash, growing the panel and the gradient around it downward while the lists above stay
-put and the logo stays centered beside the taller panel. When those rows cannot hold the listing,
-the section is one line instead: `[local changes] +3, ~4, -3 · ~ src/changes-summary.ts +12 ·
+summary sits a blank row below the last file row. Untracked files show `new` and binary files
+`bin`; narrow panels drop the bars, then the line counts. The section spends only the rows the gate
+or editor leaves free below the splash, growing the panel and the gradient around it downward while
+the lists above stay put and the logo stays centered beside the taller panel. When those rows cannot
+hold the listing, the section is one line instead: `[local changes] +3, ~4, -3 · ~ src/changes-summary.ts +12 ·
 Refactors…` (counts, most changed file, and summary preview, as space permits). Added, changed, and
-deleted paths appear before the model request finishes, and the summary appears under the file rows
-when room permits. Clean repositories, non-repository directories, disabled or untrusted projects
-produce no section and no model request. The pending line is `summarizing with provider/id…`;
-failures remain visible as `summary unavailable: <reason>` while the path listing stays on screen.
+deleted paths appear before the model request finishes, and the summary streams in under the file
+rows when room permits, a character at a time at twice the tagline's pace, the way a chat reply
+prints. The first prompt settles it on the whole text, and turning off the reveal animation setting
+prints it whole. Clean repositories, non-repository directories, disabled or untrusted projects
+produce no section and no model request. The pending line is
+`summarizing local changes with provider/id…`; failures remain visible as
+`summary unavailable: <reason>` while the path listing stays on screen.
 
 The section survives the startup gate's **New session** choice as a slim changes-only header, laid
 out the same way at the splash margin, at most 100 columns wide, on the plain terminal background

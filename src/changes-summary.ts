@@ -7,6 +7,7 @@ import type { Rgb } from "./color.ts";
 import { modelRefLabel } from "./model-picker.ts";
 import type { ModelRef } from "./model-picker.ts";
 import { readPreferences } from "./preferences.ts";
+import { REVEAL_MS_PER_CHAR, REVEAL_TICK_MS } from "./reveal.ts";
 import { changesRenderState, state } from "./state.ts";
 import { ELLIPSIS, fitCell, padRight, sanitizeTuiText, truncateVisible } from "./text.ts";
 import { SPLASH_MARGIN_X } from "./splash.ts";
@@ -26,8 +27,10 @@ export const PATH_MIN_WIDTH = 12;
 export const PATH_WHOLE_MAX = 32;
 /** The slim changes-only header stops here however wide the terminal is; narrower terminals still fill their own. */
 export const CHANGES_MAX_WIDTH = 100;
-/** Rows the listing needs below its gap: the heading, one file row, and one summary row. Shorter budgets use a single line. */
-export const LISTING_MIN_ROWS = 3;
+/** Wall-clock cost of one streamed summary character: twice the tagline reveal's pace, on the same tick, so a tick prints two. */
+export const SUMMARY_MS_PER_CHAR = REVEAL_MS_PER_CHAR / 2;
+/** Rows the listing needs below its gap: the heading, one file row, the blank row above the summary, and one summary row. Shorter budgets use a single line. */
+export const LISTING_MIN_ROWS = 4;
 /** The section heading, bracketed like the info panel's other headings. */
 const HEADING = "[local changes]";
 /** How much of each statusline git color survives the dim; the rest is the backdrop showing through. */
@@ -197,6 +200,9 @@ export function startChangesSummary(pi: ExtensionAPI, ctx: ExtensionContext): vo
 				if (state.changes !== presentation || signal.aborted) return;
 				presentation.summary = summary;
 				presentation.version += 1;
+				// With the reveal animation on, a summary streams in rather than landing whole; a failure
+				// reason always shows at once.
+				if (summary.status === "done" && prefs.taglineReveal === "on") startSummaryStream(summary.text);
 				requestChangesRender();
 			} catch (error) {
 				if (signal.aborted || state.changes !== presentation) return;
@@ -212,10 +218,64 @@ export function startChangesSummary(pi: ExtensionAPI, ctx: ExtensionContext): vo
 	})();
 }
 
-/** Abort the in-flight git/model run without changing the last published presentation. */
+/** Abort the in-flight git/model run and settle a streaming summary, without changing the last published presentation. */
 export function abortChangesSummary(): void {
 	changesController?.abort();
 	changesController = null;
+	stopSummaryStream();
+}
+
+/**
+ * Prints a landed summary a character at a time, twice as fast as the tagline reveal, the way a
+ * chat harness streams a model's reply; the `taglineReveal` preference gates both. `shown` counts
+ * the characters printed so far and is Infinity once settled (never started, finished, or
+ * stopped); `tick` is part of both headers' memo keys, so bumping it is what makes a frame repaint.
+ */
+export const summaryStream = {
+	timer: null as ReturnType<typeof setInterval> | null,
+	lastTickAt: 0,
+	shown: Number.POSITIVE_INFINITY,
+	total: 0,
+	tick: 0,
+};
+
+/** Streams `text` from its first character, replacing any stream still running. */
+export function startSummaryStream(text: string): void {
+	if (summaryStream.timer) clearInterval(summaryStream.timer);
+	summaryStream.shown = 0;
+	summaryStream.total = [...text].length;
+	summaryStream.lastTickAt = Date.now();
+	summaryStream.tick++;
+	summaryStream.timer = setInterval(() => {
+		const now = Date.now();
+		// Capped like the reveal's step, so an event-loop block pauses the stream instead of dumping the rest at once.
+		const step = Math.min(now - summaryStream.lastTickAt, REVEAL_TICK_MS * 2);
+		summaryStream.lastTickAt = now;
+		summaryStream.shown += step / SUMMARY_MS_PER_CHAR;
+		if (summaryStream.shown >= summaryStream.total) {
+			stopSummaryStream();
+			return;
+		}
+		summaryStream.tick++;
+		changesRenderState.requestRender?.();
+	}, REVEAL_TICK_MS);
+	// Never hold the process open for a decoration.
+	summaryStream.timer.unref();
+}
+
+/** Settles the stream on the whole text and repaints it. Idempotent. */
+export function stopSummaryStream(): void {
+	if (!summaryStream.timer) return;
+	clearInterval(summaryStream.timer);
+	summaryStream.timer = null;
+	summaryStream.shown = Number.POSITIVE_INFINITY;
+	summaryStream.tick++;
+	changesRenderState.requestRender?.();
+}
+
+/** The part of `text` the stream has printed so far; all of it once the stream has settled. */
+function streamedPrefix(text: string): string {
+	return Number.isFinite(summaryStream.shown) ? [...text].slice(0, Math.floor(summaryStream.shown)).join("") : text;
 }
 
 function startTruncated(text: string, width: number): string {
@@ -289,7 +349,7 @@ function churnBar(theme: Theme, stat: LineStat | undefined, maxChurn: number, ce
 
 function summaryLines(theme: Theme, summary: SummaryState, width: number): string[] {
 	const safeWidth = Math.max(1, width);
-	if (summary.status === "pending") return [theme.fg("dim", `summarizing with ${sanitizeTuiText(summary.modelLabel)}…`)];
+	if (summary.status === "pending") return [theme.fg("dim", `summarizing local changes with ${sanitizeTuiText(summary.modelLabel)}…`)];
 	if (summary.status === "failed") return [theme.fg("dim", `summary unavailable: ${sanitizeTuiText(summary.reason)}`)];
 	const lines: string[] = [];
 	for (const rawLine of summary.text.split(/\r?\n/)) {
@@ -297,7 +357,14 @@ function summaryLines(theme: Theme, summary: SummaryState, width: number): strin
 		const wrapped = line ? wrapTextWithAnsi(line, safeWidth) : [""];
 		lines.push(...(wrapped.length > 0 ? wrapped : [""]));
 	}
-	return lines.map((line) => theme.fg("text", line));
+	// Wrapped as the whole text, so the stream fills rows already laid out instead of reflowing them.
+	let left = summaryStream.shown;
+	return lines.map((line) => {
+		const chars = [...line];
+		const printed = Number.isFinite(left) ? chars.slice(0, Math.max(0, Math.floor(left))).join("") : line;
+		left -= chars.length;
+		return theme.fg("text", printed);
+	});
 }
 
 /** One row for a budget too short for the listing: the heading and its counts, the most changed path, and a summary preview. */
@@ -333,8 +400,9 @@ function compactChangesLine(theme: Theme, presentation: ChangesPresentation, wid
 	}
 
 	const preview = summary.status === "done" ? summary.text : summary.status === "pending"
-		? `summarizing with ${summary.modelLabel}…` : `summary unavailable: ${summary.reason}`;
-	const singleLine = sanitizeTuiText(preview.replace(/\s+/g, " ")).trim();
+		? `summarizing local changes with ${summary.modelLabel}…` : `summary unavailable: ${summary.reason}`;
+	const normalized = sanitizeTuiText(preview.replace(/\s+/g, " ")).trim();
+	const singleLine = summary.status === "done" ? streamedPrefix(normalized) : normalized;
 	const remaining = width - visibleWidth(line) - 3;
 	if (singleLine && remaining >= 4) {
 		// Cut the plain text so the ellipsis stays inside the dim span.
@@ -354,8 +422,9 @@ interface ChangesLayout {
 /**
  * The uncommitted listing as a section in the style of the info panel's lists, within the row
  * budget: a blank row parting it from whatever sits above, the `[local changes]` heading with its
- * per-kind counts, one row per path ending in a churn bar and its line counts, then the variable
- * summary. Fewer than LISTING_MIN_ROWS rows below the gap get the single preview line instead.
+ * per-kind counts, one row per path ending in a churn bar and its line counts, then a blank row and
+ * the variable summary. Fewer than LISTING_MIN_ROWS rows below the gap get the single preview line
+ * instead.
  * Nothing here resets the background, so the rows sit safely on a plate.
  */
 function layoutChangesRows(theme: Theme, presentation: ChangesPresentation, layout: ChangesLayout, rowsAvailable: number): string[] {
@@ -412,6 +481,8 @@ function layoutChangesRows(theme: Theme, presentation: ChangesPresentation, layo
 	});
 	if (overflow) rows.push(frame(theme.fg("dim", `… ${entries.length - visible.length} more`)));
 
+	// Blank in every state, so the file rows keep their places when the summary lands.
+	rows.push("");
 	const rendered = summaryLines(theme, presentation.summary, contentWidth);
 	const shown = rendered.slice(0, summaryRows);
 	if (shown.length > 0 && rendered.length > shown.length) {
@@ -452,7 +523,7 @@ export function installChangesHeader(ctx: ExtensionContext): void {
 			render(width: number): string[] {
 				const rows = tui.terminal.rows;
 				const version = state.changes?.version ?? -1;
-				const key = `${width}:${rows}:${version}`;
+				const key = `${width}:${rows}:${version}:${summaryStream.tick}`;
 				if (key !== cachedKey) {
 					cachedKey = key;
 					cachedLines = renderChangesBlock(theme, state.changes, width, rows - EDITOR_RESERVED_ROWS);

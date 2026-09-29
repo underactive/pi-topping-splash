@@ -8,7 +8,7 @@ import { startTaglineReveal, taglineReveal } from "./reveal.ts";
 import { readPreferences } from "./preferences.ts";
 import { getLoadedHeaderItems } from "./discovery.ts";
 import { buildHeaderParts } from "./splash.ts";
-import { EDITOR_RESERVED_ROWS, layoutChangesSection } from "./changes-summary.ts";
+import { EDITOR_RESERVED_ROWS, layoutChangesSection, summaryStream } from "./changes-summary.ts";
 import { gateMenuRows } from "./gate.ts";
 
 /** Runs `fn` with a `SettingsManager` for `cwd`, logging errors to stderr rather than corrupting the TUI. */
@@ -56,17 +56,31 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext): void {
 		let cachedAnimation: GradientAnimation | undefined = undefined;
 		let cachedAnimTick = -1;
 		let cachedChangesVersion = -1;
+		let cachedStreamTick = -1;
 		let cachedSplashLines: string[] = [];
 		let cachedRepaintTagline: (() => { row: number; line: string }) | undefined = undefined;
 		let cachedRepaintBackdrop: ((timeMs: number) => string[]) | undefined = undefined;
+		let cachedRepaintSection: (() => { row: number; line: string }[] | null) | undefined = undefined;
 		const component = {
 			render: (width: number): string[] => {
 				const rows = tui.terminal.rows;
 				const modelKey = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "";
 				const changesVersion = state.changes?.version ?? -1;
-				const structural = width !== cachedWidth || rows !== cachedRows || modelKey !== cachedModelKey
+				let structural = width !== cachedWidth || rows !== cachedRows || modelKey !== cachedModelKey
 					|| state.systemPromptSize !== cachedSystemPromptSize || state.backgroundColor !== cachedBackground
 					|| state.gradientAnimation !== cachedAnimation || changesVersion !== cachedChangesVersion;
+				if (!structural && summaryStream.tick !== cachedStreamTick) {
+					// Stream tick: restyle only the section rows it touched, unless the section changed height.
+					cachedStreamTick = summaryStream.tick;
+					const repainted = cachedRepaintSection?.();
+					if (repainted === null) structural = true;
+					else if (repainted && repainted.length > 0) {
+						cachedSplashLines = cachedSplashLines.slice();
+						for (const { row, line } of repainted) {
+							if (row >= 0 && row < cachedSplashLines.length) cachedSplashLines[row] = line;
+						}
+					}
+				}
 				if (structural) {
 					cachedWidth = width;
 					cachedRows = rows;
@@ -77,6 +91,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext): void {
 					cachedAnimation = state.gradientAnimation;
 					cachedAnimTick = gradientAnimation.tick;
 					cachedChangesVersion = changesVersion;
+					cachedStreamTick = summaryStream.tick;
 					// The changes section closes the info panel, in whatever rows the gate or editor leaves free.
 					const reserve = prefs.menuGate === "on" ? gateMenuRows(rows) : EDITOR_RESERVED_ROWS;
 					const parts = buildHeaderParts(width, rows, theme, state.loadedContext, state.loadedSkills, state.loadedExtensions, ctx.model ? { id: ctx.model.id, provider: ctx.model.provider } : undefined, state.systemPromptSize, state.backgroundColor, state.gradientAnimation, gradientAnimation.timeMs, state.loadedPrompts, state.loadedShortcuts,
@@ -84,6 +99,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext): void {
 					cachedSplashLines = parts.lines;
 					cachedRepaintTagline = parts.repaintTagline;
 					cachedRepaintBackdrop = parts.repaintBackdrop;
+					cachedRepaintSection = parts.repaintSection;
 				} else {
 					if (gradientAnimation.tick !== cachedAnimTick) {
 						// Animation tick with nothing structural changed: repaint only the splash rows.
@@ -116,8 +132,10 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext): void {
 				cachedAnimation = undefined;
 				cachedAnimTick = -1;
 				cachedSplashLines = [];
+				cachedStreamTick = -1;
 				cachedRepaintTagline = undefined;
 				cachedRepaintBackdrop = undefined;
+				cachedRepaintSection = undefined;
 			},
 		};
 		headerRenderState.invalidate = () => component.invalidate();

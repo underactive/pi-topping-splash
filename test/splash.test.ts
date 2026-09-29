@@ -549,6 +549,25 @@ describe("panel section (S-14)", () => {
 		assert.notDeepEqual(frame, parts.lines, "the backdrop around the panel must move");
 	});
 
+	it("repaints only the section rows that changed, and asks for a rebuild when the row count moves", () => {
+		let rows = [...SECTION];
+		const parts = build(120, 50, () => rows, "breathe");
+		assert.deepEqual(parts.repaintSection!(), [], "unchanged rows repaint nothing");
+		const deltaRow = parts.lines.findIndex((line) => sanitizeTuiText(line).includes("delta"));
+		rows = ["", "[gamma] 2", "epsilon"];
+		const repainted = parts.repaintSection!()!;
+		assert.equal(repainted.length, 1);
+		assert.equal(repainted[0].row, deltaRow);
+		assert.ok(sanitizeTuiText(repainted[0].line).includes("epsilon"));
+		assertLinesExact([repainted[0].line], 120, "repainted section row");
+		// A later backdrop frame keeps the new row, since the panel holds it now.
+		assert.ok(sanitizeTuiText(parts.repaintBackdrop!(2000)[deltaRow]).includes("epsilon"));
+		rows = ["", "[gamma] 2"];
+		assert.equal(parts.repaintSection!(), null, "a section that changed height needs a rebuild");
+		assert.equal(build(120, 50).repaintSection, undefined);
+		assert.equal(build(120, 50, () => []).repaintSection, undefined);
+	});
+
 	it("stays exact-width at every width and terminal height, section included", () => {
 		for (const termRows of [10, 24, 40]) {
 			for (let width = 1; width <= 200; width++) {

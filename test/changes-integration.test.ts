@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { Component } from "@earendil-works/pi-tui";
 import piStartupGreeter from "../index.ts";
-import { renderChangesBlock, resolveSummaryModel } from "../src/changes-summary.ts";
+import { renderChangesBlock, resolveSummaryModel, stopSummaryStream, summaryStream } from "../src/changes-summary.ts";
 import { writePreferences } from "../src/preferences.ts";
 import { state } from "../src/state.ts";
 import { sanitizeTuiText } from "../src/text.ts";
@@ -35,6 +35,7 @@ interface Harness {
 
 function makeHarness(options: {
 	changesSummary?: "on" | "off";
+	taglineReveal?: "on" | "off";
 	projectTrusted?: boolean;
 	model?: ReturnType<typeof makeModel>;
 	models?: ReturnType<typeof makeModel>[];
@@ -42,7 +43,7 @@ function makeHarness(options: {
 } = {}): Harness {
 	writePreferences({
 		menuGate: "off",
-		taglineReveal: "off",
+		taglineReveal: options.taglineReveal ?? "off",
 		backgroundColor: "rainbow",
 		gradientAnimation: "off",
 		changesSummary: options.changesSummary ?? "off",
@@ -102,6 +103,7 @@ describe("startup changes lifecycle", () => {
 		const response = deferred<ReturnType<typeof makeAssistantMessage>>();
 		const harness = makeHarness({
 			changesSummary: "on",
+			taglineReveal: "on",
 			projectTrusted: true,
 			streamSimple: async () => response.promise,
 		});
@@ -113,12 +115,15 @@ describe("startup changes lifecycle", () => {
 		const pendingText = header.render(100).map(sanitizeTuiText).join("\n");
 		assert.match(pendingText, /\[local changes\] \+/);
 		assert.match(pendingText, /\+|~/);
-		assert.match(pendingText, /summarizing with session\/model-a/);
+		assert.match(pendingText, /summarizing local changes with session\/model-a/);
 		assert.equal(harness.ctx.streamCalls[0]?.options?.reasoning, undefined);
 		assert.equal(harness.ctx.streamCalls[0]?.options?.maxTokens, 400);
 
 		response.resolve(makeAssistantMessage("Added a new path and changed the existing implementation."));
 		await until(() => state.changes?.summary.status === "done");
+		assert.notEqual(summaryStream.timer, null, "the summary streams rather than landing whole");
+		assert.equal(header.render(100).map(sanitizeTuiText).join("\n").includes("Added a new path"), false);
+		stopSummaryStream();
 		const doneText = header.render(100).map(sanitizeTuiText).join("\n");
 		assert.equal((doneText.match(/\[local changes\]/g) ?? []).length, 1);
 		assert.ok(doneText.includes("Added a new path"));
