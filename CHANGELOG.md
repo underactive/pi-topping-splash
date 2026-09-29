@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The info panel beside the logo now grows up to 100 columns wide instead of 72, reaching it on
   terminals 138 columns or wider, so long lists wrap onto fewer rows. A panel stacked under the logo on
   narrow terminals is unchanged.
+- The `/topping-splash-settings` menu is regrouped into three sections: **Startup Gate** (the gate
+  toggle), **Splash Banner** (background color, gradient animation), and **Info Panel** (the model +
+  prompt size reveal animation, the changes summary toggle, and the summary model).
 - The `/topping-splash-settings` menu now ends in an action bar: **Apply** saves and closes, **Cancel**
   discards. Tab focuses the bar, ←/→ pick a button and Enter fires it. Enter on a toggle or cycle row no
   longer applies the menu; Esc still cancels.

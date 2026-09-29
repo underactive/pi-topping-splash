@@ -127,7 +127,7 @@ function pressApply(menu: { handleInput(data: string): void }): void {
  * Persist preference choices through the real settings command, into this test's temp agent dir.
  * Drives the menu component synchronously before awaiting the handler, since the fake ui.custom
  * only resolves once the component calls `done` — awaiting first would deadlock.
- * Menu rows in cursor order: menuGate (0), taglineReveal (1).
+ * Menu rows in cursor order: menuGate (0), backgroundColor (1), gradientAnimation (2), taglineReveal (3).
  */
 async function persist(target: Partial<SplashPreferences>): Promise<void> {
 	const wired = wire();
@@ -135,7 +135,7 @@ async function persist(target: Partial<SplashPreferences>): Promise<void> {
 	const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 	const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
 	if (target.menuGate !== undefined && target.menuGate !== current.menuGate) component.handleInput(KEY.space);
-	component.handleInput(KEY.down);
+	for (let index = 0; index < 3; index++) component.handleInput(KEY.down);
 	if (target.taglineReveal !== undefined && target.taglineReveal !== current.taglineReveal) component.handleInput(KEY.space);
 	pressApply(component);
 	await handlerPromise;
@@ -316,7 +316,7 @@ describe("commands (I-06, I-07)", () => {
 		const wired = wire();
 		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
-		component.handleInput(KEY.down);
+		for (let index = 0; index < 3; index++) component.handleInput(KEY.down);
 		component.handleInput(KEY.space);
 		pressApply(component);
 		await handlerPromise;
@@ -426,7 +426,7 @@ describe("startup changes settings (I-18)", () => {
 
 	it("Tab hands the arrow keys to the action bar and back to the rows", async () => {
 		const wired = wire();
-		const { menu, finished } = openSettings(wired, 2);
+		const { menu, finished } = openSettings(wired, 1);
 		menu.handleInput(KEY.tab);
 		menu.handleInput(KEY.right);
 		menu.handleInput(KEY.left);
@@ -1013,7 +1013,6 @@ describe("background color setting (I-06 extension)", () => {
 		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
 		component.handleInput(KEY.down);
-		component.handleInput(KEY.down);
 		component.handleInput(KEY.right);
 		pressApply(component);
 		await handlerPromise;
@@ -1024,7 +1023,6 @@ describe("background color setting (I-06 extension)", () => {
 		const wired = wire();
 		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
-		component.handleInput(KEY.down);
 		component.handleInput(KEY.down);
 		component.handleInput(KEY.right);
 		component.handleInput(KEY.right);
@@ -1050,7 +1048,6 @@ describe("background color setting (I-06 extension)", () => {
 		const applyPromise = wired0.pi.commands.get("topping-splash-settings")!.handler("", wired0.ctx.ctx as never);
 		const applyComponent = wired0.ctx.customComponents[0] as { handleInput(data: string): void };
 		applyComponent.handleInput(KEY.down);
-		applyComponent.handleInput(KEY.down);
 		applyComponent.handleInput(KEY.right);
 		applyComponent.handleInput(KEY.right);
 		applyComponent.handleInput(KEY.right);
@@ -1063,7 +1060,6 @@ describe("background color setting (I-06 extension)", () => {
 		const wired = wire();
 		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
-		component.handleInput(KEY.down);
 		component.handleInput(KEY.down);
 		component.handleInput(KEY.right);
 		component.handleInput(KEY.esc);
@@ -1080,7 +1076,6 @@ describe("background color setting (I-06 extension)", () => {
 		try {
 			const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 			const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
-			component.handleInput(KEY.down);
 			component.handleInput(KEY.down);
 			component.handleInput(KEY.right);
 			pressApply(component);
@@ -1103,7 +1098,6 @@ describe("background color setting (I-06 extension)", () => {
 		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
 		component.handleInput(KEY.down);
-		component.handleInput(KEY.down);
 		component.handleInput(KEY.right);
 		pressApply(component);
 		await handlerPromise;
@@ -1113,7 +1107,7 @@ describe("background color setting (I-06 extension)", () => {
 });
 
 describe("gradient animation setting (I-17)", () => {
-	/** Menu rows in cursor order: menuGate (0), taglineReveal (1), backgroundColor (2), gradientAnimation (3). */
+	/** Menu rows in cursor order: menuGate (0), backgroundColor (1), gradientAnimation (2). */
 	async function applyMenu(wired: Wired, inputs: string[]): Promise<void> {
 		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 		const component = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
@@ -1125,7 +1119,7 @@ describe("gradient animation setting (I-17)", () => {
 	it("defaults to off; cycling right persists breathe and leaves the rest alone", async () => {
 		const wired = wire();
 		assert.equal(readPreferences().gradientAnimation, "off", "starts at the default");
-		await applyMenu(wired, [KEY.down, KEY.down, KEY.down, KEY.right]);
+		await applyMenu(wired, [KEY.down, KEY.down, KEY.right]);
 		const prefs = readPreferences();
 		assert.equal(prefs.gradientAnimation, "breathe", "cycled one step right");
 		assert.equal(prefs.backgroundColor, "rainbow", "untouched cycle keeps its value");
@@ -1144,12 +1138,12 @@ describe("gradient animation setting (I-17)", () => {
 		const factory = wired.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
 		factory(wired.tui.tui, makeTheme());
 
-		await applyMenu(wired, [KEY.down, KEY.down, KEY.right, KEY.down, KEY.right]);
+		await applyMenu(wired, [KEY.down, KEY.right, KEY.down, KEY.right]);
 		assert.equal(state.backgroundColor, "accent");
 		assert.equal(state.gradientAnimation, "breathe");
 		assert.notEqual(gradientAnimation.timer, null, "ticker running on an animated backdrop");
 
-		await applyMenu(wired, [KEY.down, KEY.down, KEY.down, KEY.left]);
+		await applyMenu(wired, [KEY.down, KEY.down, KEY.left]);
 		assert.equal(state.gradientAnimation, "off");
 		assert.equal(gradientAnimation.timer, null, "ticker stopped once the animation is off");
 	});
@@ -1161,7 +1155,7 @@ describe("gradient animation setting (I-17)", () => {
 		const factory = wired.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
 		factory(wired.tui.tui, makeTheme());
 
-		await applyMenu(wired, [KEY.down, KEY.down, KEY.down, KEY.right]);
+		await applyMenu(wired, [KEY.down, KEY.down, KEY.right]);
 		assert.equal(state.backgroundColor, "rainbow", "background untouched");
 		assert.equal(state.gradientAnimation, "breathe");
 		assert.notEqual(gradientAnimation.timer, null, "the rainbow animates too");
@@ -1169,7 +1163,7 @@ describe("gradient animation setting (I-17)", () => {
 
 	it("applying an animation with no splash header wired leaves the ticker off", async () => {
 		const wired = wire();
-		await applyMenu(wired, [KEY.down, KEY.down, KEY.right, KEY.down, KEY.right]);
+		await applyMenu(wired, [KEY.down, KEY.right, KEY.down, KEY.right]);
 		assert.equal(readPreferences().gradientAnimation, "breathe", "persisted for the next launch");
 		assert.equal(gradientAnimation.timer, null, "nothing visible to animate");
 	});
@@ -1185,7 +1179,7 @@ describe("gradient animation setting (I-17)", () => {
 		await wired.pi.emit("before_agent_start", { type: "before_agent_start", systemPrompt: "x" }, wired.ctx.ctx);
 		assert.equal(gradientAnimation.timer, null, "first turn stopped the ticker");
 
-		await applyMenu(wired, [KEY.down, KEY.down, KEY.down, KEY.right]);
+		await applyMenu(wired, [KEY.down, KEY.down, KEY.right]);
 		assert.equal(readPreferences().gradientAnimation, "sheen", "preference still persisted");
 		assert.equal(gradientAnimation.timer, null, "mid-session apply must not restart an off-screen animation");
 	});

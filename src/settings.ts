@@ -99,16 +99,16 @@ export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
 					items: [{ id: "menuGate", label: "Startup gate menu", value: values.menuGate }],
 				},
 				{
-					title: "Splash",
+					title: "Splash Banner",
 					items: [
-						{ id: "taglineReveal", label: "Model + prompt size reveal animation", value: values.taglineReveal },
 						{ id: "backgroundColor", label: "Background color", value: values.backgroundColor, cycleValues: BACKGROUND_COLOR_OPTIONS },
 						{ id: "gradientAnimation", label: "Animate gradient", value: values.gradientAnimation, cycleValues: GRADIENT_ANIMATION_OPTIONS },
 					],
 				},
 				{
-					title: "Startup Changes",
+					title: "Info Panel",
 					items: [
+						{ id: "taglineReveal", label: "Model + prompt size reveal animation", value: values.taglineReveal },
 						{ id: "changesSummary", label: "Summarize uncommitted changes", value: values.changesSummary },
 						{
 							id: "changesSummaryModel",

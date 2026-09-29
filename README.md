@@ -21,20 +21,21 @@ Requires Node.js 22.19.0 or newer. The current release is developed and tested a
 ## Settings
 
 Run `/topping-splash-settings` (TUI mode only) or pick **Settings** in the startup gate menu
-to open a settings menu with two toggles, a background color cycle, a gradient animation
-cycle, and an opt-in startup changes summary:
+to open a settings menu in three sections: the startup gate toggle, the splash banner's background
+color and gradient animation, and the info panel's reveal animation and opt-in startup changes
+summary:
 
 ```text
 ╔═[ Pi Topping Splash: Settings ]══════════════════════════════════════════╗
 ╟─ Startup Gate ───────────────────────────────────────────────────────────╢
 ║  ❯ [■] Startup gate menu                                             ON  ║
 ║                                                                          ║
-╟─ Splash ─────────────────────────────────────────────────────────────────╢
-║    [■] Model + prompt size reveal animation                          ON  ║
+╟─ Splash Banner ──────────────────────────────────────────────────────────╢
 ║    [■] Background color                                     ‹ rainbow ›  ║
 ║    [■] Animate gradient                                         ‹ off ›  ║
 ║                                                                          ║
-╟─ Startup Changes ────────────────────────────────────────────────────────╢
+╟─ Info Panel ─────────────────────────────────────────────────────────────╢
+║    [■] Model + prompt size reveal animation                          ON  ║
 ║    [ ] Summarize uncommitted changes                                OFF  ║
 ║    [■] Summary model                                    session model ›  ║
 ║                                                                          ║
@@ -51,9 +52,6 @@ Esc also cancels. Enter on a toggle or cycle row does nothing; it only opens the
 picker.
 
 - **Startup gate menu** — show the startup gate menu below the splash on launch (ON by default)
-- **Model + prompt size reveal animation** — shimmer-reveal the model · prompt-size tagline on
-  the splash, and stream the changes summary in a character at a time; when OFF both render their
-  final text immediately (ON by default)
 - **Background color** — cycle with ←/→ through `rainbow` (a full-width hue sweep) and the
   seven active theme colors (`accent`, `border`, `borderAccent`, `borderMuted`, `success`,
   `error`, `warning`). A theme color fades vertically from the full color at the top of the
@@ -68,6 +66,9 @@ picker.
   they modulate the vertical fade. The animation runs while the splash is on screen — during
   the gate, or with the gate off until the first agent turn — then stops for the rest of the
   session, since the splash scrolls away once the conversation grows.
+- **Model + prompt size reveal animation** — shimmer-reveal the model · prompt-size tagline on
+  the splash, and stream the changes summary in a character at a time; when OFF both render their
+  final text immediately (ON by default)
 - **Summarize uncommitted changes** — opt in to the info panel's `[local changes]` section (OFF by default).
 - **Summary model** — Enter (or Space) opens the same two-pane model picker as the startup gate:
   type to filter, Tab or ←/→ to switch panes, Enter to select. The thinking pane belongs to that
