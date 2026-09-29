@@ -24,6 +24,7 @@ import {
 	BAR_MIN_CELLS,
 	BOX_MIN_ROWS,
 	BOX_TITLE,
+	CHANGES_MAX_WIDTH,
 	PATH_MIN_WIDTH,
 	renderChangesBlock,
 	type ChangesPresentation,
@@ -265,8 +266,9 @@ describe("summary prompt and rendering", () => {
 		for (let width = 1; width <= 200; width++) {
 			const pendingLines = renderChangesBlock(makeTheme(), pending, width, 20);
 			const doneLines = renderChangesBlock(makeTheme(), done, width, 20);
-			assertLinesExact(pendingLines, width, `pending width ${width}`);
-			assertLinesExact(doneLines, width, `done width ${width}`);
+			const blockWidth = Math.min(width, CHANGES_MAX_WIDTH);
+			assertLinesExact(pendingLines, blockWidth, `pending width ${width}`);
+			assertLinesExact(doneLines, blockWidth, `done width ${width}`);
 			assert.ok(pendingLines.length <= 20);
 			assert.ok(doneLines.length <= 20);
 		}
@@ -336,10 +338,29 @@ describe("boxed listing", () => {
 	/** Narrowest width whose box interior still fits the title between two rule stubs. */
 	const boxFrom = SPLASH_MARGIN_X * 2 + 2 + BOX_TITLE.length + 2;
 
+	it("stops the listing and its summary at CHANGES_MAX_WIDTH on a wider terminal", () => {
+		const long = counted({ status: "done", text: "One sentence about the change. ".repeat(20) });
+		const clamped = renderChangesBlock(theme, long, CHANGES_MAX_WIDTH, 20);
+		for (const width of [CHANGES_MAX_WIDTH, CHANGES_MAX_WIDTH + 1, 140, 200]) {
+			const lines = renderChangesBlock(theme, long, width, 20);
+			assertLinesExact(lines, CHANGES_MAX_WIDTH, `clamped width ${width}`);
+			assert.deepEqual(lines, clamped, `width ${width} must render the clamped block`);
+		}
+		// The box's right edge stops at the clamp, not the terminal's own right margin.
+		const right = CHANGES_MAX_WIDTH - SPLASH_MARGIN_X - 1;
+		const box = plain(renderChangesBlock(theme, counted(), 200, 20)).filter((line) => "┌│└".includes(line[SPLASH_MARGIN_X] ?? " "));
+		assert.equal(box[0][right], "┐", box[0]);
+		assert.equal(box.at(-1)![right], "┘", box.at(-1)!);
+		// The summary wraps at the clamp too, so no line runs past it however wide the terminal is.
+		const summary = plain(renderChangesBlock(theme, long, 200, 20)).filter((line) => !/[┌│└]/.test(line));
+		assert.ok(summary.every((line) => visibleWidth(line) <= CHANGES_MAX_WIDTH));
+		assert.ok(summary.some((line) => line.trim().length > 0), "summary rows survive the clamp");
+	});
+
 	it("draws the title, counts, key, and borders on one right edge at every width that fits the title", () => {
 		for (let width = boxFrom; width <= 200; width++) {
 			const lines = plain(renderChangesBlock(theme, counted(), width, 20));
-			const right = width - SPLASH_MARGIN_X - 1;
+			const right = Math.min(width, CHANGES_MAX_WIDTH) - SPLASH_MARGIN_X - 1;
 			const box = lines.filter((line) => "┌│└".includes(line[SPLASH_MARGIN_X] ?? " "));
 			assert.ok(box.length >= 3, `width ${width}`);
 			assert.ok(box[0].startsWith(`${" ".repeat(SPLASH_MARGIN_X)}┌─${BOX_TITLE}─`), `width ${width}: ${box[0]}`);
@@ -437,9 +458,10 @@ describe("boxed listing", () => {
 		for (let maxRows = 1; maxRows < BOX_MIN_ROWS; maxRows++) {
 			const lines = renderChangesBlock(theme, presentation, 120, maxRows);
 			assert.equal(lines.length, 1, `budget ${maxRows}`);
-			assert.match(plain(lines)[0], /^   ● 5 uncommitted \[\+1 · ~3 · -1\] ~ src\/big\.ts \+30 -10 · Refactors the uncommitted block into a compact summary\./);
+			// 120 columns clamps to CHANGES_MAX_WIDTH, so the preview takes only what the clamp leaves.
+			assert.match(plain(lines)[0], /^ {3}● 5 uncommitted \[\+1 · ~3 · -1\] ~ src\/big\.ts \+30 -10 · Refactors the uncommitted block into a c\.\.\.$/);
 			assert.equal(/[┌│└]|more/.test(plain(lines)[0]), false);
-			assertLinesExact(lines, 120, `compact budget ${maxRows}`);
+			assertLinesExact(lines, CHANGES_MAX_WIDTH, `compact budget ${maxRows}`);
 		}
 		assert.deepEqual(renderChangesBlock(theme, presentation, 120, 0), []);
 		const minimal = plain(renderChangesBlock(theme, counted(), 100, BOX_MIN_ROWS));
@@ -465,12 +487,15 @@ describe("boxed listing", () => {
 			{ path: "old-c.ts", kind: "deleted", untracked: false },
 		];
 		const line = renderChangesBlock(theme, presentation, 140, 1)[0];
-		assert.match(sanitizeTuiText(line), /^   ● 10 uncommitted \[\+3 · ~4 · -3\] ~ src\/changes-summary\.ts \+12 · Refactors the uncommitted block into a compact layout\./);
+		assert.match(sanitizeTuiText(line), /^ {3}● 10 uncommitted \[\+3 · ~4 · -3\] ~ src\/changes-summary\.ts \+12 · Refactors the uncommitted block\.\.\.$/);
 		assert.ok(line.includes("\x1b[38;2;64;112;7m+3") && line.includes("\x1b[38;2;136;112;7m~4") && line.includes("\x1b[38;2;158;42;52m-3"));
 		assert.ok(line.includes("\x1b[38;2;232;232;232m+12"));
 		assert.ok(line.includes(theme.fg("dim", " · ")));
-		assert.ok(line.includes(theme.fg("dim", "Refactors the uncommitted block into a compact layout.")));
-		assertLinesExact([line], 140, "mockup line");
+		// The clamp cuts the preview mid-sentence, so only its head survives; the dim role's opening
+		// SGR still precedes it, with the truncation's own reset wrapping the ellipsis that follows.
+		const dimSgr = theme.fg("dim", "x").slice(0, -"\x1b[39mx".length);
+		assert.ok(line.includes(`${dimSgr}Refactors the uncommitted block`), "the summary preview is dim");
+		assertLinesExact([line], CHANGES_MAX_WIDTH, "mockup line");
 	});
 
 	it("keeps the compact line bounded and safe as stats and summary states change", () => {
@@ -485,7 +510,7 @@ describe("boxed listing", () => {
 				for (let maxRows = 1; maxRows < BOX_MIN_ROWS; maxRows++) {
 					const lines = renderChangesBlock(theme, presentation, width, maxRows);
 					assert.equal(lines.length, 1);
-					assertLinesExact(lines, width, `compact width ${width}, rows ${maxRows}`);
+					assertLinesExact(lines, Math.min(width, CHANGES_MAX_WIDTH), `compact width ${width}, rows ${maxRows}`);
 					assert.equal(lines[0].includes("\n") || lines[0].includes("\u001b[31m"), false);
 				}
 			}

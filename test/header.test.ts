@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type KeybindingDefinitions } from "@earendil-works/pi-tui";
+import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type KeybindingDefinitions, visibleWidth } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
 import { ensureQuietStartup, installHeader, withSettings } from "../src/header.ts";
-import { installChangesHeader } from "../src/changes-summary.ts";
+import { CHANGES_MAX_WIDTH, installChangesHeader, renderChangesBlock } from "../src/changes-summary.ts";
 import type { ChangesPresentation } from "../src/changes-summary.ts";
 import { writePreferences } from "../src/preferences.ts";
 import { gateMenuRows } from "../src/gate.ts";
@@ -224,14 +224,35 @@ describe("installHeader (H-04, H-05)", () => {
 		};
 		state.changes = presentation;
 		const first = component.render(120);
-		assertLinesExact(first, 120, "splash + changes");
+		// The splash stays full-bleed; the changes block appended below it stops at CHANGES_MAX_WIDTH.
+		const split = first.findIndex((line) => visibleWidth(line) !== 120);
+		assert.ok(split > 0, "the splash renders before the changes block");
+		assertLinesExact(first.slice(0, split), 120, "splash rows");
+		assertLinesExact(first.slice(split), CHANGES_MAX_WIDTH, "changes rows");
 		assert.equal(state.splashRows, first.length);
 		assert.ok(first.map(sanitizeTuiText).join("\n").includes("changed.ts"));
 		gradientAnimation.timeMs = 2000;
 		gradientAnimation.tick += 1;
 		const second = component.render(120);
-		assertLinesExact(second, 120, "animated splash + changes");
 		assert.equal(second.map(sanitizeTuiText).join("\n").split("changed.ts").length - 1, 1);
+	});
+
+	it("clamps the appended changes block to CHANGES_MAX_WIDTH on a wide terminal", () => {
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", changesSummary: "on" });
+		const { component } = install();
+		const presentation: ChangesPresentation = {
+			entries: [
+				{ path: "added.ts", kind: "added", untracked: false },
+				{ path: "changed.ts", kind: "changed", untracked: false },
+			],
+			summary: { status: "pending", modelLabel: "provider/model" },
+			version: 1,
+		};
+		state.changes = presentation;
+		const lines = component.render(140);
+		const split = lines.findIndex((line) => visibleWidth(line) !== 140);
+		assert.ok(split > 0, "the splash is still full-bleed at 140");
+		assert.deepEqual(lines.slice(split), renderChangesBlock(makeTheme(), presentation, 140, lines.length - split), "the appended rows are the clamped block");
 	});
 
 	it("reserves gate rows for the changes block and keeps the changes-only header separate", () => {

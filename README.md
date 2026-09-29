@@ -95,7 +95,9 @@ When enabled, a genuine TUI startup with the splash and a trusted project shows 
 (`+added ~changed -deleted`, in pi-topping-statusline's git colors), and each row lists a path with
 a churn bar and its line counts against `HEAD`, which fill in just after the listing appears.
 Untracked files show `new` and binary files `bin`; narrow terminals drop the bars, then the line
-counts, then the box. If one to three rows remain below the splash, the block becomes one line:
+counts, then the box. The block is left-aligned at the splash margin and stops at 100 columns, so a
+wide terminal keeps the paths and the summary at a readable line length. If one to three rows remain
+below the splash, the block becomes one line:
 `● 10 uncommitted [+3 · ~4 · -3] ~ src/changes-summary.ts +12 · Refactors…` (counts, most
 changed file, and summary preview, as space permits). Added, changed, and deleted paths appear
 before the model request finishes, and the summary appears beneath the box when room permits. Clean repositories, non-repository directories, disabled

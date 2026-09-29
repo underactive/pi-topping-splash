@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The startup uncommitted block (boxed listing, its single-line fallback, and the summary beneath it)
+  now stops at 100 columns instead of filling the terminal, so a wide window keeps the paths and the
+  summary at a readable line length. Terminals narrower than 100 columns are unchanged.
 - Per-file line counts in the uncommitted listing, and the `+lines` in its single-line fallback, now use
   the theme's `text` color instead of the dimmed statusline git colors. The added half of each churn bar
   in the uncommitted listing, and its `added` legend swatch, use the

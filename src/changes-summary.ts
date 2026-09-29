@@ -26,6 +26,8 @@ export const PATH_MIN_WIDTH = 12;
 export const PATH_WHOLE_MAX = 32;
 /** Top-border title of the boxed listing. */
 export const BOX_TITLE = " uncommitted ";
+/** The listing and its summary stop here, however wide the terminal is; narrower terminals still fill their own width. */
+export const CHANGES_MAX_WIDTH = 100;
 /** The box needs both borders, one file row, and one summary row; shorter budgets use a single line. */
 export const BOX_MIN_ROWS = 4;
 /** How much of each statusline git color survives the dim; the rest is the backdrop showing through. */
@@ -347,22 +349,24 @@ function compactChangesLine(theme: Theme, presentation: ChangesPresentation, wid
  * within the available row budget. The top border carries the title and per-kind counts, a key row
  * gives the file count and bar legend, and each path row ends in a churn bar and its line counts.
  * Budgets under BOX_MIN_ROWS use a single preview line; narrow widths with enough rows keep the
- * existing unboxed listing.
+ * existing unboxed listing. The block is left-aligned at the splash margin and never grows past
+ * CHANGES_MAX_WIDTH, so a wide terminal keeps the paths and the summary at a readable line length.
  */
 export function renderChangesBlock(theme: Theme, presentation: ChangesPresentation | null, width: number, maxRows: number): string[] {
 	const rowsAvailable = Math.floor(maxRows);
 	if (!presentation || rowsAvailable < 1 || width < 1) return [];
+	const blockWidth = Math.min(width, CHANGES_MAX_WIDTH);
 
 	const { entries } = presentation;
 	const colors = changeColors(theme);
 	const border = (text: string) => theme.fg("border", text);
 	const indent = " ".repeat(SPLASH_MARGIN_X);
-	if (rowsAvailable < BOX_MIN_ROWS) return [compactChangesLine(theme, presentation, width, colors)];
+	if (rowsAvailable < BOX_MIN_ROWS) return [compactChangesLine(theme, presentation, blockWidth, colors)];
 	// Columns between the box's verticals, with the splash margin kept clear on both sides.
-	const boxInner = width - SPLASH_MARGIN_X * 2 - 2;
+	const boxInner = blockWidth - SPLASH_MARGIN_X * 2 - 2;
 	const titleWidth = visibleWidth(BOX_TITLE);
 	const boxed = rowsAvailable >= BOX_MIN_ROWS && boxInner >= titleWidth + 2;
-	const contentWidth = Math.max(1, boxed ? boxInner - 2 : width - SPLASH_MARGIN_X);
+	const contentWidth = Math.max(1, boxed ? boxInner - 2 : blockWidth - SPLASH_MARGIN_X);
 
 	// Rows are claimed in priority order from the budget and the entry count alone, so the listing
 	// never moves when the summary lands: one file row and one summary row, the gap under the
@@ -435,7 +439,7 @@ export function renderChangesBlock(theme: Theme, presentation: ChangesPresentati
 	const summaryIndent = boxed ? `${indent}  ` : indent;
 	rows.push(...shown.map((line) => `${summaryIndent}${line}`));
 
-	return rows.slice(0, rowsAvailable).map((row) => truncateToWidth(row, width, ELLIPSIS, true));
+	return rows.slice(0, rowsAvailable).map((row) => truncateToWidth(row, blockWidth, ELLIPSIS, true));
 }
 
 /** Install the post-gate changes-only header without rewiring the splash's render-state signal. */
