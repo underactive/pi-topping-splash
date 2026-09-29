@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Optional startup summary of uncommitted changes beneath the splash: an immediate boxed listing of added/changed/deleted paths, with per-kind counts in the border and per-file line counts and churn bars against `HEAD` filling in just after; short terminals show a one-line count, featured file and summary preview instead. Includes an asynchronous model summary, an off-by-default settings toggle, and a summary-model picker.
+- The **Summary model** settings row opens the startup gate's two-pane model picker with Enter or Space
+  (its thinking pane is ignored, since summaries always run with thinking off). Backspace or Delete on
+  the row resets it to the session model.
 
 ### Changed
 
@@ -17,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the theme's `text` color instead of the dimmed statusline git colors. The added half of each churn bar
   in the uncommitted listing, and its `added` legend swatch, use the
   theme's `text` color instead of `success`.
+- The `/topping-splash-settings` menu now ends in an action bar: **Apply** saves and closes, **Cancel**
+  discards. Tab focuses the bar, ←/→ pick a button and Enter fires it. Enter on a toggle or cycle row no
+  longer applies the menu; Esc still cancels.
 
 ## [0.3.2] - 2026-09-20
 

@@ -6,18 +6,22 @@
  * contract and `ctx.ui.custom()` overlay API.
  *
  * Renders a titled box containing one or more sections of boolean toggle or
- * multi-value cycle or model-pick items. Boolean rows space-toggle ON/OFF; cycle rows step
- * through their values with the left/right arrows, and pick rows hand control to a separate
- * selector on Space, e.g.:
+ * multi-value cycle or model-pick items, closed by a right-aligned action bar. Boolean rows
+ * space-toggle ON/OFF; cycle rows step through their values with the left/right arrows; pick
+ * rows hand control to a separate selector on Space or Enter; and rows declaring a `clearValue`
+ * reset to it on Backspace/Delete. Tab moves focus between the items and the action bar, where
+ * the left/right arrows move between buttons and Enter fires the focused one:
  *
  *   ╔═[ Pi Topping: Settings ]═════════════════════╗
  *   ╟─ Decorations ────────────────────────────────╢
- *   ║  ❯ [■] Animated spinner              ON       ║
- *   ║    [ ] "Working..." text shimmer     OFF      ║
- *   ║    [■] Background color        ‹ rainbow ›    ║
+ *   ║  ❯ [■] Animated spinner                  ON  ║
+ *   ║    [ ] "Working..." text shimmer        OFF  ║
+ *   ║    [■] Background color         ‹ rainbow ›  ║
  *   ╟──────────────────────────────────────────────╢
- *   ║  ↑↓ move  ␣ toggle/pick  ⏎ apply  esc cancel ║
- *   ╚═════════════════════════════════════[ 1/3 ]═╝
+ *   ║                     [ Apply ]    ‹ Cancel ›  ║
+ *   ╟──────────────────────────────────────────────╢
+ *   ║  ↑↓ move  ␣ toggle  ⇥ actions  ⏎ select      ║
+ *   ╚═══════════════════════════════════════[ 1/3 ]╝
  *
  * Intended to be reused by any extension that needs a simple modal toggle
  * menu; it has no dependency on this extension's own settings shape.
@@ -34,8 +38,22 @@ export interface MenuItem {
 	value: MenuValue;
 	/** Values cycled with left/right arrows. Omit for a boolean space-toggle. */
 	cycleValues?: readonly string[];
-	/** Space resolves the menu with this item id so the caller can open a dedicated picker. */
+	/** Space or Enter resolves the menu with this item id so the caller can open a dedicated picker. */
 	pick?: boolean;
+	/**
+	 * Value the row resets to on Backspace/Delete. Declaring it is what makes a row clearable,
+	 * and because the cleared value is also what the row then shows, the unset state reads as
+	 * deliberate rather than blank.
+	 */
+	clearValue?: MenuValue;
+}
+
+/** An action-bar button. The result names the id of the button that closed the menu. */
+export interface MenuButton {
+	id: string;
+	label: string;
+	/** Focused when the menu opens; the first button otherwise. */
+	primary?: boolean;
 }
 
 export interface MenuSection {
@@ -46,19 +64,24 @@ export interface MenuSection {
 export interface MenuConfig {
 	title: string;
 	sections: MenuSection[];
+	/** Action bar. Without one the menu is dismissible only by Escape, so callers that stage a
+	 * picker row must supply at least the button that continues the flow. */
+	buttons?: MenuButton[];
 	hints?: string[];
 	/** Item id to select when a staged menu is reopened. */
 	initialCursor?: string;
 }
 
 export interface MenuResult<T> {
-	applied: boolean;
+	/** Id of the action-bar button that closed the menu; undefined when Escape cancelled it. */
+	action: string | undefined;
 	values: T;
-	/** Set when Space activated a pick row instead of applying the menu. */
+	/** Set when Space or Enter activated a pick row instead of an action-bar button. */
 	picked?: string;
 }
 
 const DEFAULT_HINTS = ["\u2191\u2193 move", "\u2423 toggle", "\u23ce apply", "esc cancel"];
+const BUTTON_HINTS = ["\u2191\u2193 move", "\u2423 toggle", "\u21e5 actions", "\u23ce select", "esc cancel"];
 const MAX_WIDTH = 76;
 const ROW_PREFIX_WIDTH = 8; // "  " + marker + " " + "[" + box + "]" + " "
 
@@ -84,12 +107,15 @@ export class MenuComponent implements Component {
 	private readonly done: (result: MenuResult<Record<string, MenuValue>>) => void;
 	private readonly title: string;
 	private readonly sections: MenuSection[];
+	private readonly buttons: MenuButton[];
 	private readonly hints: string[];
 	private readonly initialValues: Record<string, MenuValue>;
 	private readonly values: Record<string, MenuValue>;
 	private readonly flat: FlatItem[];
 	private readonly tui: TUI | undefined;
 	private cursor = 0;
+	private buttonIndex = 0;
+	private focusedPane: "items" | "buttons" = "items";
 	private scrollStart = 0;
 	private cachedWidth: number | undefined;
 	private cachedRows: number | undefined;
@@ -105,8 +131,10 @@ export class MenuComponent implements Component {
 		this.done = done;
 		this.title = config.title;
 		this.sections = config.sections;
-		this.hints = config.hints ?? DEFAULT_HINTS;
+		this.buttons = config.buttons ?? [];
+		this.hints = config.hints ?? (this.buttons.length > 0 ? BUTTON_HINTS : DEFAULT_HINTS);
 		this.tui = tui;
+		this.buttonIndex = Math.max(0, this.buttons.findIndex((button) => button.primary));
 		this.values = buildInitialValues(config);
 		this.flat = [];
 		for (const [sectionIndex, section] of config.sections.entries()) {
@@ -120,24 +148,38 @@ export class MenuComponent implements Component {
 	}
 
 	handleInput(data: string): void {
-		if (this.flat.length === 0) {
-			if (matchesKey(data, Key.enter)) {
-				this.done({ applied: true, values: { ...this.values } });
-			} else if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
-				this.done({ applied: false, values: { ...this.initialValues } });
+		// Escape and Tab resolve before the panes so both stay live whatever the item count is.
+		if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+			this.done({ action: undefined, values: { ...this.initialValues } });
+			return;
+		}
+		if (this.buttons.length > 0 && matchesKey(data, Key.tab)) {
+			this.focusedPane = this.focusedPane === "items" ? "buttons" : "items";
+			this.invalidate();
+			return;
+		}
+		if (this.focusedPane === "buttons") {
+			if (matchesKey(data, Key.left)) {
+				this.buttonIndex = (this.buttonIndex - 1 + this.buttons.length) % this.buttons.length;
+				this.invalidate();
+			} else if (matchesKey(data, Key.right)) {
+				this.buttonIndex = (this.buttonIndex + 1) % this.buttons.length;
+				this.invalidate();
+			} else if (matchesKey(data, Key.enter)) {
+				this.done({ action: this.buttons[this.buttonIndex]!.id, values: { ...this.values } });
 			}
 			return;
 		}
+		if (this.flat.length === 0) return;
 
 		// Map input to a normalized key name.
 		let mappedKey: string | undefined;
-		for (const k of [Key.up, Key.down, Key.left, Key.right, Key.space, Key.enter, Key.escape]) {
+		for (const k of [Key.up, Key.down, Key.left, Key.right, Key.space, Key.enter, Key.backspace, Key.delete]) {
 			if (matchesKey(data, k)) {
 				mappedKey = k;
 				break;
 			}
 		}
-		if (!mappedKey && matchesKey(data, Key.ctrl("c"))) mappedKey = Key.escape;
 
 		const keyActions: Record<string, () => void> = {
 			[Key.up]: () => {
@@ -153,14 +195,18 @@ export class MenuComponent implements Component {
 			[Key.space]: () => {
 				const item = this.flat[this.cursor]!;
 				if (item.item.pick) {
-					this.done({ applied: false, values: { ...this.values }, picked: item.id });
+					this.done({ action: undefined, values: { ...this.values }, picked: item.id });
 					return;
 				}
 				if (!item.cycleValues) this.values[item.id] = !this.values[item.id] as boolean;
 				this.invalidate();
 			},
-			[Key.enter]: () => this.done({ applied: true, values: { ...this.values } }),
-			[Key.escape]: () => this.done({ applied: false, values: { ...this.initialValues } }),
+			[Key.enter]: () => {
+				const item = this.flat[this.cursor]!;
+				if (item.item.pick) this.done({ action: undefined, values: { ...this.values }, picked: item.id });
+			},
+			[Key.backspace]: () => this.clearCurrentValue(),
+			[Key.delete]: () => this.clearCurrentValue(),
 		};
 
 		const handler = mappedKey ? keyActions[mappedKey] : undefined;
@@ -181,6 +227,14 @@ export class MenuComponent implements Component {
 		this.cachedRows = rows;
 		this.cachedLines = lines;
 		return lines;
+	}
+
+	/** Reset the selected row to its `clearValue`; rows without one ignore Backspace/Delete. */
+	private clearCurrentValue(): void {
+		const item = this.flat[this.cursor]!.item;
+		if (item.clearValue === undefined) return;
+		this.values[item.id] = item.clearValue;
+		this.invalidate();
 	}
 
 	private cycleCurrentValue(delta: number): void {
@@ -263,7 +317,28 @@ export class MenuComponent implements Component {
 	}
 
 	private buildFooter(innerWidth: number): string[] {
-		return [this.renderSeparator(innerWidth), this.renderHintsRow(innerWidth), this.renderBottomBorder(innerWidth)];
+		const rows = [this.renderSeparator(innerWidth)];
+		if (this.buttons.length > 0) {
+			// Two rules bracket the action bar so it reads as its own footer section, matching
+			// the sibling settings menus' `[ Apply ] ‹ Cancel ›` row.
+			rows.push(this.renderActionRow(innerWidth), this.renderSeparator(innerWidth));
+		}
+		rows.push(this.renderHintsRow(innerWidth), this.renderBottomBorder(innerWidth));
+		return rows;
+	}
+
+	/** Right-aligned buttons: the focused one as `[ Apply ]`, the others as `‹ Cancel ›`. */
+	private renderActionRow(innerWidth: number): string {
+		const th = this.theme;
+		const text = this.buttons
+			.map((button, index) => {
+				const focused = index === this.buttonIndex;
+				const label = focused ? `[ ${button.label} ]` : `‹ ${button.label} ›`;
+				return focused && this.focusedPane === "buttons" ? th.bold(th.fg("accent", label)) : th.fg("muted", label);
+			})
+			.join("    ");
+		// Right-align like the gate's picker footer, then let renderContentRow clamp to the frame.
+		return this.renderContentRow(`${" ".repeat(Math.max(0, innerWidth - visibleWidth(text) - 2))}${text}  `, innerWidth);
 	}
 
 	private availableRows(): number | undefined {
@@ -389,11 +464,11 @@ export class MenuComponent implements Component {
 }
 
 /**
- * Show a modal box-drawing toggle menu and resolve once the user applies
- * (Enter) or cancels (Escape / Ctrl+C) it.
+ * Show a modal box-drawing toggle menu and resolve once an action-bar button
+ * closes it, or the user cancels (Escape / Ctrl+C).
  *
- * Requires TUI mode; in any other mode this resolves immediately with
- * `applied: false` and the menu's initial values, doing nothing visible.
+ * Requires TUI mode; in any other mode this resolves immediately with no action
+ * and the menu's initial values, doing nothing visible.
  */
 export async function showMenu<T extends Record<string, MenuValue>>(
 	ctx: ExtensionContext,
@@ -402,7 +477,7 @@ export async function showMenu<T extends Record<string, MenuValue>>(
 	const initialValues = buildInitialValues(config) as T;
 
 	if (ctx.mode !== "tui") {
-		return { applied: false, values: initialValues };
+		return { action: undefined, values: initialValues };
 	}
 
 	return ctx.ui.custom<MenuResult<T>>(

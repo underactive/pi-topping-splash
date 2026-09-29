@@ -35,13 +35,20 @@ cycle, and an opt-in startup changes summary:
 ║    [■] Animate gradient                                         ‹ off ›  ║
 ║                                                                          ║
 ╟─ Startup Changes ────────────────────────────────────────────────────────╢
-║    [ ] Summarize uncommitted changes                                  OFF ║
-║    Summary model                                      session model ›      ║
+║    [ ] Summarize uncommitted changes                                OFF  ║
+║    [■] Summary model                                    session model ›  ║
 ║                                                                          ║
 ╟──────────────────────────────────────────────────────────────────────────╢
-║  ↑↓ move  ␣ toggle/pick  ←→ cycle  ⏎ apply  esc cancel                    ║
+║                                                 [ Apply ]    ‹ Cancel ›  ║
+╟──────────────────────────────────────────────────────────────────────────╢
+║  ↑↓ move  ␣ toggle  ←→ cycle  ⏎ pick  ⌫ clear  ⇥ actions  esc cancel     ║
 ╚═══════════════════════════════════════════════════════════════════[ 1/6 ]╝
 ```
+
+Move with ↑/↓, toggle with Space, and cycle with ←/→. Tab jumps to the action bar at the bottom,
+where ←/→ choose **Apply** (save and close) or **Cancel** and Enter fires the highlighted button;
+Esc also cancels. Enter on a toggle or cycle row does nothing; it only opens the **Summary model**
+picker.
 
 - **Startup gate menu** — show the startup gate menu below the splash on launch (ON by default)
 - **Model + prompt size reveal animation** — shimmer-reveal the model · prompt-size tagline on
@@ -61,7 +68,11 @@ cycle, and an opt-in startup changes summary:
   the gate, or with the gate off until the first agent turn — then stops for the rest of the
   session, since the splash scrolls away once the conversation grows.
 - **Summarize uncommitted changes** — opt in to the startup changes block (OFF by default).
-- **Summary model** — choose a configured provider/id, or `session model` to use the active model.
+- **Summary model** — Enter (or Space) opens the same two-pane model picker as the startup gate:
+  type to filter, Tab or ←/→ to switch panes, Enter to select. The thinking pane belongs to that
+  shared picker but is ignored here, since summaries always run with thinking off. It starts on the
+  chosen model, or on the active model when none is chosen. Backspace or Delete resets the row to
+  `session model`, which uses the active model.
 
 The gate, reveal, changes-summary toggle, and summary-model choice are read during startup and take effect on the next launch; the background color and gradient animation also apply immediately to an already-visible splash. All six keys are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless `PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (gate/reveal ON, changes summary OFF, session model, background `rainbow`, animation `off`).
 

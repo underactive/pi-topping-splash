@@ -5,6 +5,7 @@ export const KEY = {
 	enter: "\r",
 	space: " ",
 	backspace: "\x7f",
+	delete: "\x1b[3~",
 	up: "\x1b[A",
 	down: "\x1b[B",
 	right: "\x1b[C",

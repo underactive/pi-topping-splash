@@ -9,7 +9,6 @@ import {
 	THINKING_LEVELS,
 	thinkingOptionsForModel,
 	TwoPaneModelThinking,
-	SummaryModelPicker,
 	type ModelRef,
 	type ThinkingLevel,
 } from "../src/model-picker.ts";
@@ -19,7 +18,6 @@ import { createFakeTui } from "./helpers/fake-tui.ts";
 import { KEY } from "./helpers/keys.ts";
 import { bootstrapGlobalTheme, makeTheme } from "./helpers/theme.ts";
 import { assertLinesExact } from "./helpers/width.ts";
-import { visibleWidth } from "@earendil-works/pi-tui";
 
 bootstrapGlobalTheme();
 
@@ -67,37 +65,6 @@ describe("pure helpers (M-03..M-06)", () => {
 		assert.equal(defaultThinkingForModel(["off", "medium"], "high"), "medium");
 		const fallback = defaultThinkingForModel(["off", "low"], "high");
 		assert.ok(["off", "low"].includes(fallback), `UNSPECIFIED beyond medium; must stay in options: ${fallback}`);
-	});
-});
-
-describe("SummaryModelPicker", () => {
-	it("preselects the session model and round-trips a filtered model ref", () => {
-		const tui = createFakeTui();
-		const models = [makeModel("provider", "fast"), makeModel("other", "slow")];
-		const ctx = createFakeCtx({ cwd: "/tmp", theme: makeTheme(), tui: tui.tui, models });
-		const picker = new SummaryModelPicker(makeTheme(), ctx.ctx);
-		assert.equal(picker.getSelected(), null);
-		for (const ch of "provider/fast") picker.handleInput(ch);
-		assert.equal(picker.handleInput(KEY.enter), "confirm");
-		assert.deepEqual(picker.getSelected(), { provider: "provider", id: "fast" });
-	});
-
-	it("esc cancels and a configured model is preselected", () => {
-		const tui = createFakeTui();
-		const current = { provider: "provider", id: "fast" };
-		const ctx = createFakeCtx({ cwd: "/tmp", theme: makeTheme(), tui: tui.tui, models: [makeModel("provider", "fast")] });
-		const picker = new SummaryModelPicker(makeTheme(), ctx.ctx, current);
-		assert.deepEqual(picker.getSelected(), current);
-		assert.equal(picker.handleInput(KEY.esc), "back");
-	});
-
-	it("renders the popup without exceeding its width", () => {
-		const tui = createFakeTui();
-		const ctx = createFakeCtx({ cwd: "/tmp", theme: makeTheme(), tui: tui.tui, models: [] });
-		const picker = new SummaryModelPicker(makeTheme(), ctx.ctx);
-		for (const width of [20, 40, 80]) {
-			for (const line of picker.render(width)) assert.ok(visibleWidth(line) <= width);
-		}
 	});
 });
 

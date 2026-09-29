@@ -2,10 +2,10 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { SelectList, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { SelectList, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { sanitizeTuiText } from "./text.ts";
-import { GATE_LIST_HEIGHT, fuzzyRanked, isPrintableInput, renderPopupBox } from "./gate-ui.ts";
+import { GATE_LIST_HEIGHT, fuzzyRanked, isPrintableInput } from "./gate-ui.ts";
 
 /**
  * pi's thinking-level vocabulary, kept structurally identical to agent-core's `ThinkingLevel`
@@ -62,101 +62,14 @@ export function defaultThinkingForModel(options: ThinkingLevel[], currentLevel: 
 }
 
 /**
- * Single-pane, filterable model picker used by settings rows that store a provider/id.
- * The empty value is the explicit session-model fallback and is always offered first.
- * Render is pure: input mutates only picker state; the owner decides when to repaint.
- */
-export class SummaryModelPicker {
-	private readonly theme: Theme;
-	private readonly items: SelectItem[];
-	private list!: SelectList;
-	private filter = "";
-
-	constructor(theme: Theme, ctx: ExtensionContext, current?: ModelRef) {
-		this.theme = theme;
-		let refs: ModelRef[] = [];
-		try {
-			refs = availableModelRefs(ctx);
-		} catch {
-			// A registry read is display-only; the session-model option remains usable.
-		}
-		this.items = [
-			{ value: "", label: "Session model (default)" },
-			...refs.map((ref) => {
-				const value = modelRefLabel(ref);
-				return { value, label: sanitizeTuiText(value) || "(invalid model)" };
-			}),
-		];
-		this.rebuildList();
-		if (current) {
-			const index = this.items.findIndex((item) => item.value === modelRefLabel(current));
-			if (index >= 0) this.list.setSelectedIndex(index);
-		}
-	}
-
-	private rebuildList(): void {
-		const items = this.filter.trim() ? fuzzyRanked(this.items, this.filter, (item) => item.label) : this.items;
-		this.list = new SelectList(items, Math.min(Math.max(items.length, 1), GATE_LIST_HEIGHT), getSelectListTheme());
-	}
-
-	handleInput(data: string): "confirm" | "back" | undefined {
-		if (matchesKey(data, "escape")) return "back";
-		if (matchesKey(data, "return")) return this.list.getSelectedItem() ? "confirm" : undefined;
-		if (matchesKey(data, "backspace")) {
-			if (this.filter.length > 0) {
-				this.filter = this.filter.slice(0, -1);
-				this.rebuildList();
-			}
-			return undefined;
-		}
-		if (isPrintableInput(data)) {
-			this.filter += data;
-			this.rebuildList();
-			return undefined;
-		}
-		this.list.handleInput(data);
-		return undefined;
-	}
-
-	/** Returns null when the user selected the session model. */
-	getSelected(): ModelRef | null {
-		const value = this.list.getSelectedItem()?.value ?? "";
-		if (!value) return null;
-		const separator = value.indexOf("/");
-		if (separator <= 0 || separator === value.length - 1) return null;
-		return { provider: value.slice(0, separator), id: value.slice(separator + 1) };
-	}
-
-	render(width: number): string[] {
-		const bodyWidth = Math.max(1, width - 4);
-		const description = "Summarizes uncommitted changes at startup. Always called with thinking off, so pick a cheap, fast model.";
-		const filter = this.filter
-			? `${this.theme.fg("dim", "filter: ")}${this.theme.fg("text", sanitizeTuiText(this.filter))}`
-			: this.theme.fg("dim", "type to filter");
-		const body = [
-			...wrapTextWithAnsi(this.theme.fg("muted", description), bodyWidth),
-			filter,
-			...this.list.render(bodyWidth),
-			"",
-			this.theme.fg("dim", "↑↓ move · enter select · esc back"),
-		];
-		return renderPopupBox(this.theme, Math.max(width, 1), "Summary Model", body);
-	}
-
-	invalidate(): void {
-		this.list.invalidate();
-	}
-}
-
-/**
  * Two-pane selector: models on the left, the selected model's thinking levels on the right,
  * above a Select/Cancel action bar. Typed text narrows the model filter while the model pane is
  * active, so tab and the arrow keys (not letters) move focus between the panes and the buttons,
  * and the buttons only handle arrows/Enter. Ported from
  * pi-moa-plan's picker of the same name so both extensions select models identically.
  *
- * Render-pure: mutations never request a render, because every entry point runs inside
- * `StartupGate.handleInput`, which re-renders once after dispatching.
+ * Render-pure: mutations never request a render, because every owner (`StartupGate.handleInput`
+ * and the settings summary-model overlay) re-renders once after dispatching.
  */
 export class TwoPaneModelThinking {
 	private modelList!: SelectList;
