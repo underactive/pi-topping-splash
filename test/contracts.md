@@ -106,7 +106,7 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 
 | # | Symbol | Claim | Source |
 |---|--------|-------|--------|
-| S-01 | constants | `SWATCH_CELL === "▀"`, `SPLASH_MARGIN_X === 3`, `LOGO_GAP === 4`, `PANEL_PADDING_X === 2`, `PANEL_MAX_WIDTH === 72`, `PANEL_MIN_WIDTH === 34`, `PANEL_MARGIN_Y === 1`, `MAX_SPLASH_ROW_SHARE === 0.6` | exported literals + README (60%) |
+| S-01 | constants | `SWATCH_CELL === "▀"`, `SPLASH_MARGIN_X === 3`, `LOGO_GAP === 4`, `PANEL_PADDING_X === 2`, `PANEL_MAX_WIDTH === 100`, `PANEL_MIN_WIDTH === 34`, `PANEL_MARGIN_Y === 1`, `MAX_SPLASH_ROW_SHARE === 0.6` | exported literals + README (60%); amended 2026-09-29 (`PANEL_MAX_WIDTH` 72 → 100, user request) |
 | S-02 | `buildLabeledWrappedSection` | heading row (`[label]`) then items comma-wrapped beneath, every line `<= width` visible columns | doc comment + T-05 |
 | S-03 | `buildCountsLine` | contains `[shortcuts] N`, `[context] N`, `[skills] M`, `[prompts] P` and `[extensions] K` with the actual counts, `·`-joined in that order; `<= width` | doc comment; amended 2026-08-14 (shortcuts and prompts added) |
 | S-04 | `buildPanelLines` | interior lines `<= innerWidth`; includes pi version (`pi v${VERSION}` — VERSION imported from pi-coding-agent as oracle); model rendered when given; body included | doc comment ("pi version as a titled rule, active model as centered tagline, then body") |

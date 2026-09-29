@@ -43,7 +43,7 @@ describe("constants (S-01)", () => {
 		assert.equal(SPLASH_MARGIN_X, 3);
 		assert.equal(LOGO_GAP, 4);
 		assert.equal(PANEL_PADDING_X, 2);
-		assert.equal(PANEL_MAX_WIDTH, 72);
+		assert.equal(PANEL_MAX_WIDTH, 100);
 		assert.equal(PANEL_MIN_WIDTH, 34);
 		assert.equal(PANEL_MARGIN_Y, 1);
 		assert.equal(MAX_SPLASH_ROW_SHARE, 0.6);

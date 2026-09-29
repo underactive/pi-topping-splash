@@ -18,7 +18,8 @@ export const SPLASH_MARGIN_X = 3;
 /** Columns between the logo and the info panel when they sit side by side. */
 export const LOGO_GAP = 4;
 export const PANEL_PADDING_X = 2;
-export const PANEL_MAX_WIDTH = 72;
+/** Widest the panel grows beside the logo, padding included; a panel stacked under the logo spans the terminal instead. */
+export const PANEL_MAX_WIDTH = 100;
 /** Narrower than this and the panel drops below the logo instead of sitting beside it. */
 export const PANEL_MIN_WIDTH = 34;
 /** Rows of bare swatch above and below the panel, so the rainbow reads as an unbroken band there. */

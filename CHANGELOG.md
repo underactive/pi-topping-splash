@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   borrow the dimmed statusline git colors: each half takes its churn-bar half's color, the theme's
   `text` for added and its `error` for removed (a zero half still drops to `dim`). The added half of
   each churn bar uses the theme's `text` color instead of `success`.
+- The info panel beside the logo now grows up to 100 columns wide instead of 72, reaching it on
+  terminals 138 columns or wider, so long lists wrap onto fewer rows. A panel stacked under the logo on
+  narrow terminals is unchanged.
 - The `/topping-splash-settings` menu now ends in an action bar: **Apply** saves and closes, **Cancel**
   discards. Tab focuses the bar, ←/→ pick a button and Enter fires it. Enter on a toggle or cycle row no
   longer applies the menu; Esc still cancels.
