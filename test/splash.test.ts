@@ -23,6 +23,7 @@ import {
 	SWATCH_CELL,
 	type Ink,
 	type PanelPlacement,
+	type SplashBand,
 } from "../src/splash.ts";
 import { LOGO_INK, LOGO_LINES, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "../src/logo.ts";
 import { PANEL_BG_DARK } from "../src/color.ts";
@@ -433,6 +434,125 @@ describe("animated backdrop repaint (S-12)", () => {
 				assertLinesExact(frame, 100, `repaintBackdrop(${background}, ${animation})`);
 				assert.equal(frame.length, parts.lines.length, `${background} ${animation}: row count stable`);
 				assert.notDeepEqual(frame, parts.lines, `${background} ${animation}: the frame must move`);
+			}
+		}
+	});
+});
+
+describe("panel section (S-14)", () => {
+	const PLATE_BG_SGR = `\x1b[48;2;${PANEL_BG_DARK}m`;
+	const LOGO_FG_SGR = `\x1b[38;2;${LOGO_INK}m`;
+	const CONTEXT = ["AGENTS.md"];
+	const SKILLS = ["alpha"];
+	const EXTENSIONS = ["beta"];
+	const SECTION = ["", "[gamma] 2", "delta"];
+	const build = (width: number, termRows: number, section?: (band: SplashBand) => string[], animation: "off" | "breathe" = "off", background: "rainbow" | "accent" = "rainbow") =>
+		buildHeaderParts(width, termRows, theme, CONTEXT, SKILLS, EXTENSIONS, MODEL, 4000, background, animation, 0, [], [], section);
+	const bandOf = (width: number, termRows: number): SplashBand => {
+		let seen: SplashBand | undefined;
+		build(width, termRows, (band) => { seen = band; return []; });
+		return seen!;
+	};
+	/** Red channel of the first swatch cell's lower half on a row: the fade measured down column 0. */
+	const edgeRed = (row: string): number => Number(/\x1b\[48;2;(\d+);/.exec(row)?.[1]);
+	/** Indexes of the rows the panel's plate covers. */
+	const panelRows = (lines: string[]) => lines.flatMap((line, index) => (line.includes(PLATE_BG_SGR) ? [index] : []));
+
+	it("closes the panel with the section, after [extensions] and above the closing padding row", () => {
+		// 40 columns stacks the panel under the logo; the rest sit side by side. Sixty rows keep the lists listed.
+		for (const width of [40, 100, 120, 160]) {
+			const base = build(width, 60);
+			const parts = build(width, 60, () => SECTION);
+			const text = parts.lines.map(sanitizeTuiText);
+			const extensionsRow = text.findIndex((line) => line.includes("[extensions] 1"));
+			const headingRow = text.findIndex((line) => line.includes("[gamma] 2"));
+			const column = text[extensionsRow].indexOf("[extensions]");
+			assert.equal(headingRow, extensionsRow + 3, `width ${width}: after the extension list and the section's own gap`);
+			assert.equal(text[headingRow].indexOf("[gamma]"), column, `width ${width}: flush with the other headings`);
+			assert.equal(text[headingRow + 1].indexOf("delta"), column, `width ${width}: flush with the other items`);
+			const padding = parts.lines[headingRow + 2];
+			assert.ok(padding.includes(PLATE_BG_SGR), `width ${width}: the panel's closing padding row follows the section`);
+			assert.equal(sanitizeTuiText(padding).slice(column - PANEL_PADDING_X, column + 20).trim(), "", `width ${width}: padding row is blank`);
+			assert.equal(parts.lines.length, base.lines.length + SECTION.length, `width ${width}: the panel outgrows the logo, so each row adds one`);
+			assertLinesExact(parts.lines, width, `section at width ${width}`);
+		}
+	});
+
+	it("reports the panel's text width and the rows spent down to its foot", () => {
+		assert.deepEqual(bandOf(120, 50), { width: Math.min(PANEL_MAX_WIDTH, 120 - 2 * SPLASH_MARGIN_X - LOGO_WIDTH - LOGO_GAP) - 2 * PANEL_PADDING_X, rows: build(120, 50).lines.length });
+		assert.deepEqual(bandOf(40, 50), { width: 40 - 2 * SPLASH_MARGIN_X - 2 * PANEL_PADDING_X, rows: build(40, 50).lines.length });
+		// Ten rows collapse the lists to counts, so the logo beside the panel is the taller of the two.
+		assert.ok(bandOf(160, 10).rows < build(160, 10).lines.length, "a panel shorter than the logo leaves rows under its foot");
+	});
+
+	it("fills the rows beside a taller logo before growing the splash", () => {
+		// Ten rows collapse the lists to counts, so the logo's band is the taller one.
+		const logoBand = LOGO_LINES.length + 2;
+		const base = build(160, 10);
+		assert.equal(base.lines.length, logoBand);
+		const listsRows = panelRows(base.lines).length;
+		for (let extra = 0; extra <= logoBand; extra++) {
+			const parts = build(160, 10, () => Array.from({ length: extra }, () => "x"));
+			assert.equal(parts.lines.length, Math.max(logoBand, listsRows + extra + 2 * PANEL_MARGIN_Y), `extra ${extra}`);
+		}
+	});
+
+	it("leaves the splash untouched when there is no section", () => {
+		for (const section of [undefined, () => []]) {
+			assert.deepEqual(build(120, 50, section).lines, build(120, 50).lines);
+		}
+	});
+
+	it("centers the logo and the panel on the finished splash, section included", () => {
+		// Panel taller than the logo (120x50), and logo taller until the section outgrows it (160x10).
+		for (const [width, termRows] of [[120, 50], [160, 10]] as const) {
+			for (const extra of [0, 3, 12, 20]) {
+				const parts = build(width, termRows, () => Array.from({ length: extra }, () => "x"));
+				const height = parts.lines.length;
+				const label = `${width}x${termRows} with ${extra} section rows`;
+				assert.equal(parts.lines.findIndex((line) => line.includes(LOGO_FG_SGR)), Math.floor((height - LOGO_LINES.length) / 2), `${label}: logo centered`);
+				const rows = panelRows(parts.lines);
+				assert.equal(rows[0], Math.floor((height - rows.length) / 2), `${label}: panel centered`);
+			}
+		}
+	});
+
+	it("keeps the lists and the tagline row in place when the panel is already the taller of the two", () => {
+		const base = build(120, 50);
+		const parts = build(120, 50, () => SECTION);
+		// The logo re-centers, so compare only the panel's columns. The taller fade shifts colors, so
+		// compare the visible glyphs. The section's gap takes the row where the closing padding was.
+		const column = sanitizeTuiText(base.lines.find((line) => line.includes("[extensions]"))!).indexOf("[extensions]") - PANEL_PADDING_X;
+		const panelText = (lines: string[]) => lines.slice(0, base.lines.length - 2).map((line) => sanitizeTuiText(line).slice(column));
+		assert.deepEqual(panelText(parts.lines), panelText(base.lines));
+		assert.equal(parts.repaintTagline?.().row, base.repaintTagline?.().row);
+	});
+
+	it("runs the fade over the whole taller splash, so the old foot is brighter than without the section", () => {
+		const base = build(120, 50, undefined, "off", "accent");
+		const parts = build(120, 50, () => Array.from({ length: 12 }, () => "x"), "off", "accent");
+		const foot = base.lines.length - 1;
+		assert.ok(edgeRed(parts.lines[foot]) > edgeRed(base.lines[foot]) + 20, "the old last row is lifted off black");
+		const topRed = (row: string): number => Number(/\x1b\[38;2;(\d+);/.exec(row)?.[1]);
+		assert.equal(topRed(parts.lines[0]), topRed(base.lines[0]), "the top edge is full brightness either way");
+		const reds = parts.lines.map(edgeRed);
+		reds.slice(1).forEach((red, i) => assert.ok(red <= reds[i], `row ${i + 1} is no brighter than the row above it`));
+		assert.ok(reds.at(-1)! < reds[foot], "the fade keeps going beside the section");
+	});
+
+	it("repaints the section rows with the backdrop and never moves them", () => {
+		const parts = build(120, 50, () => SECTION, "breathe");
+		const frame = parts.repaintBackdrop!(2000);
+		assert.equal(frame.length, parts.lines.length);
+		assertLinesExact(frame, 120, "repainted section frame");
+		assert.deepEqual(frame.map(sanitizeTuiText), parts.lines.map(sanitizeTuiText));
+		assert.notDeepEqual(frame, parts.lines, "the backdrop around the panel must move");
+	});
+
+	it("stays exact-width at every width and terminal height, section included", () => {
+		for (const termRows of [10, 24, 40]) {
+			for (let width = 1; width <= 200; width++) {
+				assertLinesExact(build(width, termRows, (band) => [" ".repeat(band.width), "y".repeat(band.width + 5)]).lines, width, `section rows=${termRows} width=${width}`);
 			}
 		}
 	});

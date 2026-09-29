@@ -9,20 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Optional startup summary of uncommitted changes beneath the splash: an immediate boxed listing of added/changed/deleted paths, with per-kind counts in the border and per-file line counts and churn bars against `HEAD` filling in just after; short terminals show a one-line count, featured file and summary preview instead. Includes an asynchronous model summary, an off-by-default settings toggle, and a summary-model picker.
+- Optional startup summary of uncommitted changes, closing the splash's info panel as a `[local changes]` section after `[extensions]`: an immediate listing of added/changed/deleted paths under a heading carrying the per-kind counts, with per-file line counts and churn bars against `HEAD` filling in just after and the model summary beneath them; short terminals show a one-line heading, featured file and summary preview instead. Includes an asynchronous model summary, an off-by-default settings toggle, and a summary-model picker.
 - The **Summary model** settings row opens the startup gate's two-pane model picker with Enter or Space
   (its thinking pane is ignored, since summaries always run with thinking off). Backspace or Delete on
   the row resets it to the session model.
 
 ### Changed
 
-- The startup uncommitted block (boxed listing, its single-line fallback, and the summary beneath it)
-  now stops at 100 columns instead of filling the terminal, so a wide window keeps the paths and the
-  summary at a readable line length. Terminals narrower than 100 columns are unchanged.
-- Per-file line counts in the uncommitted listing, and the `+lines` in its single-line fallback, now use
-  the theme's `text` color instead of the dimmed statusline git colors. The added half of each churn bar
-  in the uncommitted listing, and its `added` legend swatch, use the
-  theme's `text` color instead of `success`.
+- The startup uncommitted block is now the info panel's last section, after `[extensions]`, instead of
+  a box under the splash. It drops the border and the `N files` key row, heads the listing
+  `[local changes] +a, ~c, -d` in the other headings' colors, and follows the file rows with the
+  summary directly. The panel and the gradient grow downward as the section fills in, the lists above
+  stay put, and the logo stays centered beside the taller panel. The slim changes-only header after
+  **New session** uses the same layout, left-aligned and stopped at 100 columns.
+- Per-file line counts in the uncommitted listing, and the `+lines` in its single-line fallback, no longer
+  borrow the dimmed statusline git colors: each half takes its churn-bar half's color, the theme's
+  `text` for added and its `error` for removed (a zero half still drops to `dim`). The added half of
+  each churn bar uses the theme's `text` color instead of `success`.
 - The `/topping-splash-settings` menu now ends in an action bar: **Apply** saves and closes, **Cancel**
   discards. Tab focuses the bar, ←/→ pick a button and Enter fires it. Enter on a toggle or cycle row no
   longer applies the menu; Esc still cancels.

@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type KeybindingDefinitions, visibleWidth } from "@earendil-works/pi-tui";
+import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type KeybindingDefinitions } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
 import { ensureQuietStartup, installHeader, withSettings } from "../src/header.ts";
-import { CHANGES_MAX_WIDTH, installChangesHeader, renderChangesBlock } from "../src/changes-summary.ts";
+import { installChangesHeader } from "../src/changes-summary.ts";
 import type { ChangesPresentation } from "../src/changes-summary.ts";
 import { writePreferences } from "../src/preferences.ts";
 import { gateMenuRows } from "../src/gate.ts";
@@ -210,49 +210,75 @@ describe("installHeader (H-04, H-05)", () => {
 		assert.notDeepEqual(second, first, "the backdrop must move");
 	});
 
-	it("appends the startup changes block, tracks total splash rows, and survives animation ticks", () => {
+	const changesPresentation = (summary: ChangesPresentation["summary"] = { status: "pending", modelLabel: "provider/model" }, version = 1): ChangesPresentation => ({
+		entries: [
+			{ path: "added.ts", kind: "added", untracked: false },
+			{ path: "changed.ts", kind: "changed", untracked: false },
+			{ path: "deleted.ts", kind: "deleted", untracked: false },
+		],
+		summary,
+		version,
+	});
+	const setRows = (tui: FakeTuiHarness, rows: number): void => {
+		(tui.tui.terminal as { rows: number }).rows = rows;
+	};
+
+	it("folds the changes section into the info panel after [extensions], tracks total splash rows, and survives animation ticks", () => {
 		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "breathe", changesSummary: "on" });
-		const { component } = install();
-		const presentation: ChangesPresentation = {
-			entries: [
-				{ path: "added.ts", kind: "added", untracked: false },
-				{ path: "changed.ts", kind: "changed", untracked: false },
-				{ path: "deleted.ts", kind: "deleted", untracked: false },
-			],
-			summary: { status: "pending", modelLabel: "provider/model" },
-			version: 1,
-		};
-		state.changes = presentation;
+		const { tui, component } = install();
+		setRows(tui, 60);
+		const band = component.render(120);
+		state.changes = changesPresentation();
 		const first = component.render(120);
-		// The splash stays full-bleed; the changes block appended below it stops at CHANGES_MAX_WIDTH.
-		const split = first.findIndex((line) => visibleWidth(line) !== 120);
-		assert.ok(split > 0, "the splash renders before the changes block");
-		assertLinesExact(first.slice(0, split), 120, "splash rows");
-		assertLinesExact(first.slice(split), CHANGES_MAX_WIDTH, "changes rows");
+		// The swatch runs beside the grown panel too, so the whole header stays full-bleed.
+		assertLinesExact(first, 120, "splash + changes section");
+		assert.ok(first.length > band.length, "the section grows the panel");
 		assert.equal(state.splashRows, first.length);
-		assert.ok(first.map(sanitizeTuiText).join("\n").includes("changed.ts"));
+		// The logo re-centers against the taller panel, so compare the panel's columns only. The section's
+		// gap takes the row where the panel's closing padding was; every panel row above keeps its glyphs.
+		const column = sanitizeTuiText(band.find((line) => line.includes("[extensions]"))!).indexOf("[extensions]");
+		const panelText = (lines: string[]) => lines.slice(0, band.length - 2).map((line) => sanitizeTuiText(line).slice(column));
+		assert.deepEqual(panelText(first), panelText(band), "the panel rows above the section keep their glyphs");
+		const text = first.map(sanitizeTuiText).join("\n");
+		assert.ok(text.indexOf("[extensions]") < text.indexOf("[local changes] +1, ~1, -1"), "the section follows the extension list");
+		assert.ok(text.includes("changed.ts"));
 		gradientAnimation.timeMs = 2000;
 		gradientAnimation.tick += 1;
 		const second = component.render(120);
+		assertLinesExact(second, 120, "animated splash + changes section");
+		assert.equal(second.length, first.length);
 		assert.equal(second.map(sanitizeTuiText).join("\n").split("changed.ts").length - 1, 1);
+		assert.notDeepEqual(second, first, "the backdrop around the panel must move");
 	});
 
-	it("clamps the appended changes block to CHANGES_MAX_WIDTH on a wide terminal", () => {
+	it("lines the section's heading up with the panel's other headings at every width", () => {
 		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", changesSummary: "on" });
-		const { component } = install();
-		const presentation: ChangesPresentation = {
-			entries: [
-				{ path: "added.ts", kind: "added", untracked: false },
-				{ path: "changed.ts", kind: "changed", untracked: false },
-			],
-			summary: { status: "pending", modelLabel: "provider/model" },
-			version: 1,
-		};
-		state.changes = presentation;
-		const lines = component.render(140);
-		const split = lines.findIndex((line) => visibleWidth(line) !== 140);
-		assert.ok(split > 0, "the splash is still full-bleed at 140");
-		assert.deepEqual(lines.slice(split), renderChangesBlock(makeTheme(), presentation, 140, lines.length - split), "the appended rows are the clamped block");
+		const { tui, component } = install();
+		setRows(tui, 60);
+		state.changes = changesPresentation();
+		for (const width of [60, 100, 120, 140, 200]) {
+			const lines = component.render(width);
+			assertLinesExact(lines, width, `section at width ${width}`);
+			const text = lines.map(sanitizeTuiText);
+			const heading = text.find((line) => line.includes("[local changes]"))!;
+			const extensions = text.find((line) => line.includes("[extensions]"))!;
+			assert.equal(heading.indexOf("[local changes]"), extensions.indexOf("[extensions]"), `width ${width}`);
+			assert.equal(text.some((line) => /[┌┐└┘│]/.test(line)), false, `width ${width}: no box`);
+		}
+	});
+
+	it("rebuilds the section when the changes are republished", () => {
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", changesSummary: "on" });
+		const { tui, component } = install();
+		setRows(tui, 60);
+		state.changes = changesPresentation();
+		const pending = component.render(120).map(sanitizeTuiText).join("\n");
+		assert.ok(pending.includes("summarizing with provider/model"));
+		assert.equal(component.render(120).map(sanitizeTuiText).join("\n"), pending, "an unchanged version is served from the cache");
+		state.changes = changesPresentation({ status: "done", text: "All three files moved." }, 2);
+		const done = component.render(120).map(sanitizeTuiText).join("\n");
+		assert.ok(done.includes("All three files moved."));
+		assert.equal(done.includes("summarizing with"), false);
 	});
 
 	it("reserves gate rows for the changes block and keeps the changes-only header separate", () => {

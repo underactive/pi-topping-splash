@@ -67,7 +67,7 @@ picker.
   they modulate the vertical fade. The animation runs while the splash is on screen — during
   the gate, or with the gate off until the first agent turn — then stops for the rest of the
   session, since the splash scrolls away once the conversation grows.
-- **Summarize uncommitted changes** — opt in to the startup changes block (OFF by default).
+- **Summarize uncommitted changes** — opt in to the info panel's `[local changes]` section (OFF by default).
 - **Summary model** — Enter (or Space) opens the same two-pane model picker as the startup gate:
   type to filter, Tab or ←/→ to switch panes, Enter to select. The thinking pane belongs to that
   shared picker but is ignored here, since summaries always run with thinking off. It starts on the
@@ -90,22 +90,25 @@ When the panel would exceed 60% of the terminal height or any name/hint is too w
 
 ## Startup changes summary
 
-When enabled, a genuine TUI startup with the splash and a trusted project shows a bounded
-`uncommitted` box beneath the splash immediately. Its top border carries the per-kind counts
-(`+added ~changed -deleted`, in pi-topping-statusline's git colors), and each row lists a path with
-a churn bar and its line counts against `HEAD`, which fill in just after the listing appears.
-Untracked files show `new` and binary files `bin`; narrow terminals drop the bars, then the line
-counts, then the box. The block is left-aligned at the splash margin and stops at 100 columns, so a
-wide terminal keeps the paths and the summary at a readable line length. If one to three rows remain
-below the splash, the block becomes one line:
-`● 10 uncommitted [+3 · ~4 · -3] ~ src/changes-summary.ts +12 · Refactors…` (counts, most
-changed file, and summary preview, as space permits). Added, changed, and deleted paths appear
-before the model request finishes, and the summary appears beneath the box when room permits. Clean repositories, non-repository directories, disabled
-or untrusted projects produce no block and no model request. The pending line is
-`summarizing with provider/id…`; failures remain visible as `summary unavailable: <reason>` while
-the path listing stays on screen.
+When enabled, a genuine TUI startup with the splash and a trusted project closes the info panel
+with a `[local changes]` section after `[extensions]`, styled like the panel's other sections. The
+heading carries the per-kind path counts (`[local changes] +3, ~4, -3`: added, changed, deleted, zero
+kinds omitted), and each row below it lists a path in pi-topping-statusline's git colors with a
+churn bar and its line counts against `HEAD`, which fill in just after the listing appears, and the
+summary follows the last file row. Untracked files show `new` and binary files `bin`; narrow panels
+drop the bars, then the line counts. The section spends only the rows the gate or editor leaves free
+below the splash, growing the panel and the gradient around it downward while the lists above stay
+put and the logo stays centered beside the taller panel. When those rows cannot hold the listing,
+the section is one line instead: `[local changes] +3, ~4, -3 · ~ src/changes-summary.ts +12 ·
+Refactors…` (counts, most changed file, and summary preview, as space permits). Added, changed, and
+deleted paths appear before the model request finishes, and the summary appears under the file rows
+when room permits. Clean repositories, non-repository directories, disabled or untrusted projects
+produce no section and no model request. The pending line is `summarizing with provider/id…`;
+failures remain visible as `summary unavailable: <reason>` while the path listing stays on screen.
 
-The block survives the startup gate's **New session** choice as a slim changes-only header. The
+The section survives the startup gate's **New session** choice as a slim changes-only header, laid
+out the same way at the splash margin, at most 100 columns wide, on the plain terminal background
+since the splash is gone by then. The
 summary uses the session model by default, or the configured picker choice, and always requests
 with thinking off. Bounded file lists and diff excerpts are sent to the selected model provider.
 Sensitive-looking file contents are withheld and common secrets are redacted best-effort; this is

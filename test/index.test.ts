@@ -7,7 +7,7 @@ import type { ExecResult } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import piStartupGreeter from "../index.ts";
 import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
-import { BOX_MIN_ROWS, EDITOR_RESERVED_ROWS, summarizeChanges } from "../src/changes-summary.ts";
+import { EDITOR_RESERVED_ROWS, summarizeChanges } from "../src/changes-summary.ts";
 import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
 import { stopTaglineReveal, taglineReveal } from "../src/reveal.ts";
 import { headerRenderState, state } from "../src/state.ts";
@@ -607,7 +607,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 		assert.equal(wired.ctx.streamCalls.length, 0, "disabled startup must not call a model");
 		const header = mountedHeader(wired);
 		assert.equal(state.changes, null);
-		assert.ok(!header.render(100).map(sanitizeTuiText).join("\n").includes("uncommitted"));
+		assert.ok(!header.render(100).map(sanitizeTuiText).join("\n").includes("[local changes]"));
 	});
 
 	it("stays silent for clean, empty, non-repository, and untrusted projects", async () => {
@@ -635,7 +635,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 			assert.deepEqual(second, first, testCase.label);
 			assert.equal(state.changes, null, testCase.label);
 			assert.equal(wired.ctx.streamCalls.length, 0, testCase.label);
-			assert.ok(!first.map(sanitizeTuiText).join("\n").includes("uncommitted"), testCase.label);
+			assert.ok(!first.map(sanitizeTuiText).join("\n").includes("[local changes]"), testCase.label);
 		}
 	});
 
@@ -643,6 +643,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 		changesPreferences("on");
 		const response = deferred<ReturnType<typeof makeAssistantMessage>>();
 		const wired = wire({
+			rows: 50,
 			projectTrusted: true,
 			execHandler: scriptedGit(env.cwd, DIRTY_STATUS),
 			streamSimple: async () => response.promise,
@@ -661,7 +662,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 		await until(() => state.changes?.summary.status === "done");
 		const doneText = header.render(100).map(sanitizeTuiText).join("\n");
 		assert.ok(doneText.includes("The changes add, modify"), doneText);
-		assert.equal((doneText.match(/uncommitted/g) ?? []).length, 1);
+		assert.equal((doneText.match(/\[local changes\]/g) ?? []).length, 1);
 		(wired.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput(KEY.esc);
 		await emitted;
 	});
@@ -686,41 +687,45 @@ describe("startup changes integration (AC2-AC8)", () => {
 		numstat.resolve({ stdout: "3\t1\tchanged.ts\u00000\t2\tdeleted.ts\0", stderr: "", code: 0, killed: false });
 		await until(() => (state.changes?.version ?? 0) > version);
 		const after = header.render(100).map(sanitizeTuiText);
-		assert.match(after.join("\n"), /~ changed\.ts .*▇.* \+3 -1 │/);
-		assert.match(after.join("\n"), /- deleted\.ts .*▇.* \+0 -2 │/);
+		assert.match(after.join("\n"), /~ changed\.ts .*▇.* \+3 -1 /);
+		assert.match(after.join("\n"), /- deleted\.ts .*▇.* \+0 -2 /);
 		assert.equal(after.length, before.length, "line counts never add rows");
 		response.resolve(makeAssistantMessage("done"));
 		await until(() => state.changes?.summary.status === "done");
 	});
 
-	it("renders a single compact preview when only one to three rows remain below the splash", async () => {
+	it("closes the panel with a one-line preview when the rows under it cannot fit the listing", async () => {
 		changesPreferences();
 		const response = deferred<ReturnType<typeof makeAssistantMessage>>();
 		const wired = wire({ projectTrusted: true, execHandler: scriptedGit(env.cwd, DIRTY_STATUS), streamSimple: async () => response.promise });
 		await startup(wired);
 		await waitForSummary(wired);
 		const header = mountedHeader(wired);
-		let shortBudgets = 0;
-		for (let rows = 15; rows <= 40; rows++) {
+		let previews = 0;
+		let listings = 0;
+		for (let rows = 15; rows <= 60; rows++) {
 			wired.tui.resizeRows(rows);
 			const model = wired.ctx.ctx.model;
-			const splashRows = buildHeader(100, rows, makeTheme(), state.loadedContext, state.loadedSkills, state.loadedExtensions,
+			const bandRows = buildHeader(100, rows, makeTheme(), state.loadedContext, state.loadedSkills, state.loadedExtensions,
 				model ? { provider: model.provider, id: model.id } : undefined, state.systemPromptSize,
 				state.backgroundColor, state.gradientAnimation, 0, state.loadedPrompts, state.loadedShortcuts).length;
-			const budget = Math.max(0, rows - splashRows - EDITOR_RESERVED_ROWS);
-			const changes = header.render(100).slice(splashRows).map(sanitizeTuiText);
-			if (budget >= 1 && budget < BOX_MIN_ROWS) {
-				shortBudgets++;
-				assert.equal(changes.length, 1, `terminal rows ${rows}`);
-				assert.match(changes[0], /^   ● 3 uncommitted \[\+1 · ~1 · -1\]/);
-				assert.ok(changes[0].includes("~ changed.ts +1 -1"));
-				assert.ok(changes[0].includes("summarizing with anthropic/"));
-				assert.equal(state.splashRows, splashRows + 1);
-			} else if (budget === 0) {
-				assert.deepEqual(changes, []);
+			const rendered = header.render(100).map(sanitizeTuiText);
+			assert.equal(state.splashRows, rendered.length, `terminal rows ${rows}`);
+			// The section spends only rows the editor leaves free, or rows beside a taller logo.
+			assert.ok(rendered.length <= Math.max(bandRows, rows - EDITOR_RESERVED_ROWS), `terminal rows ${rows}: ${rendered.length} rows`);
+			const headings = rendered.filter((line) => line.includes("[local changes]"));
+			if (headings.length === 0) continue;
+			assert.equal(headings.length, 1, `terminal rows ${rows}`);
+			if (!headings[0].includes(" · ")) {
+				listings++;
+				assert.match(headings[0], /\[local changes\] \+1, ~1, -1 +▀/, `terminal rows ${rows}: a listing heading carries no preview`);
+			} else {
+				previews++;
+				assert.match(headings[0], /\[local changes\] \+1, ~1, -1 · ~ changed\.ts \+1 -1 · summa/, `terminal rows ${rows}`);
 			}
 		}
-		assert.ok(shortBudgets > 0, "the sweep must reach a short nonzero budget");
+		assert.ok(previews > 0, "the sweep must reach a budget too short for the listing");
+		assert.ok(listings > 0, "the sweep must reach a budget that fits it");
 		response.resolve(makeAssistantMessage("Summary ready."));
 		await until(() => state.changes?.summary.status === "done");
 	});
@@ -773,7 +778,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 		await waitForSummary(wired);
 		const assertStable = () => {
 			const text = header.render(100).map(sanitizeTuiText).join("\n");
-			assert.equal((text.match(/uncommitted/g) ?? []).length, 1);
+			assert.equal((text.match(/\[local changes\]/g) ?? []).length, 1);
 			for (const path of ["added.ts", "changed.ts", "deleted.ts"]) {
 				assert.equal((text.match(new RegExp(path, "g")) ?? []).length, 1, path);
 			}
@@ -804,7 +809,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 			await startup(wired);
 			await until(() => state.changes?.summary.status === "failed");
 			const text = mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n");
-			assert.ok(text.includes("┌─ uncommitted ─"), testCase.label);
+			assert.ok(text.includes("[local changes] +1, ~1, -1"), testCase.label);
 			assert.ok(text.includes("summary unavailable:"), testCase.label);
 		}
 	});
@@ -866,9 +871,14 @@ describe("startup changes integration (AC2-AC8)", () => {
 		await emitted;
 		assert.equal(wired.ctx.setHeaderCalls.length, 2);
 		const slim = mountedHeader(wired, 1);
-		assert.ok(slim.render(100).map(sanitizeTuiText).join("\n").includes("┌─ uncommitted ─"));
+		const full = slim.render(100).map(sanitizeTuiText);
+		assert.equal(full[1].trimEnd(), "   [local changes] +1, ~1, -1");
+		assert.equal(full.findIndex((line) => line.trimStart().startsWith("summarizing with")), full.findIndex((line) => line.includes("- deleted.ts")) + 1, "the summary sits right under the last file row");
 		wired.tui.resizeRows(EDITOR_RESERVED_ROWS + 2);
-		assert.match(slim.render(100).map(sanitizeTuiText).join("\n"), /^   ● 3 uncommitted \[\+1 · ~1 · -1\]/);
+		const compact = slim.render(100).map(sanitizeTuiText);
+		assert.equal(compact.length, 2);
+		assert.equal(compact[0].trim(), "");
+		assert.match(compact[1], /^ {3}\[local changes\] \+1, ~1, -1 · ~ changed\.ts/);
 		wired.tui.resizeRows(40);
 		assert.equal(headerRenderState.requestRender, null, "slim header must not masquerade as splash wiring");
 		response.resolve(makeAssistantMessage("post-gate summary"));

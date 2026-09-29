@@ -8,7 +8,7 @@ import { modelRefLabel } from "./model-picker.ts";
 import type { ModelRef } from "./model-picker.ts";
 import { readPreferences } from "./preferences.ts";
 import { changesRenderState, state } from "./state.ts";
-import { ELLIPSIS, padRight, sanitizeTuiText } from "./text.ts";
+import { ELLIPSIS, fitCell, padRight, sanitizeTuiText, truncateVisible } from "./text.ts";
 import { SPLASH_MARGIN_X } from "./splash.ts";
 
 /** Rows reserved below a splash when no startup gate is consuming the space. */
@@ -24,12 +24,12 @@ export const BAR_MIN_CELLS = 5;
 export const PATH_MIN_WIDTH = 12;
 /** Paths up to this many columns stay whole before the bars get any room. */
 export const PATH_WHOLE_MAX = 32;
-/** Top-border title of the boxed listing. */
-export const BOX_TITLE = " uncommitted ";
-/** The listing and its summary stop here, however wide the terminal is; narrower terminals still fill their own width. */
+/** The slim changes-only header stops here however wide the terminal is; narrower terminals still fill their own. */
 export const CHANGES_MAX_WIDTH = 100;
-/** The box needs both borders, one file row, and one summary row; shorter budgets use a single line. */
-export const BOX_MIN_ROWS = 4;
+/** Rows the listing needs below its gap: the heading, one file row, and one summary row. Shorter budgets use a single line. */
+export const LISTING_MIN_ROWS = 3;
+/** The section heading, bracketed like the info panel's other headings. */
+const HEADING = "[local changes]";
 /** How much of each statusline git color survives the dim; the rest is the backdrop showing through. */
 export const GIT_COLOR_STRENGTH = 0.6;
 
@@ -222,7 +222,7 @@ function startTruncated(text: string, width: number): string {
 	const safe = sanitizeTuiText(text);
 	if (width <= 0) return "";
 	if (visibleWidth(safe) <= width) return safe;
-	if (width <= ELLIPSIS.length) return truncateToWidth(safe, width, "", true);
+	if (width <= ELLIPSIS.length) return padRight(truncateVisible(safe, width), width);
 	const tail = sliceByColumn(safe, Math.max(0, visibleWidth(safe) - (width - ELLIPSIS.length)), width - ELLIPSIS.length, true);
 	return `${ELLIPSIS}${tail}`;
 }
@@ -241,16 +241,13 @@ function changeColors(theme: Theme): Record<ChangeKind, string> {
 	return { added: dim(GIT_COLORS.added), changed: dim(GIT_COLORS.changed), deleted: dim(GIT_COLORS.deleted) };
 }
 
-/** `+a ~c -d` across every entry, omitting kinds with no paths. */
-function kindCounts(entries: ChangeEntry[], colors: Record<ChangeKind, string>, separator = " "): { text: string; width: number } {
-	const parts = (["added", "changed", "deleted"] as const)
+/** `+a, ~c, -d` across every entry, omitting kinds with no paths; the heading paints it like the other sections' counts. */
+function kindCounts(entries: ChangeEntry[]): string {
+	return (["added", "changed", "deleted"] as const)
 		.map((kind) => ({ kind, count: entries.filter((entry) => entry.kind === kind).length }))
 		.filter((part) => part.count > 0)
-		.map((part) => ({ text: `${MARKER[part.kind]}${part.count}`, color: colors[part.kind] }));
-	return {
-		text: parts.map((part) => paint(part.color, part.text)).join(separator),
-		width: parts.reduce((sum, part) => sum + part.text.length, Math.max(0, parts.length - 1) * visibleWidth(separator)),
-	};
+		.map((part) => `${MARKER[part.kind]}${part.count}`)
+		.join(", ");
 }
 
 /** A row's line counts: `+a -d` versus HEAD, `bin` for binary diffs, `new` for files git has not counted. */
@@ -260,9 +257,9 @@ function statCell(theme: Theme, entry: ChangeEntry): { text: string; width: numb
 	if (stat) {
 		const added = `+${stat.added}`;
 		const deleted = `-${stat.deleted}`;
-		// Counts borrow the theme's `text`; only a zero half drops to `dim`, the way a nonzero one lifts off it.
+		// Each half takes its churn-bar half's color, `text` added and `error` removed; a zero half drops to `dim`.
 		const addedText = stat.added > 0 ? theme.fg("text", added) : theme.fg("dim", added);
-		const deletedText = stat.deleted > 0 ? theme.fg("text", deleted) : theme.fg("dim", deleted);
+		const deletedText = stat.deleted > 0 ? theme.fg("error", deleted) : theme.fg("dim", deleted);
 		return { text: `${addedText} ${deletedText}`, width: added.length + 1 + deleted.length };
 	}
 	if (entry.untracked || entry.kind === "added") return { text: theme.fg("dim", "new"), width: 3 };
@@ -303,13 +300,14 @@ function summaryLines(theme: Theme, summary: SummaryState, width: number): strin
 	return lines.map((line) => theme.fg("text", line));
 }
 
-/** One row for a budget too short for the box: count, kinds, most changed path, and summary preview. */
-function compactChangesLine(theme: Theme, presentation: ChangesPresentation, width: number, colors: Record<ChangeKind, string>): string {
+/** One row for a budget too short for the listing: the heading and its counts, the most changed path, and a summary preview. */
+function compactChangesLine(theme: Theme, presentation: ChangesPresentation, width: number, margin: number, colors: Record<ChangeKind, string>): string {
 	const { entries, summary } = presentation;
-	let line = `${" ".repeat(SPLASH_MARGIN_X)}${theme.fg("warning", "●")} ${theme.fg("text", `${entries.length} uncommitted`)}`;
-	const counts = kindCounts(entries, colors, theme.fg("dim", " · "));
-	const bracketed = ` ${theme.fg("dim", "[")}${counts.text}${theme.fg("dim", "]")}`;
-	if (counts.width > 0 && visibleWidth(line) + counts.width + 3 <= width) line += bracketed;
+	let line = `${" ".repeat(margin)}${theme.fg("warning", HEADING)}`;
+	const counts = kindCounts(entries);
+	// The counts come whole or not at all.
+	if (counts && visibleWidth(line) + 1 + counts.length <= width) line += ` ${theme.fg("text", counts)}`;
+	const separator = theme.fg("dim", " · ");
 
 	// Prefer the path with the most counted churn, retaining git's order on ties or before stats land.
 	const featured = entries.reduce<ChangeEntry | undefined>((best, entry) => {
@@ -318,13 +316,13 @@ function compactChangesLine(theme: Theme, presentation: ChangesPresentation, wid
 		return churn(entry) > churn(best) ? entry : best;
 	}, undefined);
 	if (featured) {
-		const lead = ` ${paint(colors[featured.kind], MARKER[featured.kind])} `;
+		const lead = `${separator}${paint(colors[featured.kind], MARKER[featured.kind])} `;
 		const room = width - visibleWidth(line) - visibleWidth(lead);
 		if (room > 0) {
 			const stat = featured.stat;
-			// The compact mockup omits zero halves (`+12`); boxed rows still show both via statCell.
+			// The compact mockup omits zero halves (`+12`); listing rows still show both via statCell.
 			const statText = stat?.binary ? theme.fg("dim", "bin") : stat
-				? [stat.added > 0 ? theme.fg("text", `+${stat.added}`) : "", stat.deleted > 0 ? theme.fg("text", `-${stat.deleted}`) : ""].filter(Boolean).join(" ")
+				? [stat.added > 0 ? theme.fg("text", `+${stat.added}`) : "", stat.deleted > 0 ? theme.fg("error", `-${stat.deleted}`) : ""].filter(Boolean).join(" ")
 				: featured.untracked ? theme.fg("dim", "new") : "";
 			const statSegment = statText ? ` ${statText}` : "";
 			const path = sanitizeTuiText(featured.path);
@@ -339,54 +337,55 @@ function compactChangesLine(theme: Theme, presentation: ChangesPresentation, wid
 	const singleLine = sanitizeTuiText(preview.replace(/\s+/g, " ")).trim();
 	const remaining = width - visibleWidth(line) - 3;
 	if (singleLine && remaining >= 4) {
-		line += `${theme.fg("dim", " · ")}${theme.fg("dim", truncateToWidth(singleLine, remaining, ELLIPSIS))}`;
+		// Cut the plain text so the ellipsis stays inside the dim span.
+		const shown = visibleWidth(singleLine) <= remaining ? singleLine : `${truncateVisible(singleLine, remaining - ELLIPSIS.length)}${ELLIPSIS}`;
+		line += `${separator}${theme.fg("dim", shown)}`;
 	}
-	return truncateToWidth(line, width, ELLIPSIS, true);
+	return padRight(fitCell(line, width), width);
+}
+
+/** What a listing is laid out to; every row it yields spans exactly `width` columns. */
+interface ChangesLayout {
+	width: number;
+	/** Columns kept clear on the left, and again on the right of the listing's rows. */
+	margin: number;
 }
 
 /**
- * Render the uncommitted listing as a box beneath the splash, then the variable summary below it,
- * within the available row budget. The top border carries the title and per-kind counts, a key row
- * gives the file count and bar legend, and each path row ends in a churn bar and its line counts.
- * Budgets under BOX_MIN_ROWS use a single preview line; narrow widths with enough rows keep the
- * existing unboxed listing. The block is left-aligned at the splash margin and never grows past
- * CHANGES_MAX_WIDTH, so a wide terminal keeps the paths and the summary at a readable line length.
+ * The uncommitted listing as a section in the style of the info panel's lists, within the row
+ * budget: a blank row parting it from whatever sits above, the `[local changes]` heading with its
+ * per-kind counts, one row per path ending in a churn bar and its line counts, then the variable
+ * summary. Fewer than LISTING_MIN_ROWS rows below the gap get the single preview line instead.
+ * Nothing here resets the background, so the rows sit safely on a plate.
  */
-export function renderChangesBlock(theme: Theme, presentation: ChangesPresentation | null, width: number, maxRows: number): string[] {
-	const rowsAvailable = Math.floor(maxRows);
-	if (!presentation || rowsAvailable < 1 || width < 1) return [];
-	const blockWidth = Math.min(width, CHANGES_MAX_WIDTH);
-
+function layoutChangesRows(theme: Theme, presentation: ChangesPresentation, layout: ChangesLayout, rowsAvailable: number): string[] {
+	const { width, margin } = layout;
 	const { entries } = presentation;
 	const colors = changeColors(theme);
-	const border = (text: string) => theme.fg("border", text);
-	const indent = " ".repeat(SPLASH_MARGIN_X);
-	if (rowsAvailable < BOX_MIN_ROWS) return [compactChangesLine(theme, presentation, blockWidth, colors)];
-	// Columns between the box's verticals, with the splash margin kept clear on both sides.
-	const boxInner = blockWidth - SPLASH_MARGIN_X * 2 - 2;
-	const titleWidth = visibleWidth(BOX_TITLE);
-	const boxed = rowsAvailable >= BOX_MIN_ROWS && boxInner >= titleWidth + 2;
-	const contentWidth = Math.max(1, boxed ? boxInner - 2 : blockWidth - SPLASH_MARGIN_X);
+	const indent = " ".repeat(margin);
+	// The gap is claimed first, so the section never butts against the rows above it.
+	const rows: string[] = rowsAvailable > 1 ? [""] : [];
+	const budget = rowsAvailable - rows.length;
+	if (budget < LISTING_MIN_ROWS) {
+		rows.push(compactChangesLine(theme, presentation, width, margin, colors));
+		return rows.map((row) => padRight(fitCell(row, width), width));
+	}
+	const contentWidth = Math.max(1, width - margin * 2);
 
 	// Rows are claimed in priority order from the budget and the entry count alone, so the listing
-	// never moves when the summary lands: one file row and one summary row, the gap under the
-	// splash, the remaining files, the key row, then more summary.
-	let spare = rowsAvailable - (boxed ? 2 : 1);
+	// never moves when the summary lands: after the minimal listing, the remaining files, then more
+	// summary.
+	let spare = budget - LISTING_MIN_ROWS;
 	const claim = (wanted: number): number => {
 		const granted = Math.max(0, Math.min(wanted, spare));
 		spare -= granted;
 		return granted;
 	};
-	const wantedFiles = Math.min(FILE_ROWS_MAX, entries.length);
-	let fileRows = claim(Math.min(1, wantedFiles));
-	let summaryRows = claim(1);
-	const leading = boxed ? claim(1) : 0;
-	fileRows += claim(wantedFiles - fileRows);
-	const legend = boxed ? claim(1) : 0;
-	summaryRows += claim(SUMMARY_ROWS_MAX - summaryRows);
+	const fileRows = 1 + claim(Math.min(FILE_ROWS_MAX, entries.length) - 1);
+	const summaryRows = 1 + claim(SUMMARY_ROWS_MAX - 1);
 
 	const overflow = entries.length > fileRows;
-	const visible = entries.slice(0, overflow ? Math.max(0, fileRows - 1) : fileRows);
+	const visible = entries.slice(0, overflow ? fileRows - 1 : fileRows);
 	const cells = visible.map((entry) => statCell(theme, entry));
 	const statWidth = Math.max(0, ...cells.map((cell) => cell.width));
 	// After the marker and its space, the line counts take room down to PATH_MIN_WIDTH path columns;
@@ -402,44 +401,45 @@ export function renderChangesBlock(theme: Theme, presentation: ChangesPresentati
 	if (barCells > 0) pathWidth -= barCells + 1;
 	const maxChurn = Math.max(1, ...churn);
 
-	const frame = (content: string): string => boxed
-		? `${indent}${border("│")} ${padRight(truncateToWidth(content, contentWidth, ELLIPSIS), contentWidth)} ${border("│")}`
-		: `${indent}${content}`;
-	const rows: string[] = [];
-	if (leading > 0) rows.push("");
-	const counts = kindCounts(entries, colors);
-	if (boxed) {
-		const withCounts = counts.width > 0 && boxInner - 1 - titleWidth - (counts.width + 1) >= 1;
-		const fill = boxInner - 1 - titleWidth - (withCounts ? counts.width + 1 : 0);
-		rows.push(`${indent}${border("┌─")}${theme.fg("warning", BOX_TITLE)}${border("─".repeat(fill))}${withCounts ? `${counts.text} ` : ""}${border("┐")}`);
-	} else {
-		rows.push(`${indent}${theme.fg("warning", "uncommitted")}${counts.width > 0 ? ` ${counts.text}` : ""}`);
-	}
-	if (legend > 0) {
-		const files = theme.fg("dim", `${entries.length} ${entries.length === 1 ? "file" : "files"}`);
-		const key = `${theme.fg("text", "▌")} ${theme.fg("dim", "added")}  ${theme.fg("error", "▌")} ${theme.fg("dim", "removed")}`;
-		const gap = contentWidth - visibleWidth(files) - visibleWidth(key);
-		rows.push(frame(barCells > 0 && gap >= 1 ? `${files}${" ".repeat(gap)}${key}` : files));
-	}
+	const frame = (content: string): string => `${indent}${fitCell(content, contentWidth)}`;
+	const counts = kindCounts(entries);
+	rows.push(frame(`${theme.fg("warning", HEADING)}${counts ? ` ${theme.fg("text", counts)}` : ""}`));
 	visible.forEach((entry, index) => {
 		let row = `${paint(colors[entry.kind], MARKER[entry.kind])} ${padRight(theme.fg("text", startTruncated(entry.path, pathWidth)), pathWidth)}`;
 		if (barCells > 0) row += ` ${churnBar(theme, entry.stat, maxChurn, barCells)}`;
 		if (showStats) row += ` ${" ".repeat(statWidth - cells[index].width)}${cells[index].text}`;
 		rows.push(frame(row));
 	});
-	if (overflow && fileRows > 0) rows.push(frame(theme.fg("dim", `… ${entries.length - visible.length} more`)));
-	if (boxed) rows.push(`${indent}${border(`└${"─".repeat(boxInner)}┘`)}`);
+	if (overflow) rows.push(frame(theme.fg("dim", `… ${entries.length - visible.length} more`)));
 
-	// The summary sits under the box, aligned with the text inside it.
 	const rendered = summaryLines(theme, presentation.summary, contentWidth);
 	const shown = rendered.slice(0, summaryRows);
 	if (shown.length > 0 && rendered.length > shown.length) {
-		shown[shown.length - 1] = truncateToWidth(shown[shown.length - 1], contentWidth, ELLIPSIS);
+		shown[shown.length - 1] = fitCell(shown[shown.length - 1], contentWidth);
 	}
-	const summaryIndent = boxed ? `${indent}  ` : indent;
-	rows.push(...shown.map((line) => `${summaryIndent}${line}`));
+	rows.push(...shown.map((line) => `${indent}${line}`));
 
-	return rows.slice(0, rowsAvailable).map((row) => truncateToWidth(row, blockWidth, ELLIPSIS, true));
+	return rows.slice(0, rowsAvailable).map((row) => padRight(fitCell(row, width), width));
+}
+
+/**
+ * The listing for the slim changes-only header, left-aligned at the splash margin and never wider
+ * than CHANGES_MAX_WIDTH, so a wide terminal keeps the paths and the summary at a readable length.
+ */
+export function renderChangesBlock(theme: Theme, presentation: ChangesPresentation | null, width: number, maxRows: number): string[] {
+	const rowsAvailable = Math.floor(maxRows);
+	if (!presentation || rowsAvailable < 1 || width < 1) return [];
+	return layoutChangesRows(theme, presentation, { width: Math.min(width, CHANGES_MAX_WIDTH), margin: SPLASH_MARGIN_X }, rowsAvailable);
+}
+
+/**
+ * The listing as the info panel's closing section, after `[extensions]`: `width` is the panel's
+ * text width, and the rows start flush with its other sections, in at most `maxRows` rows.
+ */
+export function layoutChangesSection(theme: Theme, presentation: ChangesPresentation | null, width: number, maxRows: number): string[] {
+	const rowsAvailable = Math.floor(maxRows);
+	if (!presentation || rowsAvailable < 1 || width < 1) return [];
+	return layoutChangesRows(theme, presentation, { width, margin: 0 }, rowsAvailable);
 }
 
 /** Install the post-gate changes-only header without rewiring the splash's render-state signal. */

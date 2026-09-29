@@ -22,10 +22,10 @@ import {
 import {
 	BAR_CELLS,
 	BAR_MIN_CELLS,
-	BOX_MIN_ROWS,
-	BOX_TITLE,
 	CHANGES_MAX_WIDTH,
+	LISTING_MIN_ROWS,
 	PATH_MIN_WIDTH,
+	layoutChangesSection,
 	renderChangesBlock,
 	type ChangesPresentation,
 	type SummaryState,
@@ -316,27 +316,31 @@ describe("summary prompt and rendering", () => {
 	});
 });
 
-describe("boxed listing", () => {
+const pending: SummaryState = { status: "pending", modelLabel: "provider/model" };
+/** Five entries across all three kinds, with line counts, a binary file, and an untracked file. */
+function counted(summary: SummaryState = pending): ChangesPresentation {
+	return {
+		entries: [
+			{ path: "new.ts", kind: "added", untracked: true },
+			{ path: "image.png", kind: "changed", untracked: false, stat: { added: 0, deleted: 0, binary: true } },
+			{ path: "src/big.ts", kind: "changed", untracked: false, stat: { added: 30, deleted: 10, binary: false } },
+			{ path: "src/small.ts", kind: "changed", untracked: false, stat: { added: 1, deleted: 0, binary: false } },
+			{ path: "gone.ts", kind: "deleted", untracked: false, stat: { added: 0, deleted: 4, binary: false } },
+		],
+		summary,
+		version: 1,
+	};
+}
+
+describe("listing", () => {
 	const theme = makeTheme();
-	const pending: SummaryState = { status: "pending", modelLabel: "provider/model" };
-	function counted(summary: SummaryState = pending): ChangesPresentation {
-		return {
-			entries: [
-				{ path: "new.ts", kind: "added", untracked: true },
-				{ path: "image.png", kind: "changed", untracked: false, stat: { added: 0, deleted: 0, binary: true } },
-				{ path: "src/big.ts", kind: "changed", untracked: false, stat: { added: 30, deleted: 10, binary: false } },
-				{ path: "src/small.ts", kind: "changed", untracked: false, stat: { added: 1, deleted: 0, binary: false } },
-				{ path: "gone.ts", kind: "deleted", untracked: false, stat: { added: 0, deleted: 4, binary: false } },
-			],
-			summary,
-			version: 1,
-		};
-	}
 	const plain = (lines: string[]) => lines.map(sanitizeTuiText);
 	const rowFor = (lines: string[], path: string) => lines.find((line) => sanitizeTuiText(line).includes(` ${path} `)) ?? "";
 	const fills = (row: string) => (sanitizeTuiText(row).match(/▇/g) ?? []).length;
-	/** Narrowest width whose box interior still fits the title between two rule stubs. */
-	const boxFrom = SPLASH_MARGIN_X * 2 + 2 + BOX_TITLE.length + 2;
+	/** The summary's first row, which follows the last file row directly. */
+	const summaryIndex = (lines: string[], head = "summarizing with") => plain(lines).findIndex((line) => line.trimStart().startsWith(head));
+	/** Narrowest width whose rows hold the whole `[local changes] +1, ~3, -1` heading between the margins. */
+	const headingFrom = SPLASH_MARGIN_X * 2 + "[local changes] +1, ~3, -1".length;
 
 	it("stops the listing and its summary at CHANGES_MAX_WIDTH on a wider terminal", () => {
 		const long = counted({ status: "done", text: "One sentence about the change. ".repeat(20) });
@@ -346,36 +350,35 @@ describe("boxed listing", () => {
 			assertLinesExact(lines, CHANGES_MAX_WIDTH, `clamped width ${width}`);
 			assert.deepEqual(lines, clamped, `width ${width} must render the clamped block`);
 		}
-		// The box's right edge stops at the clamp, not the terminal's own right margin.
-		const right = CHANGES_MAX_WIDTH - SPLASH_MARGIN_X - 1;
-		const box = plain(renderChangesBlock(theme, counted(), 200, 20)).filter((line) => "┌│└".includes(line[SPLASH_MARGIN_X] ?? " "));
-		assert.equal(box[0][right], "┐", box[0]);
-		assert.equal(box.at(-1)![right], "┘", box.at(-1)!);
+		// The line counts end at the clamp's right margin, not the terminal's.
+		const big = sanitizeTuiText(rowFor(renderChangesBlock(theme, counted(), 200, 20), "src/big.ts"));
+		assert.equal(big.trimEnd().length, CHANGES_MAX_WIDTH - SPLASH_MARGIN_X, big);
 		// The summary wraps at the clamp too, so no line runs past it however wide the terminal is.
-		const summary = plain(renderChangesBlock(theme, long, 200, 20)).filter((line) => !/[┌│└]/.test(line));
-		assert.ok(summary.every((line) => visibleWidth(line) <= CHANGES_MAX_WIDTH));
+		const summary = plain(renderChangesBlock(theme, long, 200, 20)).slice(summaryIndex(clamped, "One sentence"));
+		assert.ok(summary.every((line) => visibleWidth(line.trimEnd()) <= CHANGES_MAX_WIDTH - SPLASH_MARGIN_X));
 		assert.ok(summary.some((line) => line.trim().length > 0), "summary rows survive the clamp");
 	});
 
-	it("draws the title, counts, key, and borders on one right edge at every width that fits the title", () => {
-		for (let width = boxFrom; width <= 200; width++) {
+	it("opens with a gap and a bracketed heading, and right-aligns the line counts, without a box, at every width", () => {
+		for (let width = headingFrom; width <= 200; width++) {
 			const lines = plain(renderChangesBlock(theme, counted(), width, 20));
-			const right = Math.min(width, CHANGES_MAX_WIDTH) - SPLASH_MARGIN_X - 1;
-			const box = lines.filter((line) => "┌│└".includes(line[SPLASH_MARGIN_X] ?? " "));
-			assert.ok(box.length >= 3, `width ${width}`);
-			assert.ok(box[0].startsWith(`${" ".repeat(SPLASH_MARGIN_X)}┌─${BOX_TITLE}─`), `width ${width}: ${box[0]}`);
-			assert.equal(box[0][right], "┐", `width ${width}: ${box[0]}`);
-			assert.equal(box.at(-1)![SPLASH_MARGIN_X], "└", `width ${width}`);
-			assert.equal(box.at(-1)![right], "┘", `width ${width}`);
-			for (const line of box.slice(1, -1)) {
-				assert.equal(line[SPLASH_MARGIN_X], "│", `width ${width}: ${line}`);
-				assert.equal(line[right], "│", `width ${width}: ${line}`);
-			}
+			const blockWidth = Math.min(width, CHANGES_MAX_WIDTH);
+			assert.equal(lines[0].trim(), "", `width ${width}: the gap`);
+			assert.equal(lines[1].trimEnd(), `${" ".repeat(SPLASH_MARGIN_X)}[local changes] +1, ~3, -1`, `width ${width}`);
+			assert.equal(lines.some((line) => /[┌┐└┘│]/.test(line)), false, `width ${width}: no box`);
+			assert.equal(lines.some((line) => /▌|files/.test(line)), false, `width ${width}: no key row`);
+			const big = rowFor(lines, "src/big.ts");
+			if (big.includes("+30 -10")) assert.equal(big.trimEnd().length, blockWidth - SPLASH_MARGIN_X, `width ${width}: ${big}`);
 		}
-		assert.equal(plain(renderChangesBlock(theme, counted(), boxFrom - 1, 20)).some((line) => line.includes("┌")), false);
-		const wide = plain(renderChangesBlock(theme, counted(), 100, 20));
-		assert.ok(wide.some((line) => line.includes("─+1 ~3 -1 ┐")), wide.join("\n"));
-		assert.ok(wide.some((line) => /│ 5 files +▌ added {2}▌ removed │/.test(line)), wide.join("\n"));
+	});
+
+	it("puts the summary right under the last file row, with no rule between them", () => {
+		for (const width of [40, 60, 99, 100, 140]) {
+			const lines = plain(renderChangesBlock(theme, counted(), width, 20));
+			const index = summaryIndex(lines);
+			assert.ok(lines[index - 1].trim().startsWith("- gone.ts"), `width ${width}: under the last file row`);
+			assert.equal(lines.some((line) => line.includes("─")), false, `width ${width}: no rule`);
+		}
 	});
 
 	it("scales bars to the largest churn on screen and labels rows git has not counted", () => {
@@ -385,23 +388,27 @@ describe("boxed listing", () => {
 		assert.equal(fills(rowFor(lines, "gone.ts")), 2);
 		assert.equal(fills(rowFor(lines, "image.png")), 0);
 		assert.equal(fills(rowFor(lines, "new.ts")), 0);
-		assert.match(sanitizeTuiText(rowFor(lines, "src/big.ts")), /\+30 -10 │/);
-		assert.match(sanitizeTuiText(rowFor(lines, "src/small.ts")), / {2}\+1 -0 │/);
-		assert.match(sanitizeTuiText(rowFor(lines, "gone.ts")), / {2}\+0 -4 │/);
-		assert.match(sanitizeTuiText(rowFor(lines, "image.png")), / {4}bin │/);
-		assert.match(sanitizeTuiText(rowFor(lines, "new.ts")), / {4}new │/);
+		assert.match(sanitizeTuiText(rowFor(lines, "src/big.ts")), /\+30 -10 *$/);
+		assert.match(sanitizeTuiText(rowFor(lines, "src/small.ts")), / {2}\+1 -0 *$/);
+		assert.match(sanitizeTuiText(rowFor(lines, "gone.ts")), / {2}\+0 -4 *$/);
+		assert.match(sanitizeTuiText(rowFor(lines, "image.png")), / {4}bin *$/);
+		assert.match(sanitizeTuiText(rowFor(lines, "new.ts")), / {4}new *$/);
 	});
 
-	it("paints counts and markers in the dimmed statusline git colors, and the line counts in the theme's text", () => {
+	it("heads the listing like the panel's sections, and paints markers in the dimmed statusline git colors and line counts in text/error", () => {
 		const dark = renderChangesBlock(makeTheme(), counted(), 100, 20);
-		assert.ok(dark.some((line) => line.includes("\x1b[38;2;64;112;7m+1") && line.includes("\x1b[38;2;136;112;7m~3") && line.includes("\x1b[38;2;158;42;52m-1")));
+		assert.ok(dark[1].includes(`${theme.fg("warning", "[local changes]")} ${theme.fg("text", "+1, ~3, -1")}`), "heading in warning, counts in text");
+		assert.ok(rowFor(dark, "new.ts").includes("\x1b[38;2;64;112;7m+"), "added marker");
+		assert.ok(rowFor(dark, "gone.ts").includes("\x1b[38;2;158;42;52m-"), "deleted marker");
 		const big = rowFor(dark, "src/big.ts");
 		assert.ok(big.includes("\x1b[38;2;136;112;7m~"), "changed marker");
-		assert.ok(big.includes("\x1b[38;2;232;232;232m+30") && big.includes("\x1b[38;2;232;232;232m-10"), "line counts");
+		assert.ok(big.includes("\x1b[38;2;232;232;232m+30") && big.includes("\x1b[38;2;224;96;96m-10"), "line counts match the bar halves");
 		assert.ok(big.includes("\x1b[38;2;232;232;232m▇") && big.includes("\x1b[38;2;224;96;96m▇"), "bars use the theme's text/error");
-		// Light themes dim toward the paper plate instead of the statusline's near-black bar.
+		// Light themes dim the markers toward the paper plate instead of the statusline's near-black bar.
 		const light = renderChangesBlock(makeTheme({ text: "#202020" }), counted(), 100, 20);
-		assert.ok(light.some((line) => line.includes("\x1b[38;2;152;201;99m+1") && line.includes("\x1b[38;2;224;201;99m~3") && line.includes("\x1b[38;2;246;131;144m-1")));
+		assert.ok(rowFor(light, "new.ts").includes("\x1b[38;2;152;201;99m+"));
+		assert.ok(rowFor(light, "src/big.ts").includes("\x1b[38;2;224;201;99m~"));
+		assert.ok(rowFor(light, "gone.ts").includes("\x1b[38;2;246;131;144m-"));
 	});
 
 	it("keeps every listing row in place when the line counts or the summary land", () => {
@@ -410,21 +417,22 @@ describe("boxed listing", () => {
 			entries: counted().entries.map((entry) => ({ path: entry.path, kind: entry.kind, untracked: entry.untracked })),
 		};
 		const done = counted({ status: "done", text: "One sentence about the change. ".repeat(20) });
-		const bottom = (lines: string[]) => plain(lines).findIndex((line) => line.includes("└"));
-		for (const maxRows of [BOX_MIN_ROWS, 6, 9, 12, 20]) {
+		for (const maxRows of [LISTING_MIN_ROWS + 1, 6, 9, 12, 20]) {
 			const before = renderChangesBlock(theme, bare, 100, maxRows);
 			const after = renderChangesBlock(theme, counted(), 100, maxRows);
 			const summarized = renderChangesBlock(theme, done, 100, maxRows);
-			assert.ok(bottom(after) > 0, `maxRows ${maxRows}`);
-			assert.equal(bottom(before), bottom(after), `maxRows ${maxRows}`);
-			assert.deepEqual(summarized.slice(0, bottom(after) + 1), after.slice(0, bottom(after) + 1), `maxRows ${maxRows}`);
+			const index = summaryIndex(after);
+			assert.ok(index > 0, `maxRows ${maxRows}`);
+			assert.equal(summaryIndex(before), index, `maxRows ${maxRows}`);
+			assert.equal(summaryIndex(summarized, "One sentence"), index, `maxRows ${maxRows}`);
+			assert.deepEqual(summarized.slice(0, index), after.slice(0, index), `maxRows ${maxRows}`);
 			assert.ok(summarized.length <= maxRows, `maxRows ${maxRows}`);
 		}
 	});
 
-	it("gives up the bars, then the line counts, then the box as the width shrinks", () => {
-		// Margins, verticals, and gutters; then the marker, the kept path columns, and the widest count.
-		const statsFrom = SPLASH_MARGIN_X * 2 + 4 + 2 + PATH_MIN_WIDTH + "+30 -10".length + 1;
+	it("gives up the bars, then the line counts, as the width shrinks", () => {
+		// Both margins; then the marker, the kept path columns, and the widest count.
+		const statsFrom = SPLASH_MARGIN_X * 2 + 2 + PATH_MIN_WIDTH + "+30 -10".length + 1;
 		const barsFrom = statsFrom + BAR_MIN_CELLS + 1;
 		const at = (width: number) => renderChangesBlock(theme, counted(), width, 20);
 		assert.equal(plain(at(statsFrom - 1)).join("\n").includes("+30 -10"), false);
@@ -432,9 +440,8 @@ describe("boxed listing", () => {
 		assert.equal(fills(rowFor(at(barsFrom - 1), "src/big.ts")), 0);
 		assert.equal(fills(rowFor(at(barsFrom), "src/big.ts")), BAR_MIN_CELLS);
 		assert.equal(fills(rowFor(at(statsFrom + BAR_CELLS + 1), "src/big.ts")), BAR_CELLS);
-		const unboxed = plain(at(boxFrom - 1)).join("\n");
-		assert.equal(/[┌│└]/.test(unboxed), false);
-		assert.ok(unboxed.includes("uncommitted"));
+		const narrow = plain(at(statsFrom - 1)).join("\n");
+		assert.ok(narrow.includes("[local changes]") && narrow.includes("src/big.ts"), "the heading and paths outlast the counts");
 	});
 
 	it("keeps visible paths whole before the bars take any room", () => {
@@ -443,36 +450,37 @@ describe("boxed listing", () => {
 			...counted(),
 			entries: [...counted().entries, { path, kind: "changed", untracked: false, stat: { added: 2, deleted: 1, binary: false } }],
 		};
-		for (let width = boxFrom; width <= 120; width++) {
+		for (let width = headingFrom; width <= 120; width++) {
 			const text = plain(renderChangesBlock(theme, long, width, 20)).join("\n");
 			if (text.includes("▇")) assert.ok(text.includes(` ${path} `), `width ${width}: bars truncated the path`);
 		}
-		// Margins, verticals, and gutters; the marker; the whole path; the narrowest bar; the widest count.
-		const barsFrom = SPLASH_MARGIN_X * 2 + 4 + 2 + path.length + 1 + BAR_MIN_CELLS + 1 + "+30 -10".length;
+		// Both margins; the marker; the whole path; the narrowest bar; the widest count.
+		const barsFrom = SPLASH_MARGIN_X * 2 + 2 + path.length + 1 + BAR_MIN_CELLS + 1 + "+30 -10".length;
 		assert.equal(plain(renderChangesBlock(theme, long, barsFrom - 1, 20)).join("\n").includes("▇"), false);
 		assert.ok(fills(rowFor(renderChangesBlock(theme, long, barsFrom, 20), path)) > 0);
 	});
 
-	it("uses a single preview line when the smallest box will not fit, without changing the four-row box", () => {
+	it("uses a single preview line, under the gap when a row allows, when the listing will not fit", () => {
 		const presentation = counted({ status: "done", text: "Refactors the uncommitted block into\na compact summary." });
-		for (let maxRows = 1; maxRows < BOX_MIN_ROWS; maxRows++) {
+		for (let maxRows = 1; maxRows <= LISTING_MIN_ROWS; maxRows++) {
 			const lines = renderChangesBlock(theme, presentation, 120, maxRows);
-			assert.equal(lines.length, 1, `budget ${maxRows}`);
+			assert.equal(lines.length, maxRows > 1 ? 2 : 1, `budget ${maxRows}`);
+			if (maxRows > 1) assert.equal(plain(lines)[0].trim(), "", `budget ${maxRows}: the gap`);
 			// 120 columns clamps to CHANGES_MAX_WIDTH, so the preview takes only what the clamp leaves.
-			assert.match(plain(lines)[0], /^ {3}● 5 uncommitted \[\+1 · ~3 · -1\] ~ src\/big\.ts \+30 -10 · Refactors the uncommitted block into a c\.\.\.$/);
-			assert.equal(/[┌│└]|more/.test(plain(lines)[0]), false);
+			assert.equal(plain(lines).at(-1), "   [local changes] +1, ~3, -1 · ~ src/big.ts +30 -10 · Refactors the uncommitted block into a com...");
 			assertLinesExact(lines, CHANGES_MAX_WIDTH, `compact budget ${maxRows}`);
 		}
 		assert.deepEqual(renderChangesBlock(theme, presentation, 120, 0), []);
-		const minimal = plain(renderChangesBlock(theme, counted(), 100, BOX_MIN_ROWS));
-		assert.equal(minimal.length, BOX_MIN_ROWS);
-		assert.match(minimal[0], /┌─ uncommitted ─/);
-		assert.match(minimal[1], /│ … 5 more +│/);
-		assert.match(minimal[2], /└─+┘/);
-		assert.match(minimal[3], /summarizing with provider\/model…/);
+		const minimal = plain(renderChangesBlock(theme, counted(), 100, LISTING_MIN_ROWS + 1)).map((line) => line.trimEnd());
+		assert.deepEqual(minimal, [
+			"",
+			"   [local changes] +1, ~3, -1",
+			"   … 5 more",
+			"   summarizing with provider/model…",
+		]);
 	});
 
-	it("mirrors the one-line mockup with bracketed colored counts, a featured file, and a dim summary", () => {
+	it("mirrors the one-line mockup with the heading, its counts, a featured file, and a dim summary", () => {
 		const presentation = counted({ status: "done", text: "Refactors the uncommitted block into a compact layout." });
 		presentation.entries = [
 			{ path: "other-new.ts", kind: "added", untracked: true },
@@ -487,8 +495,9 @@ describe("boxed listing", () => {
 			{ path: "old-c.ts", kind: "deleted", untracked: false },
 		];
 		const line = renderChangesBlock(theme, presentation, 140, 1)[0];
-		assert.match(sanitizeTuiText(line), /^ {3}● 10 uncommitted \[\+3 · ~4 · -3\] ~ src\/changes-summary\.ts \+12 · Refactors the uncommitted block\.\.\.$/);
-		assert.ok(line.includes("\x1b[38;2;64;112;7m+3") && line.includes("\x1b[38;2;136;112;7m~4") && line.includes("\x1b[38;2;158;42;52m-3"));
+		assert.equal(sanitizeTuiText(line), "   [local changes] +3, ~4, -3 · ~ src/changes-summary.ts +12 · Refactors the uncommitted block in...");
+		assert.ok(line.includes(`${theme.fg("warning", "[local changes]")} ${theme.fg("text", "+3, ~4, -3")}`));
+		assert.ok(line.includes("\x1b[38;2;136;112;7m~"), "the featured marker keeps its git color");
 		assert.ok(line.includes("\x1b[38;2;232;232;232m+12"));
 		assert.ok(line.includes(theme.fg("dim", " · ")));
 		// The clamp cuts the preview mid-sentence, so only its head survives; the dim role's opening
@@ -507,24 +516,107 @@ describe("boxed listing", () => {
 		const done = counted({ status: "done", text: "A very long summary ".repeat(12) });
 		for (const presentation of [bare, counted(), failed, done]) {
 			for (let width = 1; width <= 200; width++) {
-				for (let maxRows = 1; maxRows < BOX_MIN_ROWS; maxRows++) {
+				for (let maxRows = 1; maxRows <= LISTING_MIN_ROWS; maxRows++) {
 					const lines = renderChangesBlock(theme, presentation, width, maxRows);
-					assert.equal(lines.length, 1);
+					assert.equal(lines.length, maxRows > 1 ? 2 : 1);
 					assertLinesExact(lines, Math.min(width, CHANGES_MAX_WIDTH), `compact width ${width}, rows ${maxRows}`);
-					assert.equal(lines[0].includes("\n") || lines[0].includes("\u001b[31m"), false);
+					assert.equal(lines.some((line) => line.includes("\n") || line.includes("\u001b[31m")), false);
 				}
 			}
 		}
-		const pending = plain(renderChangesBlock(theme, bare, 100, 2))[0];
-		assert.ok(pending.includes("+ new.ts new · summarizing with provider/model…"), pending);
-		assert.ok(plain(renderChangesBlock(theme, counted(), 100, 2))[0].includes("~ src/big.ts +30 -10"));
-		assert.ok(plain(renderChangesBlock(theme, failed, 100, 2))[0].includes("summary unavailable: broken provider secret"));
-		assert.ok(plain(renderChangesBlock(theme, done, 100, 2))[0].includes("A very long summary"));
+		const pending = plain(renderChangesBlock(theme, bare, 100, 1))[0];
+		assert.ok(pending.includes(" · + new.ts new · summarizing with provider/model…"), pending);
+		const compact = renderChangesBlock(theme, counted(), 100, 1)[0];
+		assert.ok(plain([compact])[0].includes(" · ~ src/big.ts +30 -10"));
+		assert.ok(compact.includes("\x1b[38;2;232;232;232m+30") && compact.includes("\x1b[38;2;224;96;96m-10"), "compact line counts match the bar halves");
+		assert.ok(plain(renderChangesBlock(theme, failed, 100, 1))[0].includes("summary unavailable: broken provider secret"));
+		assert.ok(plain(renderChangesBlock(theme, done, 100, 1))[0].includes("A very long summary"));
 
-		const prefixAndCounts = "   ● 5 uncommitted [+1 · ~3 · -1]";
-		const fitsCounts = plain(renderChangesBlock(theme, done, visibleWidth(prefixAndCounts), 1))[0];
-		assert.equal(fitsCounts, prefixAndCounts, "the whole bracket takes priority over the file and preview");
-		const noCounts = plain(renderChangesBlock(theme, done, visibleWidth(prefixAndCounts) - 1, 1))[0];
-		assert.equal(noCounts.includes("[") || noCounts.includes("]"), false, "never cut the bracket in half");
+		const headingAndCounts = "   [local changes] +1, ~3, -1";
+		assert.equal(plain(renderChangesBlock(theme, done, headingAndCounts.length, 1))[0], headingAndCounts, "the whole counts take priority over the file and preview");
+		const noCounts = plain(renderChangesBlock(theme, done, headingAndCounts.length - 1, 1))[0];
+		assert.ok(noCounts.startsWith("   [local changes] · "), `never cut the counts in half: ${noCounts}`);
+	});
+});
+
+describe("panel section (CS-05)", () => {
+	const theme = makeTheme();
+	const plain = (lines: string[]) => lines.map(sanitizeTuiText);
+	/** The summary's first row, which follows the last file row directly. */
+	const summaryIndex = (lines: string[], head = "summarizing with") => plain(lines).findIndex((line) => line.trimStart().startsWith(head));
+	const bare: ChangesPresentation = {
+		...counted(),
+		entries: counted().entries.map(({ path, kind, untracked }) => ({ path, kind, untracked })),
+	};
+	const failed = counted({ status: "failed", reason: "broken\nprovider \u001b[31msecret" });
+	const long = counted({ status: "done", text: "One sentence about the change. ".repeat(20) });
+	const crowded: ChangesPresentation = {
+		...counted(),
+		entries: Array.from({ length: 30 }, (_, index) => ({ path: `src/deeply/nested/module-${index}.ts`, kind: "changed" as const, untracked: false, stat: { added: index, deleted: 1, binary: false } })),
+	};
+
+	it("yields nothing without a presentation, a row, or a column", () => {
+		assert.deepEqual(layoutChangesSection(theme, null, 68, 20), []);
+		assert.deepEqual(layoutChangesSection(theme, counted(), 68, 0), []);
+		assert.deepEqual(layoutChangesSection(theme, counted(), 0, 20), []);
+	});
+
+	it("lays out a gap, the heading, file rows, and the summary flush with the panel's text", () => {
+		const lines = plain(layoutChangesSection(theme, counted(), 68, 20));
+		lines.forEach((line, index) => assert.equal(visibleWidth(line), 68, `row ${index}: ${line}`));
+		assert.deepEqual(lines.map((line) => line.trimEnd()).filter((line, index) => index < 2 || index > 6), [
+			"",
+			"[local changes] +1, ~3, -1",
+			"summarizing with provider/model…",
+		]);
+		assert.match(lines[2], /^\+ new\.ts +[·]+ +new$/);
+		assert.match(lines[4], /^~ src\/big\.ts +▇+ \+30 -10$/);
+		assert.match(lines[6], /^- gone\.ts +▇▇·+ +\+0 -4$/);
+	});
+
+	it("spends a row budget on the gap first, then the listing once LISTING_MIN_ROWS fit below it", () => {
+		const shape = (rows: number) => {
+			const lines = plain(layoutChangesSection(theme, counted(), 68, rows));
+			return { rows: lines.length, gap: lines.length > 1 && lines[0].trim() === "", listed: lines.some((line) => line.trimEnd() === "[local changes] +1, ~3, -1") };
+		};
+		assert.deepEqual(shape(1), { rows: 1, gap: false, listed: false });
+		for (let rows = 2; rows <= LISTING_MIN_ROWS; rows++) assert.deepEqual(shape(rows), { rows: 2, gap: true, listed: false }, `rows ${rows}`);
+		assert.deepEqual(shape(LISTING_MIN_ROWS + 1), { rows: LISTING_MIN_ROWS + 1, gap: true, listed: true });
+		assert.equal(plain(layoutChangesSection(theme, counted(), 68, 1))[0], "[local changes] +1, ~3, -1 · ~ src/big.ts +30 -10 · summarizing w...");
+	});
+
+	it("never spends more rows than it is given", () => {
+		for (let rows = 1; rows <= 40; rows++) {
+			assert.ok(layoutChangesSection(theme, crowded, 68, rows).length <= rows, `rows ${rows}`);
+		}
+	});
+
+	it("keeps every listing row in place when the line counts or the summary land", () => {
+		for (const rows of [LISTING_MIN_ROWS + 1, 7, 9, 12, 20]) {
+			const before = layoutChangesSection(theme, bare, 68, rows);
+			const after = layoutChangesSection(theme, counted(), 68, rows);
+			const summarized = layoutChangesSection(theme, long, 68, rows);
+			const index = summaryIndex(after);
+			assert.ok(index > 0, `rows ${rows}`);
+			assert.equal(summaryIndex(before), index, `rows ${rows}`);
+			assert.equal(summaryIndex(summarized, "One sentence"), index, `rows ${rows}`);
+			assert.deepEqual(summarized.slice(0, index), after.slice(0, index), `rows ${rows}`);
+			assert.ok(summarized.length <= rows, `rows ${rows}`);
+		}
+	});
+
+	it("never resets the plate's background, and fills the width at every width and budget", () => {
+		// Any reset, default-background, or background color would punch a hole in the plate mid-row.
+		const clobbersPlate = /\x1b\[(?:0?|49|48[;0-9]*)m/;
+		for (const presentation of [bare, counted(), failed, long, crowded]) {
+			for (const rows of [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 20]) {
+				for (let width = 1; width <= 200; width++) {
+					layoutChangesSection(theme, presentation, width, rows).forEach((line, index) => {
+						assert.equal(clobbersPlate.test(line), false, `rows ${rows}, width ${width}, line ${index}: ${JSON.stringify(line)}`);
+						assert.equal(visibleWidth(line), width, `rows ${rows}, width ${width}, line ${index}`);
+					});
+				}
+			}
+		}
 	});
 });

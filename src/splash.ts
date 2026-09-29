@@ -146,6 +146,17 @@ export interface PanelPlacement {
 	taglineRow?: number;
 }
 
+/** What the splash tells a section joining the foot of its info panel. */
+export interface SplashBand {
+	/** The panel's text columns, inside its padding. */
+	width: number;
+	/**
+	 * Splash rows spent down to the panel's closing padding and the backdrop row under it. Each
+	 * section row adds at most one, and none while the panel still runs shorter than the logo beside it.
+	 */
+	rows: number;
+}
+
 /**
  * Writes the logo into `ink` (keyed by row-major cell index) as two whole layers: the shadow
  * offset down-right, then the logo over it. The art's Powerline glyphs paint only half their
@@ -244,11 +255,16 @@ export interface HeaderParts {
  * `[skills] N`/`[prompts] N`/`[extensions] N` heading, mirroring pi's /loaded ordering.
  * Every layout keeps a spare row below the logo, where its drop shadow lands.
  *
+ * `section` is asked, once the lists are laid out, for rows to close the panel with, after
+ * `[extensions]`. They join the panel above its closing padding row and grow it, and the splash
+ * with it; side by side, the logo stays centered against the taller panel, and the backdrop's fade
+ * runs over the whole splash.
+ *
  * Returns a `repaintTagline` hook so the reveal ticker can restyle just the tagline row instead
  * of rebuilding the whole O(W×H) splash on every 20ms tick, and a `repaintBackdrop` hook so the
  * gradient animation ticker can repaint the rows without redoing this layout work.
  */
-export function buildHeaderParts(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0, prompts: string[] = [], shortcuts: ShortcutHint[] = []): HeaderParts {
+export function buildHeaderParts(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0, prompts: string[] = [], shortcuts: ShortcutHint[] = [], section?: (band: SplashBand) => string[]): HeaderParts {
 	let sample = backgroundSampler(background, theme, animation, timeMs);
 	const logoRows = LOGO_LINES.length;
 	const roomBesideLogo = width - SPLASH_MARGIN_X * 2 - LOGO_WIDTH - LOGO_GAP;
@@ -300,12 +316,17 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 		: undefined;
 	const countFrame = frame(buildCountsLine(theme, context, skills, extensions, shortcuts, prompts, innerWidth));
 	const selected = listed && splashHeight(listed.lines) <= rowBudget ? listed : countFrame;
-	const lines = selected.lines;
-	const height = splashHeight(lines);
 	const panelX = sideBySide ? width - SPLASH_MARGIN_X - panelWidth : Math.max(0, Math.floor((width - panelWidth) / 2));
 	const logoX = sideBySide ? Math.max(SPLASH_MARGIN_X, Math.floor((panelX - LOGO_WIDTH) / 2)) : Math.max(0, Math.floor((width - LOGO_WIDTH) / 2));
+	// The section's budget is measured against the lists alone. Centering the taller panel afterwards
+	// never needs more rows than that budget allowed, since the lists' panel sits at least a margin down.
+	const listsY = sideBySide ? Math.floor((splashHeight(selected.lines) - selected.lines.length) / 2) : logoRows + 1 + PANEL_MARGIN_Y;
+	const appended = section?.({ width: innerWidth, rows: listsY + selected.lines.length + PANEL_MARGIN_Y }) ?? [];
+	const lines = appended.length > 0 ? [...selected.lines.slice(0, -1), ...appended, ""] : selected.lines;
+	const height = splashHeight(lines);
+	// Side by side, the logo and the panel are both centered on the finished splash, section included.
 	const logoY = sideBySide ? Math.floor((height - logoRows) / 2) : 0;
-	const panelY = sideBySide ? Math.floor((height - lines.length) / 2) : logoRows + 1 + PANEL_MARGIN_Y;
+	const panelY = sideBySide ? Math.floor((height - lines.length) / 2) : listsY;
 	const taglineText = buildTaglineText(innerWidth, model, systemPromptSize);
 	const taglineRow = selected.taglineIndex;
 	const panel: PanelPlacement = { x: panelX, y: panelY, width: panelWidth, bg: panelBg(theme), lines, taglineRow: taglineRow === -1 ? undefined : taglineRow };

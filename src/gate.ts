@@ -34,7 +34,7 @@ const GATE_MENU: { label: string; action: MenuAction; icon: string; hotkey: KeyI
 
 /**
  * Height of the visible gate menu block, excluding any trailing centering rows. Spacing is
- * dropped while the startup changes block shares the space below the splash.
+ * dropped while the startup changes section grows the splash into the space below it.
  */
 export function gateMenuRows(terminalRows: number): number {
 	const n = GATE_MENU.length;
@@ -410,8 +410,8 @@ export class StartupGate {
 
 	private renderMenu(width: number): string[] {
 		const menu = this.menu;
-		// Terminals 30 rows or taller get a blank row between items unless the changes block
-		// occupies the same below-splash budget.
+		// Terminals 30 rows or taller get a blank row between items unless the changes section
+		// grows the splash into the same below-splash budget.
 		const spacious = this.tui.terminal.rows >= 30 && state.changes === null;
 		// Every row is laid out to the same block width (icon + label column, hotkey right-
 		// aligned), so centering each row keeps the block's internal columns aligned.
