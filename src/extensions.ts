@@ -795,13 +795,14 @@ function resolvePackageSource(entry: ScopedPackage, install: ScopedPackage, agen
 }
 
 /**
- * pi's `resolveExtensionSources` for CLI `--extension` values (temporary scope). `<inline:…>`
- * sources are pi's hidden built-ins and are never shown in its `[Extensions]` list. Temporary
- * npm/git installs live under the agent `tmp/extensions` tree, so this mirrors pi's temporary
- * lookup instead of falling back to user/project installs.
+ * pi's `resolveExtensionSources` for CLI `--extension` values (temporary scope). Built-in
+ * sources — `builtin:<name>` since pi 0.99, `<inline:…>` before it — are pi's hidden built-ins
+ * and are never shown in its `[Extensions]` list; pi routes `builtin:` sources to its built-ins
+ * before any path lookup. Temporary npm/git installs live under the agent `tmp/extensions` tree,
+ * so this mirrors pi's temporary lookup instead of falling back to user/project installs.
  */
 function resolveCliExtensionSource(source: string, agentDir: string, cwd: string, target: ResourceMap): void {
-	if (source.startsWith("<inline:")) return;
+	if (source.startsWith("builtin:") || source.startsWith("<inline:")) return;
 	const metadata: ResourceMetadata = { source, scope: "temporary", origin: "package" };
 	const temporaryInstallPath = (prefix: string, suffix = ""): string | undefined => {
 		const root = resolve(agentDir, "tmp", "extensions", prefix);

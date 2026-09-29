@@ -293,6 +293,14 @@ describe("discoverLoadedExtensions: CLI sources (E-06)", () => {
 		restoreArgv = setArgv(["--extension", "<inline:llama.cpp>"]);
 		assert.deepEqual(labels(), []);
 	});
+	it("builtin:<name> CLI sources are hidden built-ins, even with a same-named file in cwd", () => {
+		// pi 0.99 routes `builtin:` sources to its built-ins before any path lookup; the decoy
+		// would be listed if the source fell through to local path resolution.
+		writeFileSync(join(env.cwd, "builtin:mcp"), "");
+		restoreArgv();
+		restoreArgv = setArgv(["-e", "builtin:mcp"]);
+		assert.deepEqual(labels(), []);
+	});
 	it("under --no-extensions only CLI sources are reported", () => {
 		writeExtension("on-disk", "index.ts");
 		const cliExt = join(env.cwd, "cli-ext.ts");

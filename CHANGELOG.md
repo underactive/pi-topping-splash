@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   discards. Tab focuses the bar, ←/→ pick a button and Enter fires it. Enter on a toggle or cycle row no
   longer applies the menu; Esc still cancels.
 
+### Fixed
+
+- Pi 0.99 `builtin:<name>` CLI extension sources (for example `-e builtin:mcp`) are skipped when
+  discovering extensions, like the `<inline:…>` built-ins of earlier Pi versions, instead of being
+  resolved as paths relative to the working directory.
+
 ## [0.3.2] - 2026-09-20
 
 ### Changed
