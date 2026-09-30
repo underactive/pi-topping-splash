@@ -92,7 +92,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 					cachedChangesVersion = changesVersion;
 					cachedStreamTick = summaryStream.tick;
 					// The changes section closes the info panel, in whatever rows the gate or editor leaves free.
-					const reserve = prefs.menuGate === "on" ? gateMenuRows(rows) : EDITOR_RESERVED_ROWS;
+					const reserve = prefs.menuGate === "on" ? gateMenuRows(rows, state.changes !== null) : EDITOR_RESERVED_ROWS;
 					const parts = buildHeaderParts(width, rows, theme, state.loadedContext, state.loadedSkills, state.loadedExtensions, ctx.model ? { id: ctx.model.id, provider: ctx.model.provider } : undefined, state.systemPromptSize, state.backgroundColor, state.gradientAnimation, gradientAnimation.timeMs, state.loadedPrompts, state.loadedShortcuts,
 						(band) => layoutChangesSection(theme, state.changes, band.width, rows - band.rows - reserve));
 					cachedSplashLines = parts.lines;

@@ -32,15 +32,28 @@ const GATE_MENU: { label: string; action: MenuAction; icon: string; hotkey: KeyI
 	{ label: "Quit", action: "quit", icon: "\u{f0a48}", hotkey: "q" }, // nf-md-exit_run
 ];
 
+const MENU_HINT = "↑↓ move · enter select · hotkey jump · esc = new session";
+
 /**
- * Height of the visible gate menu block, excluding any trailing centering rows. Spacing is
- * dropped while the startup changes section grows the splash into the space below it.
+ * The gate menu rows: items, a blank row, the hint, and a leading pad row unless compact. Terminals
+ * 30 rows or taller get a blank row between items, unless the changes section grows the splash
+ * into the same below-splash budget.
  */
-export function gateMenuRows(terminalRows: number): number {
-	const n = GATE_MENU.length;
-	const isCompactShape = terminalRows > 0 && terminalRows <= SHORT_TERMINAL_ROWS;
-	const spacious = terminalRows >= 30 && state.changes === null;
-	return n + (spacious ? n - 1 : 0) + 2 + (isCompactShape ? 0 : 1);
+function menuBlock(terminalRows: number, changesShown: boolean, renderItem: (entry: (typeof GATE_MENU)[number], index: number) => string, hint: string): string[] {
+	const spacious = terminalRows >= 30 && !changesShown;
+	const compact = terminalRows > 0 && terminalRows <= SHORT_TERMINAL_ROWS;
+	const lines: string[] = compact ? [] : [""];
+	GATE_MENU.forEach((entry, i) => {
+		if (spacious && i > 0) lines.push("");
+		lines.push(renderItem(entry, i));
+	});
+	lines.push("", hint);
+	return lines;
+}
+
+/** Height of the visible gate menu block, excluding any trailing centering rows. */
+export function gateMenuRows(terminalRows: number, changesShown: boolean): number {
+	return menuBlock(terminalRows, changesShown, () => "", "").length;
 }
 
 /**
@@ -403,39 +416,26 @@ export class StartupGate {
 		return this.theme.fg("dim", text);
 	}
 
-	private isCompact(): boolean {
-		const rows = this.tui.terminal.rows;
-		return rows > 0 && rows <= SHORT_TERMINAL_ROWS;
-	}
-
 	private renderMenu(width: number): string[] {
-		const menu = this.menu;
-		// Terminals 30 rows or taller get a blank row between items unless the changes section
-		// grows the splash into the same below-splash budget.
-		const spacious = this.tui.terminal.rows >= 30 && state.changes === null;
 		// Every row is laid out to the same block width (icon + label column, hotkey right-
 		// aligned), so centering each row keeps the block's internal columns aligned.
 		// Two spaces between icon and label: wide Nerd Font artwork (e.g. the Material Design
 		// glyphs in non-Mono font variants) advances one cell but paints into the next, so a
 		// single space would be swallowed and the label would sit flush against the icon.
-		const lines: string[] = [];
-		menu.forEach((entry, i) => {
-			if (spacious && i > 0) lines.push("");
+		const lines = menuBlock(this.tui.terminal.rows, state.changes !== null, (entry, i) => {
 			const selected = i === this.menuIndex;
 			const chevron = selected ? this.theme.fg("accent", "❯") : " ";
 			const label = selected ? this.theme.fg("accent", entry.label) : this.theme.fg("text", entry.label);
 			const left = `${chevron} ${entry.icon}  ${label}`;
 			const gap = " ".repeat(Math.max(1, this.menuBlockWidth - visibleWidth(left) - 1));
-			lines.push(`${left}${gap}${this.theme.fg("warning", entry.hotkey)}`);
-		});
-		lines.push("", this.hint("↑↓ move · enter select · hotkey jump · esc = new session"));
+			return `${left}${gap}${this.theme.fg("warning", entry.hotkey)}`;
+		}, this.hint(MENU_HINT));
 		// Center each row in the full terminal width (left-pad only; no trailing spaces).
-		const centered = lines.map((line) => {
+		const block = lines.map((line) => {
 			if (!line) return line;
 			const fitted = truncateToWidth(line, width);
 			return `${" ".repeat(Math.max(0, Math.floor((width - visibleWidth(fitted)) / 2)))}${fitted}`;
 		});
-		const block = this.isCompact() ? centered : ["", ...centered];
 		// pi's fullscreen layout pins the editor region (hosting this menu) to the screen bottom
 		// and stretches the transcript above it, so the menu would hug the terminal's bottom edge.
 		// Trailing blank rows grow this region upward, vertically centering the visible menu in

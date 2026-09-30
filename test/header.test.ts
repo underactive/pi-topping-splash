@@ -318,7 +318,7 @@ describe("installHeader (H-04, H-05)", () => {
 			const rendered = component.render(100);
 			assert.ok(rendered.length <= rows);
 			assert.equal(state.splashRows, rendered.length);
-			assert.ok(gateMenuRows(rows) >= 1);
+			assert.ok(gateMenuRows(rows, false) >= 1);
 		}
 		const beforeHeader = headerRenderState.requestRender;
 		installChangesHeader(ctx.ctx);

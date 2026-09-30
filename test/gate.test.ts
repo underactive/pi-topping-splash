@@ -142,12 +142,12 @@ describe("menu (GA-04..GA-08)", () => {
 		for (const rows of [20, 24, 29, 30, 40]) {
 			state.changes = null;
 			const harness = makeGate({ rows });
-			assert.equal(gateMenuRows(rows), harness.gate.render(90).length, `rows=${rows}`);
+			assert.equal(gateMenuRows(rows, false), harness.gate.render(90).length, `rows=${rows}`);
 		}
 		state.changes = { entries: [{ path: "file.ts", kind: "changed", untracked: false }], summary: { status: "pending", modelLabel: "p/m" }, version: 1 };
 		const compact = makeGate({ rows: 40 });
-		assert.equal(gateMenuRows(40), compact.gate.render(90).length);
-		assert.equal(gateMenuRows(40), 10);
+		assert.equal(gateMenuRows(40, true), compact.gate.render(90).length);
+		assert.equal(gateMenuRows(40, true), 10);
 	});
 
 	it("lists the README menu items", () => {
