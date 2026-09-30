@@ -199,7 +199,7 @@ describe("line counts", () => {
 
 describe("sensitive paths and bounded details", () => {
 	it("recognizes credential-like basenames and redacts common secrets", () => {
-		for (const path of [".env", ".env.local", "id_ed25519", "server.pem", ".npmrc", "credentials.json", "client-secret.txt"]) {
+		for (const path of [".env", ".env.local", "id_ed25519", "server.pem", ".npmrc", "credentials.json", "client-secret.txt", "secrets/app.yaml", ".ssh/config", "infra/terraform.tfstate", "infra/prod.tfvars"]) {
 			assert.equal(isSensitivePath(path), true, path);
 		}
 		assert.equal(isSensitivePath("src/config.ts"), false);

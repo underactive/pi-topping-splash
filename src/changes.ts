@@ -142,14 +142,16 @@ export function parseStatusZ(stdout: string): ChangeEntry[] {
 	return [...entries.values()].sort((a, b) => CHANGE_KIND_ORDER[a.kind] - CHANGE_KIND_ORDER[b.kind] || a.path.localeCompare(b.path));
 }
 
-/** Return true when a basename is likely to contain credentials or private key material. */
+/** Return true when a path or its directories are likely to contain credentials or private key material. */
 export function isSensitivePath(path: string): boolean {
-	const basename = (path.split(/[\\/]/).pop() ?? path).toLowerCase();
+	const segments = path.toLowerCase().split(/[\\/]/);
+	const basename = segments[segments.length - 1] ?? "";
+	if (segments.some((segment) => /^(\.ssh|\.aws|\.gnupg|\.kube|secrets?)$/.test(segment))) return true;
 	return (
 		basename.startsWith(".env") ||
-		/\.(pem|key|p12|pfx|jks|keystore|kdbx|gpg|asc)$/.test(basename) ||
+		/\.(pem|key|p12|pfx|jks|keystore|kdbx|gpg|asc|tfstate|tfvars)$/.test(basename) ||
 		/^id_(rsa|dsa|ecdsa|ed25519)/.test(basename) ||
-		/^\.?(npmrc|netrc|pypirc)$/.test(basename) ||
+		/^\.?(npmrc|netrc|pypirc|pgpass|htpasswd)$/.test(basename) ||
 		/(credential|secret)/.test(basename)
 	);
 }
