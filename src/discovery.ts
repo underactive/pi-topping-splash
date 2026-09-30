@@ -93,7 +93,7 @@ export interface ShortcutHint {
  * Filters `pi.getCommands()` for `source === "prompt"`, prefixes names with `/`,
  * then sanitizes, deduplicates, and sorts through `uniqueSorted`.
  */
-export function getLoadedPrompts(pi: ExtensionAPI, commands: ReturnType<ExtensionAPI["getCommands"]> = pi.getCommands()): string[] {
+export function getLoadedPrompts(commands: ReturnType<ExtensionAPI["getCommands"]>): string[] {
 	const prompts = commands
 		.filter((command) => command.source === "prompt")
 		.map((command) => `/${command.name}`);
@@ -143,7 +143,7 @@ export function getLoadedHeaderItems(pi: ExtensionAPI, cwd: string, projectTrust
 		skills: uniqueSorted(skills),
 		extensions: getLoadedExtensionLabels(cwd, getAgentDir(), projectTrusted),
 		context: getLoadedContextFiles(cwd, projectTrusted),
-		prompts: getLoadedPrompts(pi, commands),
+		prompts: getLoadedPrompts(commands),
 		shortcuts: getShortcutHints(),
 	};
 }

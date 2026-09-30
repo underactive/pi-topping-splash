@@ -236,7 +236,7 @@ describe("getLoadedPrompts (D-15)", () => {
 				{ name: "rewrite", source: "prompt", sourceInfo: sourceInfo("/prompts/rewrite-dup") },
 			],
 		});
-		const prompts = getLoadedPrompts(harness.pi);
+		const prompts = getLoadedPrompts(harness.pi.getCommands());
 		assert.deepEqual(prompts, ["/analyze", "/rewrite"], `prompts: ${JSON.stringify(prompts)}`);
 	});
 
@@ -246,7 +246,7 @@ describe("getLoadedPrompts (D-15)", () => {
 				{ name: "my-skill", source: "skill", sourceInfo: { path: "/skills/my-skill/SKILL.md", source: "skill", scope: "user", origin: "top-level" } },
 			],
 		});
-		assert.deepEqual(getLoadedPrompts(harness.pi), []);
+		assert.deepEqual(getLoadedPrompts(harness.pi.getCommands()), []);
 	});
 });
 
