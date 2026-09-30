@@ -10,7 +10,7 @@ import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
 import { ensureQuietStartup, installHeader, withSettings } from "../src/header.ts";
 import { installChangesHeader, summaryStream } from "../src/changes-summary.ts";
 import type { ChangesPresentation } from "../src/changes-summary.ts";
-import { writePreferences } from "../src/preferences.ts";
+import { readPreferences, writePreferences } from "../src/preferences.ts";
 import { gateMenuRows } from "../src/gate.ts";
 import { stopTaglineReveal, TAGLINE_PLACEHOLDER, taglineReveal } from "../src/reveal.ts";
 import { changesRenderState, headerRenderState, state } from "../src/state.ts";
@@ -96,7 +96,7 @@ describe("installHeader (H-04, H-05)", () => {
 			],
 		};
 		const pi = createFakePi({ ...piDefaults, ...options.piOverrides });
-		installHeader(pi.pi, ctx.ctx);
+		installHeader(pi.pi, ctx.ctx, readPreferences());
 		assert.equal(ctx.setHeaderCalls.length, 1, "must install a header factory");
 		const factory = ctx.setHeaderCalls[0] as (tui: TUI, theme: Theme) => Component;
 		const component = factory(tui.tui, makeTheme());

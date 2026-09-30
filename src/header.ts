@@ -5,7 +5,7 @@ import type { BackgroundColor, GradientAnimation } from "./color.ts";
 import { changesRenderState, headerRenderState, state } from "./state.ts";
 import { gradientAnimation, startGradientAnimation } from "./animate.ts";
 import { startTaglineReveal, taglineReveal } from "./reveal.ts";
-import { readPreferences } from "./preferences.ts";
+import type { SplashPreferences } from "./preferences.ts";
 import { getLoadedHeaderItems } from "./discovery.ts";
 import { buildHeaderParts } from "./splash.ts";
 import { EDITOR_RESERVED_ROWS, layoutChangesSection, summaryStream } from "./changes-summary.ts";
@@ -34,11 +34,10 @@ export function ensureQuietStartup(cwd: string): boolean {
 }
 
 /** Wires the splash header, seeds shared state, and starts the configured reveal/gradient tickers. */
-export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext): void {
+export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: SplashPreferences): void {
 	try {
 		({ skills: state.loadedSkills, extensions: state.loadedExtensions, context: state.loadedContext, prompts: state.loadedPrompts, shortcuts: state.loadedShortcuts } = getLoadedHeaderItems(pi, ctx.cwd, ctx.isProjectTrusted()));
 	} catch { /* discovery is display-only; never abort the startup */ }
-	const prefs = readPreferences();
 	state.backgroundColor = prefs.backgroundColor;
 	state.gradientAnimation = prefs.gradientAnimation;
 	ctx.ui.setHeader((tui: TUI, theme: Theme) => {

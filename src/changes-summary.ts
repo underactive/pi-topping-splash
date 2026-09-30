@@ -6,7 +6,7 @@ import { PANEL_BG_LIGHT, panelBg, rgbFromHex, sgrFg } from "./color.ts";
 import type { Rgb } from "./color.ts";
 import { modelRefLabel } from "./model-picker.ts";
 import type { ModelRef } from "./model-picker.ts";
-import { readPreferences } from "./preferences.ts";
+import type { SplashPreferences } from "./preferences.ts";
 import { REVEAL_MS_PER_CHAR, REVEAL_TICK_MS } from "./reveal.ts";
 import { changesRenderState, state } from "./state.ts";
 import { ELLIPSIS, fitCell, padRight, sanitizeTuiText, truncateVisible } from "./text.ts";
@@ -154,9 +154,8 @@ function requestChangesRender(): void {
  * Start one detached collection/summarization run. The collector is deliberately started by the
  * session-start handler before the gate-mode early return, so splash-only mode gets the same data.
  */
-export function startChangesSummary(pi: ExtensionAPI, ctx: ExtensionContext): void {
+export function startChangesSummary(pi: ExtensionAPI, ctx: ExtensionContext, prefs: SplashPreferences): void {
 	if (state.changesStarted) return;
-	const prefs = readPreferences();
 	if (prefs.changesSummary !== "on" || !ctx.isProjectTrusted()) return;
 	state.changesStarted = true;
 	const controller = new AbortController();

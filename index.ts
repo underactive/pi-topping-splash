@@ -66,14 +66,15 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 		// custom component replaces only the editor region below it), then clear the terminal
 		// so the splash starts at the very top of the window instead of inline below leftover
 		// shell output.
-		installHeader(pi, ctx);
+		const prefs = readPreferences();
+		installHeader(pi, ctx, prefs);
 		headerRenderState.forceRedraw?.();
 		// Start before the menuGate off-return so splash-only launches receive the same listing.
-		startChangesSummary(pi, ctx);
+		startChangesSummary(pi, ctx, prefs);
 
 		// Splash-only mode: keep the header wired (model/prompt-size lines keep refreshing)
 		// and open the editor beneath it. The tagline reveal stops itself when the wipe ends.
-		if (readPreferences().menuGate === "off") return;
+		if (prefs.menuGate === "off") return;
 
 		const resolution = await runStartupGate(pi, ctx);
 		if (resolution === "quit") {
