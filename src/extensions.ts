@@ -4,7 +4,7 @@ import type { Dirent } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CONFIG_DIR_NAME, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, SettingsManager, parseArgs } from "@earendil-works/pi-coding-agent";
 import type { PackageSource } from "@earendil-works/pi-coding-agent";
 import { uniqueSorted } from "./text.ts";
 
@@ -916,22 +916,8 @@ export interface CliExtensionArgs {
  * report other on-disk extensions as loaded.
  */
 export function cliExtensionArgs(): CliExtensionArgs {
-	const argv = process.argv.slice(2);
-	const explicit = new Set<string>();
-	let noExtensions = false;
-	for (let i = 0; i < argv.length; i++) {
-		const arg = argv[i];
-		if (arg === "--no-extensions" || arg === "-ne") {
-			noExtensions = true;
-			continue;
-		}
-		if (arg === "--extension" || arg === "-e") {
-			if (i + 1 < argv.length) explicit.add(argv[++i]!);
-			continue;
-		}
-		if (arg.startsWith("--extension=")) explicit.add(arg.slice("--extension=".length));
-	}
-	return { noExtensions, explicit };
+	const parsed = parseArgs(process.argv.slice(2));
+	return { noExtensions: parsed.noExtensions === true, explicit: new Set(parsed.extensions ?? []) };
 }
 
 /**
