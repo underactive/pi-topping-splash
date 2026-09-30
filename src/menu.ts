@@ -64,9 +64,7 @@ export interface MenuSection {
 export interface MenuConfig {
 	title: string;
 	sections: MenuSection[];
-	/** Action bar. Without one the menu is dismissible only by Escape, so callers that stage a
-	 * picker row must supply at least the button that continues the flow. */
-	buttons?: MenuButton[];
+	buttons: MenuButton[];
 	hints?: string[];
 	/** Item id to select when a staged menu is reopened. */
 	initialCursor?: string;
@@ -80,7 +78,6 @@ export interface MenuResult<T> {
 	picked?: string;
 }
 
-const DEFAULT_HINTS = ["\u2191\u2193 move", "\u2423 toggle", "\u23ce apply", "esc cancel"];
 const BUTTON_HINTS = ["\u2191\u2193 move", "\u2423 toggle", "\u21e5 actions", "\u23ce select", "esc cancel"];
 const MAX_WIDTH = 76;
 const ROW_PREFIX_WIDTH = 8; // "  " + marker + " " + "[" + box + "]" + " "
@@ -131,8 +128,8 @@ export class MenuComponent implements Component {
 		this.done = done;
 		this.title = config.title;
 		this.sections = config.sections;
-		this.buttons = config.buttons ?? [];
-		this.hints = config.hints ?? (this.buttons.length > 0 ? BUTTON_HINTS : DEFAULT_HINTS);
+		this.buttons = config.buttons;
+		this.hints = config.hints ?? BUTTON_HINTS;
 		this.tui = tui;
 		this.buttonIndex = Math.max(0, this.buttons.findIndex((button) => button.primary));
 		this.values = buildInitialValues(config);
@@ -153,7 +150,7 @@ export class MenuComponent implements Component {
 			this.done({ action: undefined, values: { ...this.initialValues } });
 			return;
 		}
-		if (this.buttons.length > 0 && matchesKey(data, Key.tab)) {
+		if (matchesKey(data, Key.tab)) {
 			this.focusedPane = this.focusedPane === "items" ? "buttons" : "items";
 			this.invalidate();
 			return;
