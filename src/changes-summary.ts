@@ -15,9 +15,9 @@ import { SPLASH_MARGIN_X } from "./splash.ts";
 
 /** Rows reserved below a splash when no startup gate is consuming the space. */
 export const EDITOR_RESERVED_ROWS = 6;
-export const SUMMARY_ROWS_MAX = 6;
-export const FILE_ROWS_MAX = 10;
-export const SUMMARY_TIMEOUT_MS = 60_000;
+const SUMMARY_ROWS_MAX = 6;
+const FILE_ROWS_MAX = 10;
+const SUMMARY_TIMEOUT_MS = 60_000;
 /** Cells in a churn bar: the width of pi-topping-statusline's context bar. */
 export const BAR_CELLS = 20;
 /** Narrower than this and the bars are dropped rather than squeezed. */
@@ -25,7 +25,7 @@ export const BAR_MIN_CELLS = 5;
 /** Path columns kept before the line counts give up their space. */
 export const PATH_MIN_WIDTH = 12;
 /** Paths up to this many columns stay whole before the bars get any room. */
-export const PATH_WHOLE_MAX = 32;
+const PATH_WHOLE_MAX = 32;
 /** The slim changes-only header stops here however wide the terminal is; narrower terminals still fill their own. */
 export const CHANGES_MAX_WIDTH = 100;
 /** Wall-clock cost of one streamed summary character: twice the tagline reveal's pace, on the same tick, so a tick prints two. */
@@ -35,7 +35,7 @@ export const LISTING_MIN_ROWS = 4;
 /** The section heading, bracketed like the info panel's other headings. */
 const HEADING = "[local changes]";
 /** How much of each statusline git color survives the dim; the rest is the backdrop showing through. */
-export const GIT_COLOR_STRENGTH = 0.6;
+const GIT_COLOR_STRENGTH = 0.6;
 
 /**
  * pi-topping-statusline's git colors, carried here because Pi's Theme has no such roles:
