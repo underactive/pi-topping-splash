@@ -16,7 +16,7 @@ Restart Pi (or run `/reload`) to pick it up.
 ## Compatibility
 
 Requires Node.js 22.19.0 or newer. The current release is developed and tested against Pi
-0.99.1; Pi package peer dependency ranges remain unrestricted.
+0.99.2; Pi package peer dependency ranges remain unrestricted.
 
 ## Settings
 

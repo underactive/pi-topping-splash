@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-09-30
+
+### Changed
+
+- Development and CI now typecheck and test against Pi 0.99.2; the
+  `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 0.99.1.
+  Pi 0.99.2's changes are confined to MCP, codemode and tool search, none of which this extension
+  uses, so it needs no code changes; extension discovery and the compact startup labels were
+  re-verified against Pi's own resolution and labeling, both unchanged.
+- The prompt-size figure reflects the system prompt as built at startup, so it excludes the
+  sections extensions add per prompt. Pi 0.99.2 moved MCP server summaries out of the codemode
+  description into a new `mcp_servers` section rebuilt before each prompt: with MCP servers set to
+  codemode or deferred exposure, the figure shown at startup is now smaller than the prompt actually
+  sent. It catches up at the first prompt, once the splash has scrolled away.
+
 ## [0.4.0] - 2026-09-29
 
 ### Added
