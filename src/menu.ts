@@ -83,9 +83,6 @@ const MAX_WIDTH = 76;
 const ROW_PREFIX_WIDTH = 8; // "  " + marker + " " + "[" + box + "]" + " "
 
 interface FlatItem {
-	id: string;
-	label: string;
-	cycleValues?: readonly string[];
 	item: MenuItem;
 	sectionIndex: number;
 }
@@ -136,10 +133,10 @@ export class MenuComponent implements Component {
 		this.flat = [];
 		for (const [sectionIndex, section] of config.sections.entries()) {
 			for (const item of section.items) {
-				this.flat.push({ id: item.id, label: item.label, cycleValues: item.cycleValues, item, sectionIndex });
+				this.flat.push({ item, sectionIndex });
 			}
 		}
-		const initialIndex = config.initialCursor ? this.flat.findIndex((item) => item.id === config.initialCursor) : -1;
+		const initialIndex = config.initialCursor ? this.flat.findIndex((flat) => flat.item.id === config.initialCursor) : -1;
 		if (initialIndex >= 0) this.cursor = initialIndex;
 		this.initialValues = { ...this.values };
 	}
@@ -190,8 +187,8 @@ export class MenuComponent implements Component {
 			[Key.left]: () => this.cycleCurrentValue(-1),
 			[Key.right]: () => this.cycleCurrentValue(1),
 			[Key.space]: () => {
-				const item = this.flat[this.cursor]!;
-				if (item.item.pick) {
+				const item = this.flat[this.cursor]!.item;
+				if (item.pick) {
 					this.done({ action: undefined, values: { ...this.values }, picked: item.id });
 					return;
 				}
@@ -199,8 +196,8 @@ export class MenuComponent implements Component {
 				this.invalidate();
 			},
 			[Key.enter]: () => {
-				const item = this.flat[this.cursor]!;
-				if (item.item.pick) this.done({ action: undefined, values: { ...this.values }, picked: item.id });
+				const item = this.flat[this.cursor]!.item;
+				if (item.pick) this.done({ action: undefined, values: { ...this.values }, picked: item.id });
 			},
 			[Key.backspace]: () => this.clearCurrentValue(),
 			[Key.delete]: () => this.clearCurrentValue(),
@@ -235,7 +232,7 @@ export class MenuComponent implements Component {
 	}
 
 	private cycleCurrentValue(delta: number): void {
-		const item = this.flat[this.cursor]!;
+		const item = this.flat[this.cursor]!.item;
 		if (!item.cycleValues?.length) return;
 		const current = item.cycleValues.indexOf(this.values[item.id] as string);
 		const index = (current + delta + item.cycleValues.length) % item.cycleValues.length;
