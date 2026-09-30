@@ -107,8 +107,10 @@ export async function summarizeChanges(
 	const timeoutSignal = AbortSignal.timeout(SUMMARY_TIMEOUT_MS);
 	const requestSignal = AbortSignal.any([signal, timeoutSignal]);
 	if (signal.aborted) return { status: "failed", reason: "cancelled" };
+	let response: AssistantMessage | undefined;
+	let thrown: unknown;
 	try {
-		const response = await ctx.modelRegistry
+		response = await ctx.modelRegistry
 			.streamSimple(
 				model,
 				{
@@ -124,21 +126,18 @@ export async function summarizeChanges(
 				{ signal: requestSignal, maxTokens: 400 },
 			)
 			.result();
-		if (timeoutSignal.aborted) return { status: "failed", reason: "timed out" };
-		if (signal.aborted) return { status: "failed", reason: "cancelled" };
-		if (response.stopReason === "aborted") {
-			return { status: "failed", reason: timeoutSignal.aborted ? "timed out" : "cancelled" };
-		}
-		if (response.stopReason === "error") {
-			return { status: "failed", reason: errorReason(response.errorMessage ?? "request failed") };
-		}
-		const text = responseText(response.content);
-		return text ? { status: "done", text } : { status: "failed", reason: "empty response" };
 	} catch (error) {
-		if (timeoutSignal.aborted) return { status: "failed", reason: "timed out" };
-		if (signal.aborted) return { status: "failed", reason: "cancelled" };
-		return { status: "failed", reason: errorReason(error) };
+		thrown = error;
 	}
+	if (timeoutSignal.aborted) return { status: "failed", reason: "timed out" };
+	if (signal.aborted) return { status: "failed", reason: "cancelled" };
+	if (!response) return { status: "failed", reason: errorReason(thrown) };
+	if (response.stopReason === "aborted") return { status: "failed", reason: "cancelled" };
+	if (response.stopReason === "error") {
+		return { status: "failed", reason: errorReason(response.errorMessage ?? "request failed") };
+	}
+	const text = responseText(response.content);
+	return text ? { status: "done", text } : { status: "failed", reason: "empty response" };
 }
 
 let changesController: AbortController | null = null;
