@@ -4,7 +4,6 @@ import { VERSION } from "@earendil-works/pi-coding-agent";
 import type { ShortcutHint } from "../src/discovery.ts";
 import {
 	buildCountsLine,
-	buildHeader,
 	buildHeaderParts,
 	buildLabeledWrappedSection,
 	buildPanelLines,
@@ -36,6 +35,7 @@ beforeEach(() => resetModuleState());
 
 const theme = makeTheme();
 const MODEL = { id: "claude-opus-4", provider: "anthropic" };
+const buildHeader = (...args: Parameters<typeof buildHeaderParts>) => buildHeaderParts(...args).lines;
 
 describe("constants (S-01)", () => {
 	it("README-documented layout anchors", () => {

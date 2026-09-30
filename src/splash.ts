@@ -376,8 +376,3 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 		: undefined;
 	return { lines: painted, repaintTagline, repaintBackdrop, repaintSection };
 }
-
-/** The splash as flat lines. Use `buildHeaderParts` when you also need the tick-only repaint hooks. */
-export function buildHeader(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0, prompts: string[] = [], shortcuts: ShortcutHint[] = []): string[] {
-	return buildHeaderParts(width, termRows, theme, context, skills, extensions, model, systemPromptSize, background, animation, timeMs, prompts, shortcuts).lines;
-}

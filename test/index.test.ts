@@ -11,7 +11,7 @@ import { EDITOR_RESERVED_ROWS, startSummaryStream, stopSummaryStream, summarizeC
 import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
 import { stopTaglineReveal, taglineReveal } from "../src/reveal.ts";
 import { headerRenderState, state } from "../src/state.ts";
-import { buildHeader } from "../src/splash.ts";
+import { buildHeaderParts } from "../src/splash.ts";
 import { sanitizeTuiText } from "../src/text.ts";
 import { setArgv, setEnv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { createFakeCtx, makeAssistantMessage, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
@@ -711,9 +711,9 @@ describe("startup changes integration (AC2-AC8)", () => {
 		for (let rows = 15; rows <= 60; rows++) {
 			wired.tui.resizeRows(rows);
 			const model = wired.ctx.ctx.model;
-			const bandRows = buildHeader(100, rows, makeTheme(), state.loadedContext, state.loadedSkills, state.loadedExtensions,
+			const bandRows = buildHeaderParts(100, rows, makeTheme(), state.loadedContext, state.loadedSkills, state.loadedExtensions,
 				model ? { provider: model.provider, id: model.id } : undefined, state.systemPromptSize,
-				state.backgroundColor, state.gradientAnimation, 0, state.loadedPrompts, state.loadedShortcuts).length;
+				state.backgroundColor, state.gradientAnimation, 0, state.loadedPrompts, state.loadedShortcuts).lines.length;
 			const rendered = header.render(100).map(sanitizeTuiText);
 			assert.equal(state.splashRows, rendered.length, `terminal rows ${rows}`);
 			// The section spends only rows the editor leaves free, or rows beside a taller logo.
