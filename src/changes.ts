@@ -246,12 +246,8 @@ export async function collectChangeDetails(pi: ExtensionAPI, snapshot: ChangeSna
 		}
 	}
 
-	let omittedDiffs = 0;
 	for (const candidate of candidates) {
-		if (signal?.aborted || used >= DETAIL_BUDGET_BYTES) {
-			omittedDiffs++;
-			continue;
-		}
+		if (signal?.aborted || used >= DETAIL_BUDGET_BYTES) break;
 		const args = [
 			"diff",
 			...(candidate.cached ? ["--cached"] : []),
@@ -270,15 +266,7 @@ export async function collectChangeDetails(pi: ExtensionAPI, snapshot: ChangeSna
 		const content = redactSecrets(`${label}${excerpt.text}${excerpt.truncated ? "\n… (truncated)" : ""}`);
 		const appended = appendWithinBudget(parts, content, used);
 		used = appended.used;
-		if (!appended.complete) {
-			omittedDiffs++;
-			break;
-		}
-	}
-	if (omittedDiffs > 0 && used < DETAIL_BUDGET_BYTES) {
-		const omitted = `… ${omittedDiffs} diff excerpt${omittedDiffs === 1 ? "" : "s"} omitted\n`;
-		const appended = appendWithinBudget(parts, omitted, used);
-		used = appended.used;
+		if (!appended.complete) break;
 	}
 
 	let untrackedHeads = 0;
