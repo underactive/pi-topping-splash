@@ -223,6 +223,11 @@ describe("sensitive paths and bounded details", () => {
 		assert.equal(redacted.includes("QWxhZGRpbjpvcGVu"), false);
 	});
 
+	it("leaves a long unbroken word-character run unchanged without backtracking blowup", () => {
+		const blob = "Ab1_-".repeat(600);
+		assert.equal(redactSecrets(blob), blob);
+	});
+
 	it("skips binary/huge candidates and bounds per-file and total excerpts", async () => {
 		const root = mkdtempSync(join(tmpdir(), "pi-splash-details-"));
 		try {
