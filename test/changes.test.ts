@@ -208,6 +208,13 @@ describe("sensitive paths and bounded details", () => {
 		assert.equal(redacted.includes("xyz"), false);
 		assert.equal(redacted.includes("AKIA"), false);
 		assert.equal(redacted.includes("ghp_"), false);
+		const suffixed = redactSecrets(
+			"SECRET_KEY = 'django insecure abc def'\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENG\nstripe=sk_live_abcdefghijklmnopqrstuv",
+		);
+		assert.equal(suffixed.includes("insecure"), false);
+		assert.equal(suffixed.includes("def"), false);
+		assert.equal(suffixed.includes("wJalr"), false);
+		assert.equal(suffixed.includes("sk_live"), false);
 	});
 
 	it("redacts a private key whose END marker was truncated", () => {

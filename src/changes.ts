@@ -158,10 +158,10 @@ export function isSensitivePath(path: string): boolean {
 export function redactSecrets(text: string): string {
 	let redacted = text.replace(/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)/gi, "[redacted]");
 	redacted = redacted.replace(
-		/(["']?(?:api[_-]?key|secret|token|passw(?:or)?d)["']?\s*[:=]\s*)\S+/gi,
+		/(["']?[\w-]*(?:api[_-]?key|secret|token|passw(?:or)?d|[_-]key)[\w-]*["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|\S+)/gi,
 		"$1[redacted]",
 	);
-	return redacted.replace(/AKIA[0-9A-Z]{16}|gh[pousr]_\w{20,}|sk-[A-Za-z0-9_-]{20,}|xox[abpr]-\S+/g, "[redacted]");
+	return redacted.replace(/AKIA[0-9A-Z]{16}|gh[pousr]_\w{20,}|github_pat_\w{20,}|glpat-[\w-]{20,}|npm_\w{30,}|AIza[\w-]{30,}|sk[-_](?:live|test)?[-_]?[A-Za-z0-9_-]{20,}|eyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}|xox[abpr]-\S+/g, "[redacted]");
 }
 
 function parseNumstatRecord(record: string): { path: string; stat: LineStat } | undefined {
