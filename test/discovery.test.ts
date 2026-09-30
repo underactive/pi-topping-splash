@@ -6,8 +6,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import {
 	cliContextFilesDisabled,
 	cliSystemPromptSources,
-	discoverAppendSystemPromptFile,
-	discoverSystemPromptFile,
+	discoverPromptFile,
 	formatContextPath,
 	getLoadedContextFiles,
 	getLoadedHeaderItems,
@@ -78,28 +77,28 @@ describe("cliSystemPromptSources (D-12)", () => {
 	});
 });
 
-describe("discoverSystemPromptFile / discoverAppendSystemPromptFile (D-13)", () => {
+describe("discoverPromptFile (D-13)", () => {
 	it("trusted project file wins over the agent file", () => {
 		mkdirSync(join(env.cwd, ".pi"), { recursive: true });
 		writeFileSync(join(env.cwd, ".pi", "SYSTEM.md"), "project");
 		writeFileSync(join(env.agentDir, "SYSTEM.md"), "global");
-		assert.equal(discoverSystemPromptFile(env.cwd, env.agentDir, true), join(env.cwd, ".pi", "SYSTEM.md"));
+		assert.equal(discoverPromptFile(env.cwd, env.agentDir, true, "SYSTEM.md"), join(env.cwd, ".pi", "SYSTEM.md"));
 	});
 	it("untrusted project file is skipped, agent file used instead", () => {
 		mkdirSync(join(env.cwd, ".pi"), { recursive: true });
 		writeFileSync(join(env.cwd, ".pi", "SYSTEM.md"), "project");
 		writeFileSync(join(env.agentDir, "SYSTEM.md"), "global");
-		assert.equal(discoverSystemPromptFile(env.cwd, env.agentDir, false), join(env.agentDir, "SYSTEM.md"));
+		assert.equal(discoverPromptFile(env.cwd, env.agentDir, false, "SYSTEM.md"), join(env.agentDir, "SYSTEM.md"));
 	});
 	it("undefined when neither exists", () => {
-		assert.equal(discoverSystemPromptFile(env.cwd, env.agentDir, true), undefined);
-		assert.equal(discoverAppendSystemPromptFile(env.cwd, env.agentDir, false), undefined);
+		assert.equal(discoverPromptFile(env.cwd, env.agentDir, true, "SYSTEM.md"), undefined);
+		assert.equal(discoverPromptFile(env.cwd, env.agentDir, false, "APPEND_SYSTEM.md"), undefined);
 	});
 	it("APPEND_SYSTEM.md follows the same rules", () => {
 		mkdirSync(join(env.cwd, ".pi"), { recursive: true });
 		writeFileSync(join(env.cwd, ".pi", "APPEND_SYSTEM.md"), "project");
-		assert.equal(discoverAppendSystemPromptFile(env.cwd, env.agentDir, true), join(env.cwd, ".pi", "APPEND_SYSTEM.md"));
-		assert.equal(discoverAppendSystemPromptFile(env.cwd, env.agentDir, false), undefined);
+		assert.equal(discoverPromptFile(env.cwd, env.agentDir, true, "APPEND_SYSTEM.md"), join(env.cwd, ".pi", "APPEND_SYSTEM.md"));
+		assert.equal(discoverPromptFile(env.cwd, env.agentDir, false, "APPEND_SYSTEM.md"), undefined);
 	});
 });
 

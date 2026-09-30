@@ -23,22 +23,14 @@ export function cliSystemPromptSources(): { systemPrompt: string | undefined; ap
 }
 
 /**
- * The discovered SYSTEM.md source, mirroring pi's resource loader: the project's
- * `<cwd>/.pi/SYSTEM.md` when the project is trusted and the file exists, else the
- * agent dir's SYSTEM.md when it exists.
+ * The discovered SYSTEM.md or APPEND_SYSTEM.md source, mirroring pi's resource loader: the
+ * project's `<cwd>/.pi/<name>` when the project is trusted and the file exists, else the
+ * agent dir's `<name>` when it exists.
  */
-export function discoverSystemPromptFile(cwd: string, agentDir: string, projectTrusted: boolean): string | undefined {
-	const projectPath = join(cwd, CONFIG_DIR_NAME, "SYSTEM.md");
+export function discoverPromptFile(cwd: string, agentDir: string, projectTrusted: boolean, name: "SYSTEM.md" | "APPEND_SYSTEM.md"): string | undefined {
+	const projectPath = join(cwd, CONFIG_DIR_NAME, name);
 	if (projectTrusted && existsSync(projectPath)) return projectPath;
-	const globalPath = join(agentDir, "SYSTEM.md");
-	return existsSync(globalPath) ? globalPath : undefined;
-}
-
-/** Same shape as discoverSystemPromptFile, for APPEND_SYSTEM.md. */
-export function discoverAppendSystemPromptFile(cwd: string, agentDir: string, projectTrusted: boolean): string | undefined {
-	const projectPath = join(cwd, CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
-	if (projectTrusted && existsSync(projectPath)) return projectPath;
-	const globalPath = join(agentDir, "APPEND_SYSTEM.md");
+	const globalPath = join(agentDir, name);
 	return existsSync(globalPath) ? globalPath : undefined;
 }
 
@@ -51,8 +43,8 @@ export function discoverAppendSystemPromptFile(cwd: string, agentDir: string, pr
  */
 export function getSystemPromptSources(cwd: string, agentDir: string, projectTrusted: boolean): string[] {
 	const cli = cliSystemPromptSources();
-	const systemPromptSource = cli.systemPrompt ?? discoverSystemPromptFile(cwd, agentDir, projectTrusted);
-	const appendSource = discoverAppendSystemPromptFile(cwd, agentDir, projectTrusted);
+	const systemPromptSource = cli.systemPrompt ?? discoverPromptFile(cwd, agentDir, projectTrusted, "SYSTEM.md");
+	const appendSource = discoverPromptFile(cwd, agentDir, projectTrusted, "APPEND_SYSTEM.md");
 	const appendSources = cli.appendSystemPrompt.length > 0 ? cli.appendSystemPrompt : (appendSource ? [appendSource] : []);
 	return [
 		...(systemPromptSource && existsSync(systemPromptSource) ? [systemPromptSource] : []),
