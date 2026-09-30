@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-09-29
 
 ### Added
 
@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Startup reads the preferences file once per session start instead of three times, and change
+  listing sorts with a single reused `Intl.Collator` instead of resolving a locale per comparison.
 - Development and CI now typecheck and test against Pi 0.99.1; the
   `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 0.86.0.
 - The info panel beside the logo now grows up to 100 columns wide instead of 72, reaching it on
@@ -39,6 +41,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pi 0.99 `builtin:<name>` CLI extension sources (for example `-e builtin:mcp`) are skipped when
   discovering extensions, like the `<inline:…>` built-ins of earlier Pi versions, instead of being
   resolved as paths relative to the working directory.
+- The gate's popup box no longer returns lines wider than the width it was given on terminals below
+  five columns, where the rounded chrome's own minimum is wider; the overflow could widen the gate's
+  layout instead of being clipped.
+
+### Security
+
+- The changes summary withholds sensitive files by path, not just by file name: every segment of a
+  path is tested, so anything under `.ssh`, `.aws`, `.gnupg`, `.kube` or a `secret`/`secrets`
+  directory is dropped, and Terraform state and variable files (`*.tfstate`, `*.tfvars`) join the
+  sensitive extensions. Their diffs and untracked heads no longer reach the summary prompt.
+- Redaction catches more shapes and no longer leaks a half-written key: private-key blocks are
+  blanked even when the closing `-----END …-----` marker is missing, identifiers merely containing a
+  secret keyword or ending in `_key` are redacted along with their whole quoted value, and AWS,
+  GitHub, GitLab, npm, Google, Stripe, Slack and JWT tokens are matched. The name match is anchored
+  and length-bounded, so a long non-secret string cannot stall redaction.
 
 ## [0.3.2] - 2026-09-20
 
