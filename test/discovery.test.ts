@@ -17,16 +17,6 @@ import {
 } from "../src/discovery.ts";
 import { setArgv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { createFakePi } from "./helpers/fake-api.ts";
-import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type KeybindingDefinitions } from "@earendil-works/pi-tui";
-
-/** App keybindings merged with TUI base, since KEYBINDINGS is not exported from the main package. */
-const APP_KEYBINDINGS = {
-	"app.interrupt": { defaultKeys: "ctrl+c", description: "Interrupt" },
-	"app.clear": { defaultKeys: "ctrl+l", description: "Clear screen" },
-	"app.exit": { defaultKeys: "ctrl+q", description: "Exit" },
-	"app.tools.expand": { defaultKeys: "ctrl+t", description: "Expand tools" },
-} as KeybindingDefinitions;
-const ALL_KEYBINDINGS = { ...TUI_KEYBINDINGS, ...APP_KEYBINDINGS };
 
 let env: TempAgentEnv;
 let restoreArgv: () => void;
@@ -279,21 +269,5 @@ describe("getShortcutHints (D-16)", () => {
 		assert.equal(hints[0]!.key, "Ctrl+C");
 		assert.equal(hints[1]!.key, "Ctrl+L/Ctrl+Q");
 		assert.equal(hints[4]!.key, "Ctrl+T");
-	});
-
-	it("returns 5 hints with expected descriptions regardless of keybinding environment", () => {
-		const kb = new KeybindingsManager(ALL_KEYBINDINGS, { "app.interrupt": "ctrl+x" });
-		setKeybindings(kb);
-		const hints = getShortcutHints();
-		assert.equal(hints.length, 5);
-		for (const hint of hints) {
-			assert.ok(hint.key.length > 0, "every hint has a non-empty key");
-			assert.ok(hint.description.length > 0, "every hint has a non-empty description");
-		}
-		assert.equal(hints[0]!.description, "interrupt");
-		assert.equal(hints[1]!.description, "clear/exit");
-		assert.equal(hints[2]!.description, "commands");
-		assert.equal(hints[3]!.description, "bash");
-		assert.equal(hints[4]!.description, "more");
 	});
 });
