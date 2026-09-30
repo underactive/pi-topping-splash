@@ -266,7 +266,7 @@ export function stopSummaryStream(): void {
 
 /** The part of `text` the stream has printed so far; all of it once the stream has settled. */
 function streamedPrefix(text: string): string {
-	return Number.isFinite(summaryStream.shown) ? [...text].slice(0, Math.floor(summaryStream.shown)).join("") : text;
+	return [...text].slice(0, Math.floor(summaryStream.shown)).join("");
 }
 
 function startTruncated(text: string, width: number): string {
@@ -363,7 +363,7 @@ function summaryLines(theme: Theme, summary: SummaryState, width: number): strin
 	let left = summaryStream.shown;
 	return lines.map((line) => {
 		const chars = [...line];
-		const printed = Number.isFinite(left) ? chars.slice(0, Math.max(0, Math.floor(left))).join("") : line;
+		const printed = chars.slice(0, Math.max(0, Math.floor(left))).join("");
 		left -= chars.length;
 		return theme.fg("text", printed);
 	});
