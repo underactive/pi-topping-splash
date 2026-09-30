@@ -306,12 +306,19 @@ function kindCounts(entries: ChangeEntry[]): string {
 }
 
 /** A row's line counts: `+a -d` versus HEAD, `bin` for binary diffs, `new` for files git has not counted. */
-function statCell(theme: Theme, entry: ChangeEntry): { text: string; width: number } {
+function statCell(theme: Theme, entry: ChangeEntry, omitZero: boolean): { text: string; width: number } {
 	const { stat } = entry;
 	if (stat?.binary) return { text: theme.fg("dim", "bin"), width: 3 };
 	if (stat) {
 		const added = `+${stat.added}`;
 		const deleted = `-${stat.deleted}`;
+		if (omitZero) {
+			const halves = [
+				...(stat.added > 0 ? [{ text: theme.fg("text", added), width: added.length }] : []),
+				...(stat.deleted > 0 ? [{ text: theme.fg("error", deleted), width: deleted.length }] : []),
+			];
+			return { text: halves.map((half) => half.text).join(" "), width: halves.reduce((sum, half) => sum + half.width + 1, -1) };
+		}
 		// Each half takes its churn-bar half's color, `text` added and `error` removed; a zero half drops to `dim`.
 		const addedText = stat.added > 0 ? theme.fg("text", added) : theme.fg("dim", added);
 		const deletedText = stat.deleted > 0 ? theme.fg("error", deleted) : theme.fg("dim", deleted);
@@ -342,12 +349,16 @@ function churnBar(theme: Theme, stat: LineStat | undefined, maxChurn: number, ce
 	].join("");
 }
 
+function summaryText(summary: SummaryState): string {
+	if (summary.status === "done") return summary.text;
+	return summary.status === "pending" ? `summarizing local changes with ${summary.modelLabel}…` : `summary unavailable: ${summary.reason}`;
+}
+
 function summaryLines(theme: Theme, summary: SummaryState, width: number): string[] {
 	const safeWidth = Math.max(1, width);
-	if (summary.status === "pending") return [theme.fg("dim", `summarizing local changes with ${sanitizeTuiText(summary.modelLabel)}…`)];
-	if (summary.status === "failed") return [theme.fg("dim", `summary unavailable: ${sanitizeTuiText(summary.reason)}`)];
+	if (summary.status !== "done") return [theme.fg("dim", sanitizeTuiText(summaryText(summary)))];
 	const lines: string[] = [];
-	for (const rawLine of summary.text.split(/\r?\n/)) {
+	for (const rawLine of summaryText(summary).split(/\r?\n/)) {
 		const line = sanitizeTuiText(rawLine);
 		const wrapped = line ? wrapTextWithAnsi(line, safeWidth) : [""];
 		lines.push(...(wrapped.length > 0 ? wrapped : [""]));
@@ -381,11 +392,8 @@ function compactChangesLine(theme: Theme, presentation: ChangesPresentation, wid
 		const lead = `${separator}${paint(colors[featured.kind], MARKER[featured.kind])} `;
 		const room = width - visibleWidth(line) - visibleWidth(lead);
 		if (room > 0) {
-			const stat = featured.stat;
-			// The compact mockup omits zero halves (`+12`); listing rows still show both via statCell.
-			const statText = stat?.binary ? theme.fg("dim", "bin") : stat
-				? [stat.added > 0 ? theme.fg("text", `+${stat.added}`) : "", stat.deleted > 0 ? theme.fg("error", `-${stat.deleted}`) : ""].filter(Boolean).join(" ")
-				: featured.untracked ? theme.fg("dim", "new") : "";
+			// The compact mockup omits zero halves (`+12`); listing rows still show both.
+			const statText = statCell(theme, featured, true).text;
 			const statSegment = statText ? ` ${statText}` : "";
 			const path = sanitizeTuiText(featured.path);
 			const includeStat = Boolean(statSegment) && room >= Math.min(PATH_MIN_WIDTH, visibleWidth(path)) + visibleWidth(statSegment);
@@ -394,9 +402,7 @@ function compactChangesLine(theme: Theme, presentation: ChangesPresentation, wid
 		}
 	}
 
-	const preview = summary.status === "done" ? summary.text : summary.status === "pending"
-		? `summarizing local changes with ${summary.modelLabel}…` : `summary unavailable: ${summary.reason}`;
-	const normalized = sanitizeTuiText(preview.replace(/\s+/g, " ")).trim();
+	const normalized = sanitizeTuiText(summaryText(summary).replace(/\s+/g, " ")).trim();
 	const singleLine = summary.status === "done" ? streamedPrefix(normalized) : normalized;
 	const remaining = width - visibleWidth(line) - 3;
 	if (singleLine && remaining >= 4) {
@@ -450,7 +456,7 @@ function layoutChangesRows(theme: Theme, presentation: ChangesPresentation, layo
 
 	const overflow = entries.length > fileRows;
 	const visible = entries.slice(0, overflow ? fileRows - 1 : fileRows);
-	const cells = visible.map((entry) => statCell(theme, entry));
+	const cells = visible.map((entry) => statCell(theme, entry, false));
 	const statWidth = Math.max(0, ...cells.map((cell) => cell.width));
 	// After the marker and its space, the line counts take room down to PATH_MIN_WIDTH path columns;
 	// the bars only get what is left once the longest visible path, up to PATH_WHOLE_MAX, fits whole.
