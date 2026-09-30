@@ -66,7 +66,7 @@ describe("sessionPreview (GA-01, GA-02)", () => {
 		assert.equal(preview.includes("<skill"), false);
 		assert.equal(preview.includes("SKILL.md body"), false, "the injected instruction text is not what the user typed");
 	});
-	it('renders the "(no messages)" sentinel as untitled (commit 8329d39)', () => {
+	it('renders the "(no messages)" sentinel as untitled', () => {
 		assert.equal(sessionPreview(session({ firstMessage: "(no messages)" })), "(untitled session)");
 	});
 	it("flattens markup and never emits tags", () => {
@@ -244,7 +244,7 @@ describe("overlay lifecycle (GA-09)", () => {
 		assert.equal(harness.tui.overlays.length, 1, "same-width views reuse the overlay");
 		assert.equal(overlay.hidden, false);
 	});
-	it("a view needing a different width rebuilds the overlay (commit 8329d39)", () => {
+	it("a view needing a different width rebuilds the overlay", () => {
 		const harness = makeGate();
 		harness.gate.handleInput("r");
 		assert.equal(harness.tui.overlays.length, 1);

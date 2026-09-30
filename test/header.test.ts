@@ -156,7 +156,7 @@ describe("installHeader (H-04, H-05)", () => {
 		assert.ok(text.includes("AGENTS.md"), text);
 	});
 
-	it("a model change is reflected after invalidation (commit 1a88a1c)", () => {
+	it("a model change is reflected after invalidation", () => {
 		const { ctx, component } = install();
 		// Mid-reveal the tagline shows the placeholder, not the model — settle it first.
 		stopTaglineReveal();
