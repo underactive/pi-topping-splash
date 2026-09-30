@@ -219,14 +219,11 @@ describe("installHeader (H-04, H-05)", () => {
 		summary,
 		version,
 	});
-	const setRows = (tui: FakeTuiHarness, rows: number): void => {
-		(tui.tui.terminal as { rows: number }).rows = rows;
-	};
 
 	it("folds the changes section into the info panel after [extensions], tracks total splash rows, and survives animation ticks", () => {
 		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "breathe", changesSummary: "on" });
 		const { tui, component } = install();
-		setRows(tui, 60);
+		tui.resizeRows(60);
 		const band = component.render(120);
 		state.changes = changesPresentation();
 		const first = component.render(120);
@@ -254,7 +251,7 @@ describe("installHeader (H-04, H-05)", () => {
 	it("lines the section's heading up with the panel's other headings at every width", () => {
 		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", changesSummary: "on" });
 		const { tui, component } = install();
-		setRows(tui, 60);
+		tui.resizeRows(60);
 		state.changes = changesPresentation();
 		for (const width of [60, 100, 120, 140, 200]) {
 			const lines = component.render(width);
@@ -270,7 +267,7 @@ describe("installHeader (H-04, H-05)", () => {
 	it("rebuilds the section when the changes are republished", () => {
 		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", changesSummary: "on" });
 		const { tui, component } = install();
-		setRows(tui, 60);
+		tui.resizeRows(60);
 		state.changes = changesPresentation();
 		const pending = component.render(120).map(sanitizeTuiText).join("\n");
 		assert.ok(pending.includes("summarizing local changes with provider/model"));
@@ -284,7 +281,7 @@ describe("installHeader (H-04, H-05)", () => {
 	it("repaints only the summary row a stream tick touched, holding the row count", () => {
 		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", changesSummary: "on" });
 		const { tui, component } = install();
-		setRows(tui, 60);
+		tui.resizeRows(60);
 		// Drive the stream by hand: nothing printed, then the first word, then settled.
 		summaryStream.shown = 0;
 		summaryStream.tick++;
@@ -312,7 +309,7 @@ describe("installHeader (H-04, H-05)", () => {
 			version: 1,
 		};
 		for (const rows of [24, 40]) {
-			(tui.tui.terminal as { rows: number }).rows = rows;
+			tui.resizeRows(rows);
 			const factory = ctx.setHeaderCalls[0] as (tui: TUI, theme: Theme) => Component;
 			const component = factory(tui.tui, makeTheme());
 			const rendered = component.render(100);
