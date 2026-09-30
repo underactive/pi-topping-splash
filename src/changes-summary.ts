@@ -1,3 +1,4 @@
+import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { buildSummaryPrompt, collectChangeDetails, collectChanges, collectLineStats } from "./changes.ts";
@@ -88,13 +89,9 @@ function errorReason(error: unknown): string {
 	return firstLine ? truncateToWidth(firstLine, 80, ELLIPSIS) : "request failed";
 }
 
-function responseText(content: unknown): string {
-	if (!Array.isArray(content)) return "";
+function responseText(content: AssistantMessage["content"]): string {
 	return content
-		.filter((part): part is { type: "text"; text: string } =>
-			Boolean(part) && typeof part === "object" && (part as { type?: unknown }).type === "text"
-				&& typeof (part as { text?: unknown }).text === "string",
-		)
+		.filter((part): part is TextContent => part.type === "text")
 		.map((part) => part.text)
 		.join("")
 		.trim();
