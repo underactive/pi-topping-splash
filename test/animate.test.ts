@@ -3,18 +3,10 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { GRADIENT_TICK_MS, gradientAnimation, startGradientAnimation, stopGradientAnimation } from "../src/animate.ts";
 import { headerRenderState } from "../src/state.ts";
 import { resetModuleState } from "./helpers/reset.ts";
+import { enableTimers } from "./helpers/timers.ts";
 
 beforeEach(() => resetModuleState());
 afterEach(() => stopGradientAnimation());
-
-type TimerCtx = { mock: { timers: { enable(opts: { apis: string[] }): void; tick(ms: number): void } } };
-
-// Single cast site for @types/node's untyped t.mock.timers; returns the handle so tests can tick.
-function enableTimers(t: unknown): TimerCtx["mock"]["timers"] {
-	const timers = (t as TimerCtx).mock.timers;
-	timers.enable({ apis: ["setInterval", "Date"] });
-	return timers;
-}
 
 describe("gradient animation ticker (A-01, A-02)", () => {
 	it("GRADIENT_TICK_MS matches the documented cadence", () => {

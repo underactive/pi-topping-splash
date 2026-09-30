@@ -19,19 +19,11 @@ import {
 import { headerRenderState } from "../src/state.ts";
 import { sanitizeTuiText, visibleLength } from "../src/text.ts";
 import { resetModuleState } from "./helpers/reset.ts";
+import { enableTimers } from "./helpers/timers.ts";
 import { makeTheme } from "./helpers/theme.ts";
 
 beforeEach(() => resetModuleState());
 afterEach(() => stopTaglineReveal());
-
-type TimerCtx = { mock: { timers: { enable(opts: { apis: string[] }): void; tick(ms: number): void } } };
-
-// Single cast site for @types/node's untyped t.mock.timers; returns the handle so tests can tick.
-function enableTimers(t: unknown): TimerCtx["mock"]["timers"] {
-	const timers = (t as TimerCtx).mock.timers;
-	timers.enable({ apis: ["setInterval", "Date"] });
-	return timers;
-}
 
 describe("constants (R-01)", () => {
 	it("match the documented values", () => {

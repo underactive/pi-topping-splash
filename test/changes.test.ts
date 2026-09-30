@@ -40,6 +40,7 @@ import { changesRenderState } from "../src/state.ts";
 import { createFakePi } from "./helpers/fake-api.ts";
 import { initRepo, mixedChanges, git } from "./helpers/git.ts";
 import { bootstrapGlobalTheme, makeTheme } from "./helpers/theme.ts";
+import { enableTimers } from "./helpers/timers.ts";
 import { sanitizeTuiText } from "../src/text.ts";
 import { assertLinesExact } from "./helpers/width.ts";
 
@@ -655,13 +656,6 @@ describe("summary stream (CS-06)", () => {
 	const done = () => counted({ status: "done", text });
 	/** The summary rows of the panel section: everything after the gap, the heading, the five file rows, and the blank row. */
 	const summaryRows = (width = 68) => plain(layoutChangesSection(theme, done(), width, 20)).slice(8).map((line) => line.trimEnd());
-	type TimerCtx = { mock: { timers: { enable(opts: { apis: string[] }): void; tick(ms: number): void } } };
-	// Single cast site for @types/node's untyped t.mock.timers, as in reveal.test.ts.
-	const enableTimers = (t: unknown): TimerCtx["mock"]["timers"] => {
-		const timers = (t as TimerCtx).mock.timers;
-		timers.enable({ apis: ["setInterval", "Date"] });
-		return timers;
-	};
 	afterEach(() => {
 		stopSummaryStream();
 		changesRenderState.requestRender = null;
