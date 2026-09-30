@@ -47,6 +47,7 @@ export const MAX_PROMPT_PATHS = 200;
 const STATUS_MAX_BYTES = 1_000_000;
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 const CHANGE_KIND_ORDER: Record<ChangeKind, number> = { added: 0, changed: 1, deleted: 2 };
+const PATH_COLLATOR = new Intl.Collator();
 
 async function runGit(pi: ExtensionAPI, args: string[], cwd: string, signal?: AbortSignal): Promise<ExecResult | undefined> {
 	try {
@@ -139,7 +140,7 @@ export function parseStatusZ(stdout: string): ChangeEntry[] {
 		}
 	}
 
-	return [...entries.values()].sort((a, b) => CHANGE_KIND_ORDER[a.kind] - CHANGE_KIND_ORDER[b.kind] || a.path.localeCompare(b.path));
+	return [...entries.values()].sort((a, b) => CHANGE_KIND_ORDER[a.kind] - CHANGE_KIND_ORDER[b.kind] || PATH_COLLATOR.compare(a.path, b.path));
 }
 
 /** Return true when a path or its directories are likely to contain credentials or private key material. */
