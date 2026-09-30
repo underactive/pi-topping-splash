@@ -66,10 +66,6 @@ export interface ChangesPresentation {
 
 type SummaryModel = NonNullable<ExtensionContext["model"]>;
 
-function modelLabel(model: SummaryModel): string {
-	return modelRefLabel({ provider: model.provider, id: model.id });
-}
-
 /** Resolve a configured summary model, falling back to the active session model when needed. */
 export function resolveSummaryModel(
 	ctx: ExtensionContext,
@@ -79,7 +75,7 @@ export function resolveSummaryModel(
 		const configured = ctx.modelRegistry.find(ref.provider, ref.id);
 		if (configured) return { model: configured, label: modelRefLabel(ref) };
 	}
-	if (ctx.model) return { model: ctx.model, label: modelLabel(ctx.model) };
+	if (ctx.model) return { model: ctx.model, label: modelRefLabel(ctx.model) };
 	return { reason: "no model selected" };
 }
 
