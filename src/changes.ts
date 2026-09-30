@@ -1,6 +1,6 @@
 import { lstat, open } from "node:fs/promises";
 import { join } from "node:path";
-import type { ExecResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** The category assigned to an uncommitted path. */
 export type ChangeKind = "added" | "changed" | "deleted";
@@ -49,20 +49,17 @@ const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 const CHANGE_KIND_ORDER: Record<ChangeKind, number> = { added: 0, changed: 1, deleted: 2 };
 const PATH_COLLATOR = new Intl.Collator();
 
-async function runGit(pi: ExtensionAPI, args: string[], cwd: string, signal?: AbortSignal): Promise<ExecResult | undefined> {
+async function runGit(pi: ExtensionAPI, args: string[], cwd: string, signal?: AbortSignal): Promise<string | undefined> {
 	try {
-		return await pi.exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args], {
+		const result = await pi.exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args], {
 			cwd,
 			timeout: GIT_TIMEOUT_MS,
 			signal,
 		});
+		return result.code === 0 && !result.killed ? result.stdout : undefined;
 	} catch {
 		return undefined;
 	}
-}
-
-function isFailed(result: ExecResult | undefined): result is undefined {
-	return result === undefined || result.code !== 0 || result.killed;
 }
 
 /** Clip NUL-delimited git output to whole records within the status byte bound. */
@@ -76,20 +73,20 @@ function boundedRecords(stdout: string): string {
 /** Collect the repository root and its current uncommitted paths. */
 export async function collectChanges(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<ChangeSnapshot | undefined> {
 	if (signal?.aborted) return undefined;
-	const rootResult = await runGit(pi, ["rev-parse", "--show-toplevel"], cwd, signal);
-	if (isFailed(rootResult)) return undefined;
-	const root = rootResult.stdout.replace(/[\r\n]+$/, "");
+	const rootOutput = await runGit(pi, ["rev-parse", "--show-toplevel"], cwd, signal);
+	if (rootOutput === undefined) return undefined;
+	const root = rootOutput.replace(/[\r\n]+$/, "");
 	if (!root) return undefined;
 
 	if (signal?.aborted) return undefined;
-	const statusResult = await runGit(
+	const statusOutput = await runGit(
 		pi,
 		["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"],
 		root,
 		signal,
 	);
-	if (isFailed(statusResult)) return undefined;
-	return { root, entries: parseStatusZ(boundedRecords(statusResult.stdout)) };
+	if (statusOutput === undefined) return undefined;
+	return { root, entries: parseStatusZ(boundedRecords(statusOutput)) };
 }
 
 /**
@@ -98,9 +95,9 @@ export async function collectChanges(pi: ExtensionAPI, cwd: string, signal?: Abo
  */
 export async function collectLineStats(pi: ExtensionAPI, root: string, signal?: AbortSignal): Promise<Map<string, LineStat> | undefined> {
 	if (signal?.aborted) return undefined;
-	const result = await runGit(pi, ["diff", "HEAD", "--numstat", "-z", "--no-ext-diff", "--no-textconv", "--no-renames"], root, signal);
-	if (isFailed(result)) return undefined;
-	return parseNumstatZ(boundedRecords(result.stdout));
+	const stdout = await runGit(pi, ["diff", "HEAD", "--numstat", "-z", "--no-ext-diff", "--no-textconv", "--no-renames"], root, signal);
+	if (stdout === undefined) return undefined;
+	return parseNumstatZ(boundedRecords(stdout));
 }
 
 /** Parse git porcelain-v1 NUL-delimited status records into sorted, merged entries. */
@@ -234,9 +231,9 @@ export async function collectChangeDetails(pi: ExtensionAPI, snapshot: ChangeSna
 	for (const cached of [true, false]) {
 		if (signal?.aborted || candidates.length >= MAX_DIFF_FILES) break;
 		const args = cached ? ["diff", "--cached", "--numstat", "-z", "--no-renames"] : ["diff", "--numstat", "-z", "--no-renames"];
-		const result = await runGit(pi, args, snapshot.root, signal);
-		if (isFailed(result)) continue;
-		for (const record of result.stdout.split("\0")) {
+		const stdout = await runGit(pi, args, snapshot.root, signal);
+		if (stdout === undefined) continue;
+		for (const record of stdout.split("\0")) {
 			if (candidates.length >= MAX_DIFF_FILES) break;
 			const numstat = parseNumstatRecord(record);
 			if (!numstat || numstat.stat.binary || numstat.stat.added + numstat.stat.deleted > MAX_DIFF_LINES_PER_FILE || isSensitivePath(numstat.path)) continue;
@@ -260,9 +257,9 @@ export async function collectChangeDetails(pi: ExtensionAPI, snapshot: ChangeSna
 			"--",
 			candidate.path,
 		];
-		const result = await runGit(pi, args, snapshot.root, signal);
-		if (isFailed(result)) continue;
-		const excerpt = excerptWithinLimit(result.stdout, PER_FILE_DETAIL_BYTES);
+		const stdout = await runGit(pi, args, snapshot.root, signal);
+		if (stdout === undefined) continue;
+		const excerpt = excerptWithinLimit(stdout, PER_FILE_DETAIL_BYTES);
 		const label = `${candidate.cached ? "staged" : "worktree"}: ${candidate.path}\n`;
 		const content = redactSecrets(`${label}${excerpt.text}${excerpt.truncated ? "\n… (truncated)" : ""}`);
 		const appended = appendWithinBudget(parts, content, used);
