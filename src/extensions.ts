@@ -512,29 +512,20 @@ function applyPatterns(allPaths: string[], patterns: string[], baseDir: string):
 		else if (p.startsWith("!")) excludes.push(p.slice(1));
 		else includes.push(p);
 	}
-	const exactIncludes = forceIncludes.map(normalizeExactPattern);
-	const exactExcludes = forceExcludes.map(normalizeExactPattern);
-	const matchesExact = (filePath: string, normalizedPatterns: string[]): boolean => {
-		if (normalizedPatterns.length === 0) return false;
-		const rel = toPosixPath(relative(baseDir, filePath));
-		const name = basename(filePath);
-		const filePathPosix = toPosixPath(filePath);
-		return normalizedPatterns.some((pattern) => pattern === rel || pattern === filePathPosix || pattern === name);
-	};
 	const compiledIncludes = precompileGlobPatterns(includes);
 	const compiledExcludes = precompileGlobPatterns(excludes);
 	let result = compiledIncludes.length === 0 ? [...allPaths] : allPaths.filter((f) => matchesAnyPrecompiled(f, compiledIncludes, baseDir));
 	const resultSet = new Set(result);
 	if (compiledExcludes.length > 0) result = result.filter((f) => !matchesAnyPrecompiled(f, compiledExcludes, baseDir));
-	if (exactIncludes.length > 0) {
+	if (forceIncludes.length > 0) {
 		for (const filePath of allPaths) {
-			if (!resultSet.has(filePath) && matchesExact(filePath, exactIncludes)) {
+			if (!resultSet.has(filePath) && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
 				result.push(filePath);
 				resultSet.add(filePath);
 			}
 		}
 	}
-	if (exactExcludes.length > 0) result = result.filter((f) => !matchesExact(f, exactExcludes));
+	if (forceExcludes.length > 0) result = result.filter((f) => !matchesAnyExactPattern(f, forceExcludes, baseDir));
 	return new Set(result);
 }
 
