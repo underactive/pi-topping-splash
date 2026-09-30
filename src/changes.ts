@@ -156,7 +156,7 @@ export function isSensitivePath(path: string): boolean {
 
 /** Replace private keys, credential assignments, and common provider tokens with a marker. */
 export function redactSecrets(text: string): string {
-	let redacted = text.replace(/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/gi, "[redacted]");
+	let redacted = text.replace(/-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)/gi, "[redacted]");
 	redacted = redacted.replace(
 		/(["']?(?:api[_-]?key|secret|token|passw(?:or)?d)["']?\s*[:=]\s*)\S+/gi,
 		"$1[redacted]",

@@ -210,6 +210,12 @@ describe("sensitive paths and bounded details", () => {
 		assert.equal(redacted.includes("ghp_"), false);
 	});
 
+	it("redacts a private key whose END marker was truncated", () => {
+		const redacted = redactSecrets("+-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAbase64body\nQWxhZGRpbjpvcGVu");
+		assert.equal(redacted.includes("MIIEow"), false);
+		assert.equal(redacted.includes("QWxhZGRpbjpvcGVu"), false);
+	});
+
 	it("skips binary/huge candidates and bounds per-file and total excerpts", async () => {
 		const root = mkdtempSync(join(tmpdir(), "pi-splash-details-"));
 		try {
