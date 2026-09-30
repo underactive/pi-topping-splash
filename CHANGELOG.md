@@ -10,22 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Optional startup summary of uncommitted changes, closing the splash's info panel as a `[local changes]` section after `[extensions]`: an immediate listing of added/changed/deleted paths under a heading carrying the per-kind counts, with per-file line counts and churn bars against `HEAD` filling in just after and the model summary streaming in beneath them a character at a time, at twice the tagline's pace (or landing whole when the reveal animation setting is off); short terminals show a one-line heading, featured file and summary preview instead. Includes an asynchronous model summary, an off-by-default settings toggle, and a summary-model picker.
+  The heading reads `[local changes] +a, ~c, -d` in the other headings' colors and the summary sits a
+  blank row below the file rows. The panel and the gradient grow downward as the section fills in, the
+  lists above stay put, and the logo stays centered beside the taller panel. Per-file line counts (and
+  the `+lines` in the single-line fallback) take their churn-bar half's color, the theme's `text` for
+  added and its `error` for removed, with a zero half dropping to `dim`. The slim changes-only header
+  after **New session** uses the same layout, left-aligned and stopped at 100 columns.
 - The **Summary model** settings row opens the startup gate's two-pane model picker with Enter or Space
   (its thinking pane is ignored, since summaries always run with thinking off). Backspace or Delete on
   the row resets it to the session model.
 
 ### Changed
 
-- The startup uncommitted block is now the info panel's last section, after `[extensions]`, instead of
-  a box under the splash. It drops the border and the `N files` key row, heads the listing
-  `[local changes] +a, ~c, -d` in the other headings' colors, and sets the summary a blank row below
-  the file rows. The panel and the gradient grow downward as the section fills in, the lists above
-  stay put, and the logo stays centered beside the taller panel. The slim changes-only header after
-  **New session** uses the same layout, left-aligned and stopped at 100 columns.
-- Per-file line counts in the uncommitted listing, and the `+lines` in its single-line fallback, no longer
-  borrow the dimmed statusline git colors: each half takes its churn-bar half's color, the theme's
-  `text` for added and its `error` for removed (a zero half still drops to `dim`). The added half of
-  each churn bar uses the theme's `text` color instead of `success`.
+- Development and CI now typecheck and test against Pi 0.99.1; the
+  `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 0.86.0.
 - The info panel beside the logo now grows up to 100 columns wide instead of 72, reaching it on
   terminals 138 columns or wider, so long lists wrap onto fewer rows. A panel stacked under the logo on
   narrow terminals is unchanged.
