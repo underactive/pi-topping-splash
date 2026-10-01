@@ -6,7 +6,7 @@ import { renderChangesBlock, resolveSummaryModel, stopSummaryStream, summaryStre
 import { writePreferences } from "../src/preferences.ts";
 import { state } from "../src/state.ts";
 import { sanitizeTuiText } from "../src/text.ts";
-import { tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
+import { setEnv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { deferred } from "./helpers/deferred.ts";
 import { createFakeCtx, makeAssistantMessage, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
 import { createFakePi, type FakePiHarness } from "./helpers/fake-api.ts";
@@ -18,12 +18,15 @@ import { until } from "./helpers/wait.ts";
 bootstrapGlobalTheme();
 
 let env: TempAgentEnv;
+let restoreGateEnv: () => void;
 beforeEach(() => {
 	env = tempAgentDir();
+	restoreGateEnv = setEnv("PI_SPLASH_GATE_DONE", undefined);
 	resetModuleState();
 });
 afterEach(() => {
 	resetModuleState();
+	restoreGateEnv();
 	env.restore();
 });
 

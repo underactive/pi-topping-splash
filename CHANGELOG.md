@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Summarize uncommitted changes** now defaults to on when `changesSummary` is missing from
+  `pi-topping-splash.json` (fresh installs and files written before the key existed). In trusted,
+  dirty git repositories, the `[local changes]` section and its model summary now appear without
+  opting in, so bounded file lists and redacted diff excerpts go to the summary model's provider.
+  An explicit `"changesSummary": "off"` is still honored, while an unrecognized value now resolves
+  to on like the gate and reveal toggles. Turn it off with `/topping-splash-settings`.
+
 ## [0.4.1] - 2026-09-30
 
 ### Added

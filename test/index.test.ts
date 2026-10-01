@@ -208,6 +208,7 @@ describe("session_start gating (I-02, I-03, I-10)", () => {
 	});
 
 	it("proceed tears the splash down for a clean session start", async () => {
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
 		const wired = wire();
 		const emitted = startup(wired);
 		await until(() => wired.ctx.customComponents.length > 0);
@@ -451,6 +452,7 @@ describe("startup changes settings (I-18)", () => {
 	});
 
 	it("toggles the feature at cursor 4 and persists a summary model picked with Enter", async () => {
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
 		const wired = wire();
 		wired.ctx.bag.models.push(makeModel("provider", "fast"));
 		const { menu, finished } = openSettings(wired, 4);
@@ -609,6 +611,23 @@ describe("startup changes integration (AC2-AC8)", () => {
 		const header = mountedHeader(wired);
 		assert.equal(state.changes, null);
 		assert.ok(!header.render(100).map(sanitizeTuiText).join("\n").includes("[local changes]"));
+	});
+
+	it("a preference file without the changesSummary key collects and summarizes dirty changes", async () => {
+		writeFileSync(
+			join(env.agentDir, "pi-topping-splash.json"),
+			JSON.stringify({ menuGate: "off", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "off" }),
+			"utf8",
+		);
+		const wired = wire({
+			projectTrusted: true,
+			execHandler: scriptedGit(env.cwd, DIRTY_STATUS),
+			streamSimple: async () => makeAssistantMessage("Upgrade default summary."),
+		});
+		await startup(wired);
+		await until(() => state.changes?.summary.status === "done");
+		assert.equal(wired.ctx.streamCalls.length, 1);
+		assert.ok(mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n").includes("[local changes]"));
 	});
 
 	it("stays silent for clean, empty, non-repository, and untrusted projects", async () => {
@@ -975,6 +994,34 @@ describe("menuGate persistence (I-14)", () => {
 	});
 });
 
+describe("changesSummary default (I-14)", () => {
+	it("defaults to on with no preference file", () => {
+		assert.equal(readPreferences().changesSummary, "on");
+		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false);
+	});
+
+	it("defaults to on for a keyless preference file", () => {
+		writeFileSync(
+			join(env.agentDir, "pi-topping-splash.json"),
+			JSON.stringify({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off" }),
+			"utf8",
+		);
+		assert.equal(readPreferences().changesSummary, "on");
+	});
+
+	it("defaults to on for corrupt and unrecognized values", () => {
+		writeFileSync(join(env.agentDir, "pi-topping-splash.json"), "{not json", "utf8");
+		assert.equal(readPreferences().changesSummary, "on", "corrupt file");
+		writeFileSync(join(env.agentDir, "pi-topping-splash.json"), JSON.stringify({ changesSummary: "yes" }), "utf8");
+		assert.equal(readPreferences().changesSummary, "on", "unrecognized value");
+	});
+
+	it("honors an explicit off value", () => {
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
+		assert.equal(readPreferences().changesSummary, "off");
+	});
+});
+
 describe("tagline reveal preference (I-15)", () => {
 	it("defaults to on: startup starts the reveal", async () => {
 		const wired = wire();
@@ -1032,6 +1079,7 @@ describe("background color setting (I-06 extension)", () => {
 		assert.equal(prefs.backgroundColor, "border");
 		assert.equal(prefs.menuGate, "on", "untouched toggle keeps its value");
 		assert.equal(prefs.taglineReveal, "on", "untouched toggle keeps its value");
+		assert.equal(prefs.changesSummary, "on", "untouched summary toggle keeps its default");
 	});
 
 	it("missing preference file defaults to rainbow", () => {

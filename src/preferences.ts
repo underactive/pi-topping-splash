@@ -17,7 +17,7 @@ export interface SplashPreferences {
 	backgroundColor: BackgroundColor;
 	/** Animation for the splash backdrop (any background, rainbow included); defaults to "off". */
 	gradientAnimation: GradientAnimation;
-	/** "on" summarizes uncommitted changes at startup; opt-in and defaults to "off". */
+	/** "on" summarizes uncommitted changes at startup; defaults to "on" when missing or unrecognized and is "off" only when explicitly stored. */
 	changesSummary: ToggleMode;
 	/** Model for the changes summary; undefined means the session model. */
 	changesSummaryModel?: ModelRef;
@@ -38,7 +38,7 @@ type RawPreferences = {
 	changesSummaryModel?: unknown;
 } | null;
 
-/** Anything missing, unreadable or unrecognized falls back to the defaults: gate/reveal toggles "on", changes summary "off", background "rainbow", animation "off". */
+/** Anything missing, unreadable or unrecognized falls back to the defaults: gate/reveal/changes-summary toggles "on", background "rainbow", animation "off". */
 export function readPreferences(): SplashPreferences {
 	let parsed: RawPreferences = null;
 	try {
@@ -58,7 +58,7 @@ export function readPreferences(): SplashPreferences {
 		taglineReveal: parsed?.taglineReveal === "off" ? "off" : "on",
 		backgroundColor,
 		gradientAnimation,
-		changesSummary: parsed?.changesSummary === "on" ? "on" : "off",
+		changesSummary: parsed?.changesSummary === "off" ? "off" : "on",
 		changesSummaryModel: configuredSummaryModel,
 	};
 }

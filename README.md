@@ -22,7 +22,7 @@ Requires Node.js 22.19.0 or newer. The current release is developed and tested a
 
 Run `/topping-splash-settings` (TUI mode only) or pick **Settings** in the startup gate menu
 to open a settings menu in three sections: the startup gate toggle, the splash banner's background
-color and gradient animation, and the info panel's reveal animation and opt-in startup changes
+color and gradient animation, and the info panel's reveal animation and startup changes
 summary:
 
 ```text
@@ -36,7 +36,7 @@ summary:
 ║                                                                          ║
 ╟─ Info Panel ─────────────────────────────────────────────────────────────╢
 ║    [■] Model + prompt size reveal animation                          ON  ║
-║    [ ] Summarize uncommitted changes                                OFF  ║
+║    [■] Summarize uncommitted changes                                 ON  ║
 ║    [■] Summary model                                    session model ›  ║
 ║                                                                          ║
 ╟──────────────────────────────────────────────────────────────────────────╢
@@ -69,14 +69,14 @@ picker.
 - **Model + prompt size reveal animation** — shimmer-reveal the model · prompt-size tagline on
   the splash, and stream the changes summary in a character at a time; when OFF both render their
   final text immediately (ON by default)
-- **Summarize uncommitted changes** — opt in to the info panel's `[local changes]` section (OFF by default).
+- **Summarize uncommitted changes** — show the info panel's `[local changes]` section with a model summary of uncommitted changes (ON by default); turning it off skips git and the model request.
 - **Summary model** — Enter (or Space) opens the same two-pane model picker as the startup gate:
   type to filter, Tab or ←/→ to switch panes, Enter to select. The thinking pane belongs to that
   shared picker but is ignored here, since summaries always run with thinking off. It starts on the
   chosen model, or on the active model when none is chosen. Backspace or Delete resets the row to
   `session model`, which uses the active model.
 
-The gate, reveal, changes-summary toggle, and summary-model choice are read during startup and take effect on the next launch; the background color and gradient animation also apply immediately to an already-visible splash. All six keys are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless `PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (gate/reveal ON, changes summary OFF, session model, background `rainbow`, animation `off`).
+The gate, reveal, changes-summary toggle, and summary-model choice are read during startup and take effect on the next launch; the background color and gradient animation also apply immediately to an already-visible splash. All six keys are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless `PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (gate/reveal/changes summary ON, session model, background `rainbow`, animation `off`).
 
 ## Splash Inventory
 
@@ -92,7 +92,7 @@ When the panel would exceed 60% of the terminal height or any name/hint is too w
 
 ## Startup changes summary
 
-When enabled, a genuine TUI startup with the splash and a trusted project closes the info panel
+Unless turned off in settings, a genuine TUI startup with the splash and a trusted project closes the info panel
 with a `[local changes]` section after `[extensions]`, styled like the panel's other sections. The
 heading carries the per-kind path counts (`[local changes] +3, ~4, -3`: added, changed, deleted, zero
 kinds omitted), and each row below it lists a path in pi-topping-statusline's git colors with a
@@ -117,8 +117,10 @@ since the splash is gone by then. The
 summary uses the session model by default, or the configured picker choice, and always requests
 with thinking off. Bounded file lists and diff excerpts are sent to the selected model provider.
 Sensitive-looking file contents are withheld and common secrets are redacted best-effort; this is
-not a guarantee, so enable the feature only when that privacy trade-off is acceptable. Pi's
-project-trust setting is also required because Git filters can execute during status/diff.
+not a guarantee. Because the summary is on by default, turn it off with
+`/topping-splash-settings` (or `"changesSummary": "off"` in `pi-topping-splash.json`) when that
+privacy trade-off is not acceptable. Pi's project-trust setting is also required because Git
+filters can execute during status/diff.
 
 ## Troubleshooting
 

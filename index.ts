@@ -9,7 +9,7 @@ import { GATE_DONE_ENV } from "./src/relaunch.ts";
 import { runStartupGate } from "./src/gate.ts";
 import { showSplashSettings } from "./src/settings.ts";
 
-/** Pi extension: replaces the default startup header with a full-color splash, optionally adds an interactive startup gate menu and an opt-in uncommitted-changes summary, and registers the /topping-splash-settings command. Listens to model_select, before_agent_start, session_shutdown (abort summary work and settle its stream), and session_start. */
+/** Pi extension: replaces the default startup header with a full-color splash, optionally adds an interactive startup gate menu and an on-by-default uncommitted-changes summary, and registers the /topping-splash-settings command. Listens to model_select, before_agent_start, session_shutdown (abort summary work and settle its stream), and session_start. */
 export default function piStartupGreeter(pi: ExtensionAPI) {
 	pi.on("model_select", (_event, ctx) => {
 		// Model rotation may change the base system prompt — refresh the size.
@@ -84,7 +84,7 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 			return;
 		}
 		// "proceed" (New session / esc): stop the splash, but retain a slim changes-only header
-		// when the opt-in feature is enabled.
+		// unless the changes summary is turned off.
 		stopTaglineReveal();
 		stopGradientAnimation();
 		const clearScreen = headerRenderState.forceRedraw;
