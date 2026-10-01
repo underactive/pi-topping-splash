@@ -5,26 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Changed
-
-- The startup gate menu keeps its blank row between items even when the `[local changes]` summary
-  is showing. Since the startup summary landed, a dirty repository compacted the menu to
-  back-to-back rows; the menu's spacing is a function of terminal height alone again, and the
-  changes section gives up the rows instead — a short listing falls back to its one-line preview
-  sooner rather than the menu losing its spacing. `gateMenuRows` drops its `changesShown`
-  argument to match.
-
-### Removed
-
-- The **Skills and Extensions** entry (hotkey `x`) from the startup gate menu, along with the
-  two-pane skills/extensions view it opened. The view was a read-only inventory that repeated what
-  the splash info panel already lists, so it went away with the row. Skills and extensions remain
-  visible on the splash panel, and the gate keeps its other five entries
-  (hotkeys `n`/`r`/`m`/`t`/`s`/`q`).
-
 ## [0.4.1] - 2026-09-30
+
+### Added
+
+- A **view system prompt** entry in the startup gate menu (hotkey `p`; `s` still opens
+  Settings). It opens a read-only overlay, up to 120 columns wide, of the base system prompt as Pi
+  built it at startup, without the sections extensions add before each prompt. Lines wrap to the
+  overlay, ↑/↓ scroll a row, PgUp/PgDn scroll a page, and Esc returns to the menu. The menu is one
+  entry taller, so on short terminals the `[local changes]` section has correspondingly fewer rows.
 
 ### Changed
 
@@ -38,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   description into a new `mcp_servers` section rebuilt before each prompt: with MCP servers set to
   codemode or deferred exposure, the figure shown at startup is now smaller than the prompt actually
   sent. It catches up at the first prompt, once the splash has scrolled away.
+- The startup gate menu keeps its blank row between items even when the `[local changes]` summary
+  is showing. Since the startup summary landed, a dirty repository compacted the menu to
+  back-to-back rows; the menu's spacing is a function of terminal height alone again, and the
+  changes section gives up the rows instead — a short listing falls back to its one-line preview
+  sooner rather than the menu losing its spacing. `gateMenuRows` drops its `changesShown`
+  argument to match.
+
+### Removed
+
+- The **Skills and Extensions** entry (hotkey `x`) from the startup gate menu, along with the
+  two-pane skills/extensions view it opened. The view was a read-only inventory that repeated what
+  the splash info panel already lists, so it went away with the row. Skills and extensions remain
+  visible on the splash panel.
 
 ## [0.4.0] - 2026-09-29
 

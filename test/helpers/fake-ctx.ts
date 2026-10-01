@@ -25,6 +25,8 @@ export interface FakeCtxHarness {
 	setFooterCalls: unknown[];
 	/** Components created through ui.custom, in creation order. */
 	customComponents: Component[];
+	/** Options passed to each ui.custom call, parallel to `customComponents`. */
+	customOptions: unknown[];
 	shutdownCount: number;
 	streamCalls: { model: Model<any>; context: Context; options?: SimpleStreamOptions }[];
 }
@@ -68,6 +70,7 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 		setHeaderCalls: [],
 		setFooterCalls: [],
 		customComponents: [],
+		customOptions: [],
 		shutdownCount: 0,
 		streamCalls: bag.streamCalls,
 	} as unknown as FakeCtxHarness;
@@ -92,11 +95,12 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 				keybindings: unknown,
 				done: (result: T) => void,
 			) => Component,
-			_options?: unknown,
+			customOptions?: unknown,
 		): Promise<T> {
 			return new Promise<T>((resolve) => {
 				const component = factory(options.tui, bag.theme, {} as never, resolve);
 				harness.customComponents.push(component);
+				harness.customOptions.push(customOptions);
 			});
 		},
 		getAllThemes(): { name: string; path: string | undefined }[] {

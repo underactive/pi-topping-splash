@@ -11,6 +11,7 @@ import {
 	type SessionListItem,
 } from "../src/gate.ts";
 import { state } from "../src/state.ts";
+import { SystemPromptView } from "../src/system-prompt-view.ts";
 import { stopTaglineReveal } from "../src/reveal.ts";
 import { sanitizeTuiText } from "../src/text.ts";
 import { setArgv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
@@ -105,7 +106,7 @@ interface GateHarness {
 	results: GateResolution[];
 }
 
-function makeGate(options: { rows?: number; setModelResult?: boolean } = {}): GateHarness {
+function makeGate(options: { rows?: number; setModelResult?: boolean; systemPrompt?: string | (() => string) } = {}): GateHarness {
 	const tui = createFakeTui({ rows: options.rows ?? 40, columns: 100 });
 	const models = [makeModel("anthropic", "claude-opus-4"), makeModel("openai", "gpt-4o")];
 	const ctx = createFakeCtx({
@@ -114,6 +115,7 @@ function makeGate(options: { rows?: number; setModelResult?: boolean } = {}): Ga
 		tui: tui.tui,
 		models,
 		model: models[0],
+		systemPrompt: options.systemPrompt,
 		themes: [
 			{ name: "dark", path: undefined },
 			{ name: "light", path: undefined },
@@ -147,19 +149,23 @@ describe("menu (GA-04..GA-08)", () => {
 		state.changes = { entries: [{ path: "file.ts", kind: "changed", untracked: false }], summary: { status: "pending", modelLabel: "p/m" }, version: 1 };
 		const spaced = makeGate({ rows: 40 });
 		assert.equal(gateMenuRows(40), spaced.gate.render(90).length);
-		assert.equal(gateMenuRows(40), 14, "the changes section gives up rows, not the menu's spacing");
+		assert.equal(gateMenuRows(40), 16, "the changes section gives up rows, not the menu's spacing");
 		const lines = spaced.gate.render(90).map((line) => sanitizeTuiText(line));
-		for (const [a, b] of [[0, 2], [2, 4], [4, 6], [6, 8], [8, 10], [10, 12]]) {
-			assert.equal(lines[a]?.trim(), "", `row ${a + 1} is the gap above the item at row ${b + 1}`);
+		// Spacer, seven items each preceded by a gap, a gap above the hint, then the hint itself.
+		for (let row = 0; row <= 14; row++) {
+			const text = lines[row]?.trim();
+			if (row % 2 === 0) assert.equal(text, "", `row ${row} is a gap`);
+			else assert.notEqual(text, "", `row ${row} is an item`);
 		}
 	});
 
 	it("lists the README menu items", () => {
 		const harness = makeGate();
 		const text = menuText(harness);
-		for (const item of ["New session", "Resume", "Model", "Theme", "Settings", "Quit"]) {
+		for (const item of ["New session", "Resume", "Model", "Theme", "view system prompt", "Settings", "Quit"]) {
 			assert.ok(text.includes(item), `menu missing ${item}`);
 		}
+		assert.equal(/skills|extensions/i.test(text), false, "the Skills and Extensions entry stays removed");
 	});
 	it("Enter on the initial selection proceeds (New session first)", () => {
 		const harness = makeGate();
@@ -209,12 +215,12 @@ describe("menu (GA-04..GA-08)", () => {
 		state.splashRows = 15;
 		const harness = makeGate({ rows: 40 });
 		const lines = harness.gate.render(90);
-		// free rows = 40 - 15 splash - 14 menu = 11; the gate's zero-row footer claims no row,
-		// so 11 - floor(11/2) = 6 trailing blanks push the menu up into the middle.
+		// free rows = 40 - 15 splash - 16 menu = 9; the gate's zero-row footer claims no row,
+		// so 9 - floor(9/2) = 5 trailing blanks push the menu up into the middle.
 		let lastVisible = lines.length - 1;
 		while (lastVisible >= 0 && lines[lastVisible] === "") lastVisible--;
 		const trailing = lines.length - 1 - lastVisible;
-		assert.equal(trailing, 6);
+		assert.equal(trailing, 5);
 		assert.ok(sanitizeTuiText(lines[lines.length - trailing - 1] ?? "").includes("↑↓ move"), "hint stays the last visible row");
 	});
 	it("no centering padding without a splash or without free rows", () => {
@@ -231,6 +237,121 @@ describe("menu (GA-04..GA-08)", () => {
 		const shortFirst = sanitizeTuiText(short.gate.render(90)[0] ?? "").trim();
 		assert.equal(tallFirst, "", "tall terminals lead with a spacer row");
 		assert.notEqual(shortFirst, "", "short terminals must not waste the row");
+	});
+});
+
+describe("view system prompt entry (GA-04)", () => {
+	function mountedView(harness: GateHarness, index = 0): SystemPromptView {
+		const component = harness.ctx.customComponents[index];
+		assert.ok(component instanceof SystemPromptView, "expected a SystemPromptView overlay");
+		return component;
+	}
+
+	/** Every distinct viewport the view shows while paging from the top to the bottom. */
+	function pagedText(view: SystemPromptView, width = 90): string {
+		const seen: string[] = [];
+		for (let page = 0; page < 40; page++) {
+			const text = view.render(width).map(sanitizeTuiText).join("\n");
+			if (seen.at(-1) === text) break;
+			seen.push(text);
+			view.handleInput(KEY.pageDown);
+		}
+		return seen.join("\n");
+	}
+
+	it("shows the label with p, keeps Settings on s, and leaves x inert", () => {
+		const harness = makeGate();
+		const rows = menuText(harness).split("\n").map((line) => line.trimEnd());
+		assert.ok(rows.find((line) => line.includes("view system prompt"))?.endsWith("p"), "hotkey column shows p");
+		assert.ok(rows.find((line) => line.includes("Settings"))?.endsWith("s"), "Settings keeps s");
+		harness.gate.handleInput("x");
+		assert.deepEqual(harness.results, []);
+		assert.equal(harness.ctx.customComponents.length, 0);
+		assert.equal(harness.tui.overlays.length, 0);
+	});
+
+	it("p opens the view and s opens Settings, in legacy and Kitty encodings", () => {
+		for (const [key, opensPrompt] of [["p", true], ["\x1b[112u", true], ["s", false], ["\x1b[115u", false]] as const) {
+			const harness = makeGate();
+			harness.gate.handleInput(key);
+			assert.equal(harness.ctx.customComponents.length, 1, `${JSON.stringify(key)} mounts one overlay`);
+			assert.equal(harness.ctx.customComponents[0] instanceof SystemPromptView, opensPrompt, `${JSON.stringify(key)}`);
+			assert.deepEqual(harness.results, [], "the gate stays unresolved");
+		}
+	});
+
+	it("the former Shift+S binding does nothing", () => {
+		for (const key of ["S", "\x1b[115;2u"]) {
+			const harness = makeGate();
+			harness.gate.handleInput(key);
+			assert.equal(harness.ctx.customComponents.length, 0, `${JSON.stringify(key)} mounts nothing`);
+			assert.equal(harness.tui.overlays.length, 0);
+			assert.deepEqual(harness.results, []);
+		}
+	});
+
+	it("Enter on the row opens the same view", () => {
+		const harness = makeGate({ systemPrompt: "base prompt text" });
+		for (let i = 0; i < 4; i++) harness.gate.handleInput(KEY.down);
+		harness.gate.handleInput(KEY.enter);
+		assert.ok(mountedView(harness).render(90).map(sanitizeTuiText).join("\n").includes("base prompt text"));
+		assert.deepEqual(harness.results, []);
+	});
+
+	it("shows only the static base prompt, read once, and starts nothing", () => {
+		const lines = Array.from({ length: 80 }, (_, i) => `static line ${i}`);
+		lines[0] = "STATIC_BASE_A";
+		lines[79] = "STATIC_BASE_B";
+		let reads = 0;
+		const harness = makeGate({ rows: 30, systemPrompt: () => { reads++; return lines.join("\n"); } });
+		seedSession(env.cwd, "DYN_SESSION_MARKER");
+		state.changes = { entries: [{ path: "DYN_CHANGES_PATH.ts", kind: "changed", untracked: false }], summary: { status: "done", text: "DYN_CHANGES_MARKER" }, version: 1 };
+		state.loadedSkills = ["DYN_SKILL"];
+		state.loadedExtensions = ["DYN_EXTENSION"];
+		state.loadedContext = ["DYN_CONTEXT"];
+		assert.equal(reads, 0, "nothing reads the prompt before the view opens");
+		harness.gate.handleInput("p");
+		const text = pagedText(mountedView(harness));
+		assert.equal(reads, 1, "read exactly once per open, however much the view renders or scrolls");
+		assert.ok(text.includes("STATIC_BASE_A") && text.includes("STATIC_BASE_B"), "paging reaches both ends of the prompt");
+		assert.equal(/DYN_|dyn-model/.test(text), false, "no session, summary, skill or extension data leaks in");
+		assert.deepEqual(harness.results, []);
+		assert.equal(harness.pi.setModelCalls.length, 0);
+		assert.equal(harness.tui.stopCount, 0, "no relaunch");
+		assert.deepEqual(harness.ctx.notifications, []);
+	});
+
+	it("is modal: the gate's hotkeys do nothing while the view is open", () => {
+		const harness = makeGate();
+		harness.gate.handleInput("p");
+		const view = mountedView(harness);
+		const before = harness.tui.renderRequests.length;
+		// pi-tui routes input to the focused overlay, so these reach the view and never the gate.
+		for (const key of ["q", "n", KEY.enter, "r", "t", "m", "s", "p", KEY.tab, KEY.left, KEY.right]) view.handleInput(key);
+		assert.deepEqual(harness.results, []);
+		assert.equal(harness.ctx.customComponents.length, 1);
+		assert.equal(harness.tui.overlays.length, 0, "no drill-in popup opened beneath");
+		assert.equal(harness.tui.renderRequests.length, before, "nothing closed the view");
+		const chevron = menuText(harness).split("\n").find((line) => line.includes("view system prompt"));
+		assert.ok(chevron?.includes("❯"), "the gate keeps its selection on the row beneath the view");
+	});
+
+	it("Esc returns to an interactive menu that can reopen the view", async () => {
+		let reads = 0;
+		const harness = makeGate({ systemPrompt: () => { reads++; return "prompt"; } });
+		harness.gate.handleInput("p");
+		const before = harness.tui.renderRequests.length;
+		mountedView(harness).handleInput(KEY.esc);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		assert.ok(harness.tui.renderRequests.length > before, "the gate repaints after the view closes");
+		assert.deepEqual(harness.results, [], "closing the view does not resolve the gate");
+		harness.gate.handleInput("p");
+		assert.equal(harness.ctx.customComponents.length, 2);
+		assert.equal(reads, 2, "each open reads the prompt again");
+		mountedView(harness, 1).handleInput(KEY.esc);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		harness.gate.handleInput("q");
+		assert.deepEqual(harness.results, ["quit"]);
 	});
 });
 

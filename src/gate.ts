@@ -6,6 +6,7 @@ import { headerRenderState, state } from "./state.ts";
 import { sanitizeTuiText } from "./text.ts";
 import { relaunchPi } from "./relaunch.ts";
 import { showSplashSettings } from "./settings.ts";
+import { showSystemPrompt } from "./system-prompt-view.ts";
 import { TwoPaneModelThinking, availableModelRefs, modelRefLabel } from "./model-picker.ts";
 import type { ModelRef, ThinkingLevel } from "./model-picker.ts";
 import { GATE_LIST_HEIGHT, GATE_PANEL_MAX_WIDTH, RESUME_PANEL_WIDTH, SHORT_TERMINAL_ROWS, listWindow, renderPopupBox } from "./gate-ui.ts";
@@ -18,7 +19,7 @@ export type SessionListItem = Awaited<ReturnType<typeof SessionManager.list>>[nu
 /** How the gate resolved when it did not relaunch the process. */
 export type GateResolution = "proceed" | "quit";
 
-export type MenuAction = "new" | "resume" | "model" | "theme" | "settings" | "quit";
+export type MenuAction = "new" | "resume" | "model" | "theme" | "prompt" | "settings" | "quit";
 export type GateView = "menu" | "resume" | "model" | "theme";
 
 /** Shared menu definition so height calculation and rendering cannot drift apart. */
@@ -27,6 +28,7 @@ const GATE_MENU: { label: string; action: MenuAction; icon: string; hotkey: KeyI
 	{ label: "Resume session", action: "resume", icon: "", hotkey: "r" }, // nf-fa-history
 	{ label: "Model", action: "model", icon: "\u{f1719}", hotkey: "m" }, // nf-md-robot_happy
 	{ label: "Theme", action: "theme", icon: "", hotkey: "t" }, // nf-fa-paint_brush
+	{ label: "view system prompt", action: "prompt", icon: "\u{f15c}", hotkey: "p" }, // nf-fa-file_text
 	{ label: "Settings", action: "settings", icon: "", hotkey: "s" }, // nf-fa-cog
 	{ label: "Quit", action: "quit", icon: "\u{f0a48}", hotkey: "q" }, // nf-md-exit_run
 ];
@@ -59,8 +61,9 @@ export function gateMenuRows(terminalRows: number): number {
 /**
  * The blocking startup gate component. The main menu renders inline under the splash; the
  * Resume/Theme/Model drill-in views render in a bordered popup overlay centered (vertically
- * and horizontally) in the terminal. The overlay is non-capturing, so this component keeps
- * keyboard focus and handles input for every view.
+ * and horizontally) in the terminal. That overlay is non-capturing, so this component keeps
+ * keyboard focus and handles input for every drill-in view. Settings and the system prompt view
+ * instead open as capturing overlays above the gate, which take input until they close.
  */
 export class StartupGate {
 	private view: GateView = "menu";
@@ -191,6 +194,7 @@ export class StartupGate {
 			case "resume": this.setView("resume"); this.loadSessions(); break;
 			case "model": this.openModel(); break;
 			case "theme": this.openTheme(); break;
+			case "prompt": this.openSystemPrompt(); break;
 			case "settings": this.openSettings(); break;
 		}
 	}
@@ -203,6 +207,18 @@ export class StartupGate {
 	private openSettings(): void {
 		void (async () => {
 			await showSplashSettings(this.ctx);
+			this.tui.requestRender();
+		})();
+	}
+
+	/**
+	 * Open the read-only system prompt view. Like Settings it is a capturing overlay, which Pi's
+	 * fullscreen viewport needs so PgUp/PgDn reach the view instead of scrolling the transcript;
+	 * closing it hands focus back to the gate without resolving it.
+	 */
+	private openSystemPrompt(): void {
+		void (async () => {
+			await showSystemPrompt(this.ctx);
 			this.tui.requestRender();
 		})();
 	}
