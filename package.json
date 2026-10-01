@@ -51,6 +51,6 @@
     "extensions": [
       "./index.ts"
     ],
-    "image": "https://raw.githubusercontent.com/underactive/pi-topping-splash/main/media/pi-splash.png"
+    "image": "https://raw.githubusercontent.com/underactive/pi-topping-splash/main/media/pi-splash-demo.png"
   }
 }
