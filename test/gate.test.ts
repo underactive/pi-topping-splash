@@ -147,13 +147,13 @@ describe("menu (GA-04..GA-08)", () => {
 		state.changes = { entries: [{ path: "file.ts", kind: "changed", untracked: false }], summary: { status: "pending", modelLabel: "p/m" }, version: 1 };
 		const compact = makeGate({ rows: 40 });
 		assert.equal(gateMenuRows(40, true), compact.gate.render(90).length);
-		assert.equal(gateMenuRows(40, true), 10);
+		assert.equal(gateMenuRows(40, true), 9);
 	});
 
 	it("lists the README menu items", () => {
 		const harness = makeGate();
 		const text = menuText(harness);
-		for (const item of ["New session", "Resume", "Model", "Skills and Extensions", "Theme", "Settings", "Quit"]) {
+		for (const item of ["New session", "Resume", "Model", "Theme", "Settings", "Quit"]) {
 			assert.ok(text.includes(item), `menu missing ${item}`);
 		}
 	});
@@ -205,12 +205,12 @@ describe("menu (GA-04..GA-08)", () => {
 		state.splashRows = 15;
 		const harness = makeGate({ rows: 40 });
 		const lines = harness.gate.render(90);
-		// free rows = 40 - 15 splash - 16 menu = 9; the gate's zero-row footer claims no row,
-		// so 9 - floor(9/2) = 5 trailing blanks push the menu up into the middle.
+		// free rows = 40 - 15 splash - 14 menu = 11; the gate's zero-row footer claims no row,
+		// so 11 - floor(11/2) = 6 trailing blanks push the menu up into the middle.
 		let lastVisible = lines.length - 1;
 		while (lastVisible >= 0 && lines[lastVisible] === "") lastVisible--;
 		const trailing = lines.length - 1 - lastVisible;
-		assert.equal(trailing, 5);
+		assert.equal(trailing, 6);
 		assert.ok(sanitizeTuiText(lines[lines.length - trailing - 1] ?? "").includes("↑↓ move"), "hint stays the last visible row");
 	});
 	it("no centering padding without a splash or without free rows", () => {
@@ -307,37 +307,6 @@ describe("theme view (GA-10)", () => {
 		assert.equal(typeof applied, "string");
 		assert.ok(["dark", "light", "solarized"].includes(applied as string), `applied ${String(applied)}`);
 		assert.equal(harness.tui.overlays[0]?.hidden, true, "back on the menu");
-	});
-});
-
-describe("skills and extensions view (GA-11)", () => {
-	function openInventory(): GateHarness {
-		state.loadedSkills = ["alpha-skill", "beta-skill"];
-		state.loadedExtensions = ["gamma-ext"];
-		const harness = makeGate();
-		harness.gate.handleInput("x");
-		return harness;
-	}
-	it("lists both panes from shared state", () => {
-		const harness = openInventory();
-		const text = popupText(harness);
-		for (const name of ["alpha-skill", "beta-skill", "gamma-ext"]) {
-			assert.ok(text.includes(name), `${name} missing from ${JSON.stringify(text)}`);
-		}
-	});
-	it("typing filters only the active pane; two-stage Esc clears then backs out", () => {
-		const harness = openInventory();
-		for (const ch of "alp") harness.gate.handleInput(ch);
-		let text = popupText(harness);
-		assert.equal(text.includes("beta-skill"), false, "left pane filtered");
-		assert.ok(text.includes("gamma-ext"), "right pane untouched");
-		harness.gate.handleInput(KEY.esc);
-		text = popupText(harness);
-		assert.ok(text.includes("beta-skill"), "first Esc clears the filter");
-		assert.equal(harness.tui.overlays[0]?.hidden, false, "still in the view");
-		harness.gate.handleInput(KEY.esc);
-		assert.equal(harness.tui.overlays[0]?.hidden, true, "second Esc backs out");
-		assert.deepEqual(harness.results, [], "backing out must not resolve the gate");
 	});
 });
 

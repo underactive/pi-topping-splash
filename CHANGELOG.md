@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- The **Skills and Extensions** entry (hotkey `x`) from the startup gate menu, along with the
+  two-pane skills/extensions view it opened. The view was a read-only inventory that repeated what
+  the splash info panel already lists, so it went away with the row. Skills and extensions remain
+  visible on the splash panel, and the gate keeps its other five entries
+  (hotkeys `n`/`r`/`m`/`t`/`s`/`q`).
+
 ## [0.4.1] - 2026-09-30
 
 ### Changed

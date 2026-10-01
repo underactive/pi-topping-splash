@@ -3,12 +3,12 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { KeyId, OverlayHandle, SizeValue, TUI } from "@earendil-works/pi-tui";
 import { headerRenderState, state } from "./state.ts";
-import { ELLIPSIS, sanitizeTuiText } from "./text.ts";
+import { sanitizeTuiText } from "./text.ts";
 import { relaunchPi } from "./relaunch.ts";
 import { showSplashSettings } from "./settings.ts";
 import { TwoPaneModelThinking, availableModelRefs, modelRefLabel } from "./model-picker.ts";
 import type { ModelRef, ThinkingLevel } from "./model-picker.ts";
-import { GATE_LIST_HEIGHT, GATE_PANEL_MAX_WIDTH, RESUME_PANEL_WIDTH, SHORT_TERMINAL_ROWS, fuzzyRanked, isPrintableInput, listWindow, renderPopupBox } from "./gate-ui.ts";
+import { GATE_LIST_HEIGHT, GATE_PANEL_MAX_WIDTH, RESUME_PANEL_WIDTH, SHORT_TERMINAL_ROWS, listWindow, renderPopupBox } from "./gate-ui.ts";
 
 /** A theme entry as returned by `ctx.ui.getAllThemes()`. */
 export type ThemeListItem = ReturnType<ExtensionContext["ui"]["getAllThemes"]>[number];
@@ -18,15 +18,14 @@ export type SessionListItem = Awaited<ReturnType<typeof SessionManager.list>>[nu
 /** How the gate resolved when it did not relaunch the process. */
 export type GateResolution = "proceed" | "quit";
 
-export type MenuAction = "new" | "resume" | "model" | "theme" | "skills-extensions" | "settings" | "quit";
-export type GateView = "menu" | "resume" | "model" | "theme" | "skills-extensions";
+export type MenuAction = "new" | "resume" | "model" | "theme" | "settings" | "quit";
+export type GateView = "menu" | "resume" | "model" | "theme";
 
 /** Shared menu definition so height calculation and rendering cannot drift apart. */
 const GATE_MENU: { label: string; action: MenuAction; icon: string; hotkey: KeyId }[] = [
 	{ label: "New session", action: "new", icon: "", hotkey: "n" }, // nf-fa-file
 	{ label: "Resume session", action: "resume", icon: "", hotkey: "r" }, // nf-fa-history
 	{ label: "Model", action: "model", icon: "\u{f1719}", hotkey: "m" }, // nf-md-robot_happy
-	{ label: "Skills and Extensions", action: "skills-extensions", icon: "\u{f0431}", hotkey: "x" }, // nf-md-puzzle
 	{ label: "Theme", action: "theme", icon: "", hotkey: "t" }, // nf-fa-paint_brush
 	{ label: "Settings", action: "settings", icon: "", hotkey: "s" }, // nf-fa-cog
 	{ label: "Quit", action: "quit", icon: "\u{f0a48}", hotkey: "q" }, // nf-md-exit_run
@@ -89,13 +88,6 @@ export class StartupGate {
 	/** True once navigation has live-previewed a theme, so escape knows to restore. */
 	private themePreviewActive = false;
 
-	/** Read-only inventory view: cursor and filter per pane, each preserved across pane switches. */
-	private inventoryPane: "skills" | "extensions" = "skills";
-	private readonly inventory = {
-		skills: { index: 0, filter: "" as string, cachedFilter: null as string | null, cachedItems: [] as string[] },
-		extensions: { index: 0, filter: "" as string, cachedFilter: null as string | null, cachedItems: [] as string[] },
-	};
-
 	/** Set when the user changes model in the gate, so relaunches preserve the choice. */
 	private selectedModel: { id: string; provider: string } | undefined;
 	/** Set alongside `selectedModel`; without it a relaunch would keep the model but drop the level. */
@@ -132,7 +124,6 @@ export class StartupGate {
 			case "resume": this.handleResume(data); break;
 			case "model": this.handleModel(data); break;
 			case "theme": this.handleTheme(data); break;
-			case "skills-extensions": this.handleSkillsExtensions(data); break;
 		}
 		this.tui.requestRender();
 	}
@@ -199,7 +190,6 @@ export class StartupGate {
 			case "resume": this.setView("resume"); this.loadSessions(); break;
 			case "model": this.openModel(); break;
 			case "theme": this.openTheme(); break;
-			case "skills-extensions": this.setView("skills-extensions"); break;
 			case "settings": this.openSettings(); break;
 		}
 	}
@@ -363,39 +353,6 @@ export class StartupGate {
 		}
 	}
 
-	/** Loaded names for one pane, narrowed by that pane's own filter. */
-	private filteredItems(pane: "skills" | "extensions"): string[] {
-		const slot = this.inventory[pane];
-		if (slot.cachedFilter === slot.filter) return slot.cachedItems;
-		const items = pane === "skills" ? state.loadedSkills : state.loadedExtensions;
-		slot.cachedItems = fuzzyRanked(items, slot.filter, (item) => item);
-		slot.cachedFilter = slot.filter;
-		return slot.cachedItems;
-	}
-
-	private handleSkillsExtensions(data: string): void {
-		const pane = this.inventory[this.inventoryPane];
-		if (matchesKey(data, "escape")) {
-			// First escape clears an active filter; a second (or filterless) escape goes back.
-			if (pane.filter) { pane.filter = ""; pane.index = 0; return; }
-			this.setView("menu");
-			return;
-		}
-		if (matchesKey(data, "left")) { this.inventoryPane = "skills"; return; }
-		if (matchesKey(data, "right")) { this.inventoryPane = "extensions"; return; }
-		if (matchesKey(data, "tab")) { this.inventoryPane = this.inventoryPane === "skills" ? "extensions" : "skills"; return; }
-		if (matchesKey(data, "backspace")) {
-			if (pane.filter) { pane.filter = pane.filter.slice(0, -1); pane.index = 0; }
-			return;
-		}
-		if (matchesKey(data, "up")) { pane.index = Math.max(0, pane.index - 1); return; }
-		if (matchesKey(data, "down")) {
-			pane.index = Math.min(Math.max(0, this.filteredItems(this.inventoryPane).length - 1), pane.index + 1);
-			return;
-		}
-		if (isPrintableInput(data)) { pane.filter += data; pane.index = 0; }
-	}
-
 	render(width: number): string[] {
 		// Drill-in views live in the centered popup overlay; the base layer always shows the menu.
 		return this.renderMenu(width);
@@ -407,7 +364,6 @@ export class StartupGate {
 			case "resume": return renderPopupBox(this.theme, width, "Resume Session", this.buildResumeBody(width));
 			case "model": return renderPopupBox(this.theme, width, "Select Model", this.buildModelBody(width));
 			case "theme": return renderPopupBox(this.theme, width, "Select Theme", this.buildThemeBody());
-			case "skills-extensions": return renderPopupBox(this.theme, width, "Skills and Extensions", this.buildSkillsExtensionsBody(width));
 			default: return [];
 		}
 	}
@@ -520,68 +476,6 @@ export class StartupGate {
 		}
 		body.push("", this.hint("↑↓ preview · enter select · esc back"));
 		return body;
-	}
-
-	/**
-	 * Rows the two-pane list may occupy: the terminal less the popup box (4), the overlay's
-	 * vertical margins (2) and the body's own header, filter, blank, position and hint rows (6).
-	 * Capped at the longer list so short lists get a compact box instead of trailing blanks.
-	 */
-	private inventoryListHeight(longest: number): number {
-		return Math.max(3, Math.min(longest, this.tui.terminal.rows - 12));
-	}
-
-	private buildSkillsExtensionsBody(width: number): string[] {
-		const innerW = Math.max(1, width - 4);
-		// " │ " between the panes, so leftW + 3 + rightW === innerW at any usable width.
-		const leftW = Math.max(3, Math.floor((innerW - 3) / 2));
-		const rightW = Math.max(3, innerW - 3 - leftW);
-		const skills = this.filteredItems("skills");
-		const extensions = this.filteredItems("extensions");
-		const height = this.inventoryListHeight(Math.max(skills.length, extensions.length));
-		// Emitted for both panes whenever either is filtered, so the two lists stay row-aligned.
-		const showFilters = Boolean(this.inventory.skills.filter || this.inventory.extensions.filter);
-
-		const pane = (name: "skills" | "extensions", items: string[], cellW: number): string[] => {
-			const { index, filter } = this.inventory[name];
-			const total = (name === "skills" ? state.loadedSkills : state.loadedExtensions).length;
-			const active = this.inventoryPane === name;
-			const count = filter ? `${items.length}/${total}` : String(total);
-			const lines = [`${this.theme.fg(active ? "accent" : "warning", `[${name}]`)} ${this.theme.fg("dim", count)}`];
-			if (showFilters) {
-				lines.push(filter
-					? `${this.theme.fg("dim", "filter: ")}${this.theme.fg("text", sanitizeTuiText(filter))}${active ? this.theme.fg("accent", "▌") : ""}`
-					: "");
-			}
-			lines.push("");
-			if (items.length === 0) {
-				lines.push(this.theme.fg("muted", filter ? "no match" : "none"));
-			} else {
-				const { start, end } = listWindow(items.length, height, index);
-				for (let idx = start; idx < end; idx++) {
-					// Truncate the raw name before styling: cutting an already-styled string drops its
-					// closing reset, bleeding color across the divider into the other pane.
-					const label = truncateToWidth(items[idx]!, cellW - 2, ELLIPSIS);
-					const selected = idx === index;
-					const chevron = selected ? this.theme.fg(active ? "accent" : "dim", "▶") : " ";
-					lines.push(`${chevron} ${selected && active ? this.theme.fg("accent", label) : this.theme.fg("text", label)}`);
-				}
-				if (items.length > height) lines.push(this.theme.fg("dim", `  ${index + 1}/${items.length}`));
-			}
-			return lines;
-		};
-
-		const left = pane("skills", skills, leftW);
-		const right = pane("extensions", extensions, rightW);
-		const divider = this.theme.fg("border", "│");
-		// The panes differ in length: the shorter one yields blank cells while the divider runs on.
-		const cell = (line: string | undefined, cellW: number) => truncateToWidth(line ?? "", cellW, ELLIPSIS, true);
-		const rows = Array.from({ length: Math.max(left.length, right.length) }, (_, i) =>
-			`${cell(left[i], leftW)} ${divider} ${cell(right[i], rightW)}`,
-		);
-		return [...rows, "", this.hint(this.inventory[this.inventoryPane].filter
-			? "↑↓ scroll · backspace edit · ←→ switch pane · esc clear filter"
-			: "type to filter · ↑↓ scroll · ←→/tab switch pane · esc back")];
 	}
 
 	invalidate(): void {
