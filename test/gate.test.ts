@@ -162,7 +162,7 @@ describe("menu (GA-04..GA-08)", () => {
 	it("lists the README menu items", () => {
 		const harness = makeGate();
 		const text = menuText(harness);
-		for (const item of ["New session", "Resume", "Model", "Theme", "view system prompt", "Settings", "Quit"]) {
+		for (const item of ["New session", "Resume", "Model", "Theme", "View system prompt", "Settings", "Quit"]) {
 			assert.ok(text.includes(item), `menu missing ${item}`);
 		}
 		assert.equal(/skills|extensions/i.test(text), false, "the Skills and Extensions entry stays removed");
@@ -240,7 +240,7 @@ describe("menu (GA-04..GA-08)", () => {
 	});
 });
 
-describe("view system prompt entry (GA-04)", () => {
+describe("View system prompt entry (GA-04)", () => {
 	function mountedView(harness: GateHarness, index = 0): SystemPromptView {
 		const component = harness.ctx.customComponents[index];
 		assert.ok(component instanceof SystemPromptView, "expected a SystemPromptView overlay");
@@ -262,7 +262,7 @@ describe("view system prompt entry (GA-04)", () => {
 	it("shows the label with p, keeps Settings on s, and leaves x inert", () => {
 		const harness = makeGate();
 		const rows = menuText(harness).split("\n").map((line) => line.trimEnd());
-		assert.ok(rows.find((line) => line.includes("view system prompt"))?.endsWith("p"), "hotkey column shows p");
+		assert.ok(rows.find((line) => line.includes("View system prompt"))?.endsWith("p"), "hotkey column shows p");
 		assert.ok(rows.find((line) => line.includes("Settings"))?.endsWith("s"), "Settings keeps s");
 		harness.gate.handleInput("x");
 		assert.deepEqual(harness.results, []);
@@ -332,7 +332,7 @@ describe("view system prompt entry (GA-04)", () => {
 		assert.equal(harness.ctx.customComponents.length, 1);
 		assert.equal(harness.tui.overlays.length, 0, "no drill-in popup opened beneath");
 		assert.equal(harness.tui.renderRequests.length, before, "nothing closed the view");
-		const chevron = menuText(harness).split("\n").find((line) => line.includes("view system prompt"));
+		const chevron = menuText(harness).split("\n").find((line) => line.includes("View system prompt"));
 		assert.ok(chevron?.includes("❯"), "the gate keeps its selection on the row beneath the view");
 	});
 

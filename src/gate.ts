@@ -28,7 +28,7 @@ const GATE_MENU: { label: string; action: MenuAction; icon: string; hotkey: KeyI
 	{ label: "Resume session", action: "resume", icon: "", hotkey: "r" }, // nf-fa-history
 	{ label: "Model", action: "model", icon: "\u{f1719}", hotkey: "m" }, // nf-md-robot_happy
 	{ label: "Theme", action: "theme", icon: "", hotkey: "t" }, // nf-fa-paint_brush
-	{ label: "view system prompt", action: "prompt", icon: "\u{f15c}", hotkey: "p" }, // nf-fa-file_text
+	{ label: "View system prompt", action: "prompt", icon: "\u{f15c}", hotkey: "p" }, // nf-fa-file_text
 	{ label: "Settings", action: "settings", icon: "", hotkey: "s" }, // nf-fa-cog
 	{ label: "Quit", action: "quit", icon: "\u{f0a48}", hotkey: "q" }, // nf-md-exit_run
 ];
