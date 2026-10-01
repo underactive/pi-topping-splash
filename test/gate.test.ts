@@ -138,16 +138,20 @@ function popupText(harness: GateHarness, width = 80): string {
 }
 
 describe("menu (GA-04..GA-08)", () => {
-	it("gateMenuRows matches rendered height and compacts beside a changes block", () => {
+	it("gateMenuRows matches rendered height and stays spacious beside a changes block", () => {
 		for (const rows of [20, 24, 29, 30, 40]) {
 			state.changes = null;
 			const harness = makeGate({ rows });
-			assert.equal(gateMenuRows(rows, false), harness.gate.render(90).length, `rows=${rows}`);
+			assert.equal(gateMenuRows(rows), harness.gate.render(90).length, `rows=${rows}`);
 		}
 		state.changes = { entries: [{ path: "file.ts", kind: "changed", untracked: false }], summary: { status: "pending", modelLabel: "p/m" }, version: 1 };
-		const compact = makeGate({ rows: 40 });
-		assert.equal(gateMenuRows(40, true), compact.gate.render(90).length);
-		assert.equal(gateMenuRows(40, true), 9);
+		const spaced = makeGate({ rows: 40 });
+		assert.equal(gateMenuRows(40), spaced.gate.render(90).length);
+		assert.equal(gateMenuRows(40), 14, "the changes section gives up rows, not the menu's spacing");
+		const lines = spaced.gate.render(90).map((line) => sanitizeTuiText(line));
+		for (const [a, b] of [[0, 2], [2, 4], [4, 6], [6, 8], [8, 10], [10, 12]]) {
+			assert.equal(lines[a]?.trim(), "", `row ${a + 1} is the gap above the item at row ${b + 1}`);
+		}
 	});
 
 	it("lists the README menu items", () => {

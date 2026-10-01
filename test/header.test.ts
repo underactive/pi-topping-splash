@@ -315,7 +315,10 @@ describe("installHeader (H-04, H-05)", () => {
 			const rendered = component.render(100);
 			assert.ok(rendered.length <= rows);
 			assert.equal(state.splashRows, rendered.length);
-			assert.ok(gateMenuRows(rows, false) >= 1);
+			assert.ok(gateMenuRows(rows) >= 1);
+			// The gate menu keeps its blank rows whatever the changes block needs, so the header
+			// must still fit the menu's full height beneath it.
+			assert.ok(rendered.length + gateMenuRows(rows) <= rows, `splash+gate exceeds ${rows} rows`);
 		}
 		const beforeHeader = headerRenderState.requestRender;
 		installChangesHeader(ctx.ctx);

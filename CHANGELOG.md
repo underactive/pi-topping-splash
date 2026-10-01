@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The startup gate menu keeps its blank row between items even when the `[local changes]` summary
+  is showing. Since the startup summary landed, a dirty repository compacted the menu to
+  back-to-back rows; the menu's spacing is a function of terminal height alone again, and the
+  changes section gives up the rows instead — a short listing falls back to its one-line preview
+  sooner rather than the menu losing its spacing. `gateMenuRows` drops its `changesShown`
+  argument to match.
+
 ### Removed
 
 - The **Skills and Extensions** entry (hotkey `x`) from the startup gate menu, along with the

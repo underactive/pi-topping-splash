@@ -35,11 +35,12 @@ const MENU_HINT = "↑↓ move · enter select · hotkey jump · esc = new sessi
 
 /**
  * The gate menu rows: items, a blank row, the hint, and a leading pad row unless compact. Terminals
- * 30 rows or taller get a blank row between items, unless the changes section grows the splash
- * into the same below-splash budget.
+ * 30 rows or taller get a blank row between items, and showing the startup changes summary does not
+ * change that: the header reserves this block's exact height, so the `[local changes]` section gives
+ * up the rows the blank lines take instead of the menu compacting beside it.
  */
-function menuBlock(terminalRows: number, changesShown: boolean, renderItem: (entry: (typeof GATE_MENU)[number], index: number) => string, hint: string): string[] {
-	const spacious = terminalRows >= 30 && !changesShown;
+function menuBlock(terminalRows: number, renderItem: (entry: (typeof GATE_MENU)[number], index: number) => string, hint: string): string[] {
+	const spacious = terminalRows >= 30;
 	const compact = terminalRows > 0 && terminalRows <= SHORT_TERMINAL_ROWS;
 	const lines: string[] = compact ? [] : [""];
 	GATE_MENU.forEach((entry, i) => {
@@ -51,8 +52,8 @@ function menuBlock(terminalRows: number, changesShown: boolean, renderItem: (ent
 }
 
 /** Height of the visible gate menu block, excluding any trailing centering rows. */
-export function gateMenuRows(terminalRows: number, changesShown: boolean): number {
-	return menuBlock(terminalRows, changesShown, () => "", "").length;
+export function gateMenuRows(terminalRows: number): number {
+	return menuBlock(terminalRows, () => "", "").length;
 }
 
 /**
@@ -378,7 +379,7 @@ export class StartupGate {
 		// Two spaces between icon and label: wide Nerd Font artwork (e.g. the Material Design
 		// glyphs in non-Mono font variants) advances one cell but paints into the next, so a
 		// single space would be swallowed and the label would sit flush against the icon.
-		const lines = menuBlock(this.tui.terminal.rows, state.changes !== null, (entry, i) => {
+		const lines = menuBlock(this.tui.terminal.rows, (entry, i) => {
 			const selected = i === this.menuIndex;
 			const chevron = selected ? this.theme.fg("accent", "❯") : " ";
 			const label = selected ? this.theme.fg("accent", entry.label) : this.theme.fg("text", entry.label);
