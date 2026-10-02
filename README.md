@@ -59,10 +59,11 @@ picker.
   the rainbow's left-right hue sweep. `dynamic` uses the last theme color you applied as the
   background (`accent` until you apply one), shows it at full strength in early afternoon and
   dims toward 35% around 01:00 local time, with the same vertical fade. To pick its tint, apply
-  that theme color first, then apply `dynamic`. Its brightness is recomputed whenever the splash
-  repaints, continuously while an animation runs and otherwise on resize or menu actions;
-  animations wrap it like any backdrop. Indexed (256-color) theme colors are approximated as RGB
-  and still require a truecolor-capable terminal to render the emitted backdrop.
+  that theme color first, then apply `dynamic`. Its brightness is sampled when the splash layout
+  rebuilds (such as after resizing or applying settings) and on each gradient-animation frame;
+  ordinary menu navigation does not resample it. Animations wrap it like any backdrop. Indexed
+  (256-color) theme colors are approximated as RGB and still require a truecolor-capable terminal
+  to render the emitted backdrop.
 - **Animate gradient** — cycle with ←/→ through `off` (the default) and four animations that
   work on any backdrop, `rainbow` included: `breathe` eases the whole backdrop's brightness on
   a slow sine, `flow` rolls brightness bands down the fade, `sheen` sweeps a diagonal highlight
