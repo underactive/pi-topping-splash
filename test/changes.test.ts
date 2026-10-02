@@ -246,7 +246,7 @@ describe("sensitive paths and bounded details", () => {
 					if (args.includes("--numstat")) return {
 						stdout: `5\t5\tchanged.txt\0-\t-\tbinary.bin\u0000500\t0\ttoo-large.txt\0`, stderr: "", code: 0, killed: false,
 					};
-				if (args.includes("changed.txt")) return { stdout: `diff\n${"x".repeat(PER_FILE_DETAIL_BYTES + 100)}\napi_key=hidden`, stderr: "", code: 0, killed: false };
+				if (args.includes("changed.txt")) return { stdout: `diff\n${"x".repeat(PER_FILE_DETAIL_BYTES + 100)}\nOVERSIZED_RECOGNIZABLE_SUFFIX`, stderr: "", code: 0, killed: false };
 				return { stdout: "", stderr: "", code: 0, killed: false };
 				},
 			});
@@ -254,7 +254,24 @@ describe("sensitive paths and bounded details", () => {
 			assert.ok(Buffer.byteLength(details) <= DETAIL_BUDGET_BYTES);
 			assert.ok(details.includes("new file: new.txt"));
 			assert.equal(details.includes(".env"), false, "sensitive contents are omitted");
-			assert.ok(pi.bag.execCalls.length <= 2 + MAX_DIFF_FILES + MAX_DIFF_FILES, "bounded command count");
+			const diffTargets = pi.bag.execCalls
+				.filter(({ args }) => args.includes("--unified=1"))
+				.map(({ args }) => args[args.length - 1]);
+			assert.deepEqual(diffTargets, ["changed.txt", "changed.txt"]);
+			assert.equal(diffTargets.includes("binary.bin"), false, "binary files do not receive per-path diffs");
+			assert.equal(diffTargets.includes("too-large.txt"), false, "large files do not receive per-path diffs");
+			const boundedExcerpt = `diff\n${"x".repeat(PER_FILE_DETAIL_BYTES - Buffer.byteLength("diff\n"))}\n… (truncated)`;
+			assert.ok(details.includes(boundedExcerpt), "changed.txt excerpt is truncated at the per-file byte limit");
+			assert.equal(details.includes("OVERSIZED_RECOGNIZABLE_SUFFIX"), false, "oversized diff suffix is omitted");
+
+			const manyFiles = Array.from({ length: MAX_DIFF_FILES }, (_, index) => `1\t1\tfile-${index}.txt`).join("\0") + "\0";
+			const totalLimitPi = createFakePi({
+				execHandler: (_command, args) => args.includes("--numstat")
+					? { stdout: manyFiles, stderr: "", code: 0, killed: false }
+					: { stdout: "x".repeat(PER_FILE_DETAIL_BYTES), stderr: "", code: 0, killed: false },
+			});
+			const totalLimitedDetails = await collectChangeDetails(totalLimitPi.pi, { root, entries: [] });
+			assert.equal(Buffer.byteLength(totalLimitedDetails), DETAIL_BUDGET_BYTES, "multiple excerpts are clipped at the total byte limit");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
