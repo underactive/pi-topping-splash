@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
@@ -336,6 +337,24 @@ describe("commands (I-06, I-07)", () => {
 		assert.equal(readPreferences().menuGate, "on", "preference untouched");
 		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false, "no file written");
 		assert.ok(!wired.ctx.notifications.some((n) => n.type === "info"), "no success notification");
+	});
+
+	it("keeps saved preferences intact when atomic replacement fails", () => {
+		const savedPreferences = { menuGate: "off", taglineReveal: "on", backgroundColor: "success", gradientAnimation: "off", changesSummary: "off" } as const;
+		assert.equal(writePreferences(savedPreferences), true);
+		const path = join(env.agentDir, "pi-topping-splash.json");
+		const savedContents = readFileSync(path, "utf8");
+		const originalRenameSync = fs.renameSync;
+		fs.renameSync = () => { throw new Error("simulated rename failure"); };
+		syncBuiltinESMExports();
+		try {
+			assert.equal(writePreferences({ ...savedPreferences, menuGate: "on" }), false);
+		} finally {
+			fs.renameSync = originalRenameSync;
+			syncBuiltinESMExports();
+		}
+		assert.equal(readFileSync(path, "utf8"), savedContents);
+		assert.deepEqual(readdirSync(env.agentDir).filter((name) => name.startsWith("pi-topping-splash.json.") && name.endsWith(".tmp")), []);
 	});
 
 	it("a failing preference write notifies an error instead of success (I-06, I-07)", async () => {

@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { BACKGROUND_COLOR_OPTIONS, DEFAULT_DYNAMIC_TINT, GRADIENT_ANIMATION_OPTIONS, isDynamicTint, type BackgroundColor, type DynamicTint, type GradientAnimation } from "./color.ts";
@@ -74,11 +75,20 @@ export function readPreferences(): SplashPreferences {
 
 /** Returns false when the preferences could not be persisted, so the caller can report it. */
 export function writePreferences(prefs: SplashPreferences): boolean {
+	let tempPath: string | undefined;
 	try {
 		mkdirSync(getAgentDir(), { recursive: true });
-		writeFileSync(preferencesPath(), `${JSON.stringify(prefs, null, 2)}\n`, "utf8");
+		const path = preferencesPath();
+		tempPath = `${path}.${randomUUID()}.tmp`;
+		writeFileSync(tempPath, `${JSON.stringify(prefs, null, 2)}\n`, "utf8");
+		renameSync(tempPath, path);
 		return true;
 	} catch {
+		if (tempPath) {
+			try {
+				unlinkSync(tempPath);
+			} catch {}
+		}
 		// Swallowed, not thrown: console output would corrupt the TUI.
 		return false;
 	}
