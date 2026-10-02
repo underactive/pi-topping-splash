@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Dynamic** splash backdrop (`/topping-splash-settings` → Background color → `dynamic`, last in
+  the cycle): shows the last theme color you applied as the background at a brightness set by the
+  local time of day — full strength in early afternoon, dimmed overnight — as a time-aware
+  light/dark mode. The tint is stored as `dynamicTint` in `pi-topping-splash.json` and is
+  `accent` until a theme color has been applied. Brightness is recomputed on each splash repaint;
+  gradient animations still apply on top.
+
 ### Changed
 
 - **Summarize uncommitted changes** now defaults to on when `changesSummary` is missing from

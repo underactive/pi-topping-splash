@@ -1,6 +1,7 @@
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
+import { DEFAULT_DYNAMIC_TINT } from "./color.ts";
 import type { BackgroundColor, GradientAnimation } from "./color.ts";
 import { changesRenderState, headerRenderState, state } from "./state.ts";
 import { gradientAnimation, startGradientAnimation } from "./animate.ts";
@@ -39,6 +40,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 		({ skills: state.loadedSkills, extensions: state.loadedExtensions, context: state.loadedContext, prompts: state.loadedPrompts, shortcuts: state.loadedShortcuts } = getLoadedHeaderItems(pi, ctx.cwd, ctx.isProjectTrusted()));
 	} catch { /* discovery is display-only; never abort the startup */ }
 	state.backgroundColor = prefs.backgroundColor;
+	state.dynamicTint = prefs.dynamicTint ?? DEFAULT_DYNAMIC_TINT;
 	state.gradientAnimation = prefs.gradientAnimation;
 	ctx.ui.setHeader((tui: TUI, theme: Theme) => {
 		headerRenderState.requestRender = () => tui.requestRender();
@@ -95,7 +97,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 					// free — a gate menu held at its full height simply leaves it fewer rows.
 					const reserve = prefs.menuGate === "on" ? gateMenuRows(rows) : EDITOR_RESERVED_ROWS;
 					const parts = buildHeaderParts(width, rows, theme, state.loadedContext, state.loadedSkills, state.loadedExtensions, ctx.model ? { id: ctx.model.id, provider: ctx.model.provider } : undefined, state.systemPromptSize, state.backgroundColor, state.gradientAnimation, gradientAnimation.timeMs, state.loadedPrompts, state.loadedShortcuts,
-						(band) => layoutChangesSection(theme, state.changes, band.width, rows - band.rows - reserve));
+						(band) => layoutChangesSection(theme, state.changes, band.width, rows - band.rows - reserve), state.dynamicTint);
 					cachedSplashLines = parts.lines;
 					cachedRepaintTagline = parts.repaintTagline;
 					cachedRepaintBackdrop = parts.repaintBackdrop;

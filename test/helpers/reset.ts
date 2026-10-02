@@ -46,6 +46,7 @@ export function resetModuleState(): void {
 	state.changesStarted = false;
 	changesRenderState.requestRender = null;
 	state.backgroundColor = "rainbow";
+	state.dynamicTint = "accent";
 	state.gradientAnimation = "off";
 	state.conversationStarted = false;
 }

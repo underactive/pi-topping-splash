@@ -4,8 +4,12 @@ import {
 	BACKGROUND_COLOR_OPTIONS,
 	backgroundSampler,
 	BREATHE_PERIOD_MS,
+	DEFAULT_DYNAMIC_TINT,
+	DYNAMIC_NIGHT_SCALE,
+	DYNAMIC_PEAK_HOUR,
 	GRADIENT_ANIMATION_OPTIONS,
 	hsvRgb,
+	daylightScale,
 	PANEL_BG_DARK,
 	PANEL_BG_LIGHT,
 	PANEL_LUMINANCE_THRESHOLD,
@@ -17,6 +21,7 @@ import {
 	sgrBg,
 	sgrFg,
 	swatchColor,
+	isDynamicTint,
 } from "../src/color.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme } from "./helpers/theme.ts";
@@ -184,9 +189,9 @@ describe("swatchColor (C-06, C-07)", () => {
 });
 
 describe("BACKGROUND_COLOR_OPTIONS", () => {
-	it("lists rainbow first, then the seven theme colors in order", () => {
+	it("lists rainbow first, then the seven theme colors, then dynamic", () => {
 		assert.deepEqual(BACKGROUND_COLOR_OPTIONS, [
-			"rainbow", "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning",
+			"rainbow", "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "dynamic",
 		]);
 	});
 });
@@ -227,6 +232,83 @@ describe("backgroundSampler", () => {
 		const sample = backgroundSampler("accent", malformedTheme);
 		assert.equal(sample(10, 80, 0.5), swatchColor(10, 80, 0.5));
 		assert.equal(sample(40, 80, 1), swatchColor(40, 80, 1));
+	});
+});
+
+describe("dynamic backdrop (C-14)", () => {
+	const theme = makeTheme();
+	const localDate = (hour: number, minute = 0): Date => new Date(2026, 0, 1, hour, minute);
+	const themeColors = ["accent", "border", "borderAccent", "borderMuted", "success", "error", "warning"] as const;
+
+	it("peaks at DYNAMIC_PEAK_HOUR and reaches the night floor twelve hours later", () => {
+		assert.equal(daylightScale(DYNAMIC_PEAK_HOUR), 1);
+		assert.ok(Math.abs(daylightScale(DYNAMIC_PEAK_HOUR + 12) - DYNAMIC_NIGHT_SCALE) < 1e-12);
+	});
+
+	it("rises toward the peak, falls afterward, and stays within the documented range", () => {
+		for (let hour = 1; hour < 13; hour++) {
+			assert.ok(daylightScale(hour + 1) >= daylightScale(hour), `rising hour ${hour}`);
+		}
+		for (let hour = 13; hour < 25; hour++) {
+			assert.ok(daylightScale(hour + 1) <= daylightScale(hour), `falling hour ${hour}`);
+		}
+		for (let hour = 0; hour <= 48; hour += 0.25) {
+			const scale = daylightScale(hour);
+			assert.ok(scale >= DYNAMIC_NIGHT_SCALE - 1e-12, `hour=${hour}: ${scale}`);
+			assert.ok(scale <= 1 + 1e-12, `hour=${hour}: ${scale}`);
+		}
+	});
+
+	it("matches the selected theme color at the peak and scales it at night", () => {
+		const dynamic = backgroundSampler("dynamic", theme, "off", 0, "success", localDate(DYNAMIC_PEAK_HOUR));
+		const direct = backgroundSampler("success", theme)(0, 80, 1);
+		assert.equal(dynamic(0, 80, 1), direct);
+		const expectedBase = channels(direct);
+		const night = backgroundSampler("dynamic", theme, "off", 0, "success", localDate(1));
+		assert.deepEqual(channels(night(0, 80, 1)), expectedBase.map((channel) => Math.round(channel * daylightScale(1))));
+	});
+
+	it("counts minutes and keeps level zero black and horizontally constant", () => {
+		const early = backgroundSampler("dynamic", theme, "off", 0, "success", localDate(7));
+		const late = backgroundSampler("dynamic", theme, "off", 0, "success", localDate(7, 30));
+		assert.ok(channels(late(0, 80, 1)).reduce((sum, channel) => sum + channel, 0) > channels(early(0, 80, 1)).reduce((sum, channel) => sum + channel, 0));
+		const sample = backgroundSampler("dynamic", theme, "off", 0, "success", localDate(13));
+		assert.equal(sample(0, 80, 0), "0;0;0");
+		assert.equal(sample(0, 80, 1), sample(40, 80, 1));
+	});
+
+	it("uses the requested tint and defaults to accent", () => {
+		const success = backgroundSampler("dynamic", theme, "off", 0, "success", localDate(13));
+		const error = backgroundSampler("dynamic", theme, "off", 0, "error", localDate(13));
+		assert.notEqual(success(0, 80, 1), error(0, 80, 1));
+		const defaultTint = backgroundSampler("dynamic", theme, "off", 0, undefined, localDate(13));
+		const accent = backgroundSampler("accent", theme)(0, 80, 1);
+		assert.equal(DEFAULT_DYNAMIC_TINT, "accent");
+		assert.equal(defaultTint(0, 80, 1), accent);
+	});
+
+	it("falls back to swatchColor when the tint cannot be parsed", () => {
+		const malformedTheme = { getFgAnsi: () => "\x1b[31m" } as unknown as Theme;
+		const sample = backgroundSampler("dynamic", malformedTheme, "off", 0, "success", localDate(13));
+		assert.equal(sample(10, 80, 0.5), swatchColor(10, 80, 0.5));
+	});
+
+	it("wraps every animation deterministically over dynamic", () => {
+		for (const animation of GRADIENT_ANIMATION_OPTIONS) {
+			const a = backgroundSampler("dynamic", theme, animation, 1234, "success", localDate(7, 30));
+			const b = backgroundSampler("dynamic", theme, animation, 1234, "success", localDate(7, 30));
+			for (const level of [1, 0.75, 0.5, 0.25, 0]) {
+				for (const x of [0, 7, 40, 79]) {
+					channels(a(x, 80, level));
+					assert.equal(a(x, 80, level), b(x, 80, level), `${animation} x=${x} level=${level}`);
+				}
+			}
+		}
+	});
+
+	it("recognizes exactly the seven theme tint tokens", () => {
+		for (const color of themeColors) assert.equal(isDynamicTint(color), true, color);
+		for (const value of ["rainbow", "dynamic", "nope", undefined]) assert.equal(isDynamicTint(value), false, String(value));
 	});
 });
 

@@ -197,6 +197,15 @@ describe("installHeader (H-04, H-05)", () => {
 		assert.equal(gradientAnimation.timer, null, "off stays static");
 	});
 
+	it("a dynamic preference seeds the tint and stays static with animation off (H-06)", () => {
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "dynamic", dynamicTint: "success", gradientAnimation: "off", changesSummary: "off" });
+		const { component } = install();
+		assert.equal(state.backgroundColor, "dynamic");
+		assert.equal(state.dynamicTint, "success");
+		assert.equal(gradientAnimation.timer, null);
+		assertLinesExact(component.render(120), 120, "dynamic static header");
+	});
+
 	it("an animation tick repaints the backdrop rows and holds the width invariant (H-07)", () => {
 		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "breathe", changesSummary: "off" });
 		const { component } = install();

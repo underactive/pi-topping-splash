@@ -405,7 +405,7 @@ describe("custom sampler plumbing", () => {
 	});
 
 	it("buildHeader accepts a background selection and stays exact-width for every mode", () => {
-		for (const background of ["rainbow", "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning"] as const) {
+		for (const background of ["rainbow", "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "dynamic"] as const) {
 			for (const width of [1, 40, 80, 160]) {
 				const lines = buildHeader(width, 40, theme, ["AGENTS.md"], ["a"], ["b"], MODEL, 4000, background, "off", 0, [], []);
 				assertLinesExact(lines, width, `buildHeader(background=${background}, width=${width})`);
@@ -416,18 +416,20 @@ describe("custom sampler plumbing", () => {
 
 describe("animated backdrop repaint (S-12)", () => {
 	it("repaintBackdrop exists exactly when an animation is on, for any backdrop", () => {
-		const partsFor = (background: "rainbow" | "accent", animation: "off" | "breathe" | "flow") =>
+		const partsFor = (background: "rainbow" | "accent" | "dynamic", animation: "off" | "breathe" | "flow") =>
 			buildHeaderParts(100, 40, theme, ["AGENTS.md"], ["a"], ["b"], MODEL, 4000, background, animation, 0);
 		assert.equal(partsFor("rainbow", "off").repaintBackdrop, undefined, "static rainbow has nothing to repaint");
 		assert.equal(partsFor("accent", "off").repaintBackdrop, undefined, "off stays static");
+		assert.equal(partsFor("dynamic", "off").repaintBackdrop, undefined, "dynamic adds no timer of its own");
 		assert.notEqual(partsFor("accent", "flow").repaintBackdrop, undefined, "animated theme color must expose the hook");
 		assert.notEqual(partsFor("rainbow", "breathe").repaintBackdrop, undefined, "animated rainbow must expose the hook");
+		assert.notEqual(partsFor("dynamic", "breathe").repaintBackdrop, undefined, "animated dynamic must expose the hook");
 	});
 
 	it("repainted frames stay exact-width, keep the row count and reflect the advanced clock", () => {
 		// Times chosen mid-motion for each animation so the frame visibly differs from timeMs=0.
 		const midpoints = { breathe: 2000, flow: 2000, sheen: 700, wave: 1250 } as const;
-		for (const background of ["accent", "rainbow"] as const) {
+		for (const background of ["accent", "rainbow", "dynamic"] as const) {
 			for (const [animation, timeMs] of Object.entries(midpoints) as [keyof typeof midpoints, number][]) {
 				const parts = buildHeaderParts(100, 40, theme, ["AGENTS.md"], ["a"], ["b"], MODEL, 4000, background, animation, 0);
 				const frame = parts.repaintBackdrop!(timeMs);
@@ -436,6 +438,14 @@ describe("animated backdrop repaint (S-12)", () => {
 				assert.notDeepEqual(frame, parts.lines, `${background} ${animation}: the frame must move`);
 			}
 		}
+	});
+
+	it("threads the dynamic tint through the splash sampler", () => {
+		const success = buildHeaderParts(100, 40, theme, ["AGENTS.md"], ["a"], ["b"], MODEL, 4000, "dynamic", "off", 0, [], [], undefined, "success");
+		const error = buildHeaderParts(100, 40, theme, ["AGENTS.md"], ["a"], ["b"], MODEL, 4000, "dynamic", "off", 0, [], [], undefined, "error");
+		assertLinesExact(success.lines, 100, "dynamic success tint");
+		assertLinesExact(error.lines, 100, "dynamic error tint");
+		assert.notDeepEqual(success.lines, error.lines, "different dynamic tints must change the backdrop");
 	});
 });
 

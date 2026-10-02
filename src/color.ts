@@ -69,11 +69,19 @@ export function swatchColor(x: number, width: number, level: number): Rgb {
 	return hsvRgb(hue, SWATCH_SATURATION, SWATCH_VALUE * Math.max(0, level));
 }
 
-/** Selectable splash backdrops: the animated rainbow sweep, or a theme color faded to black. */
-export type BackgroundColor = "rainbow" | "accent" | "border" | "borderAccent" | "borderMuted" | "success" | "error" | "warning";
+/** Selectable splash backdrops: the animated rainbow sweep, a theme color faded to black, or a time-of-day-scaled theme color. */
+export type BackgroundColor = "rainbow" | "accent" | "border" | "borderAccent" | "borderMuted" | "success" | "error" | "warning" | "dynamic";
 
 /** Cycle order shown in the settings menu. */
-export const BACKGROUND_COLOR_OPTIONS: readonly BackgroundColor[] = ["rainbow", "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning"];
+export const BACKGROUND_COLOR_OPTIONS: readonly BackgroundColor[] = ["rainbow", "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning", "dynamic"];
+
+/** The seven theme colors a "dynamic" backdrop can scale. */
+export type DynamicTint = Exclude<BackgroundColor, "rainbow" | "dynamic">;
+/** Tint "dynamic" uses until a theme color has been applied as the background. */
+export const DEFAULT_DYNAMIC_TINT: DynamicTint = "accent";
+export function isDynamicTint(value: unknown): value is DynamicTint {
+	return value !== "rainbow" && value !== "dynamic" && BACKGROUND_COLOR_OPTIONS.includes(value as BackgroundColor);
+}
 
 /** Animations for the splash backdrop; "off" keeps it static. They wrap any backdrop, rainbow included. */
 export type GradientAnimation = "off" | "breathe" | "flow" | "sheen" | "wave";
@@ -102,7 +110,17 @@ export const WAVE_LENGTH_CELLS = 24;
 /** How far the ripple displaces the fade level. */
 export const WAVE_AMP = 0.08;
 
+/** Local hour at which "dynamic" shows its tint at full strength; the trough falls 12 hours later. */
+export const DYNAMIC_PEAK_HOUR = 13;
+/** Brightness of the "dynamic" tint at the trough, as a share of the full theme color. */
+export const DYNAMIC_NIGHT_SCALE = 0.35;
+
 const TAU = Math.PI * 2;
+
+/** Brightness share for "dynamic" at a fractional local hour: 1 at DYNAMIC_PEAK_HOUR, DYNAMIC_NIGHT_SCALE twelve hours away. */
+export function daylightScale(hours: number): number {
+	return DYNAMIC_NIGHT_SCALE + (1 - DYNAMIC_NIGHT_SCALE) * 0.5 * (1 + Math.cos((TAU * (hours - DYNAMIC_PEAK_HOUR)) / 24));
+}
 
 /** Samples the backdrop for one half-cell: horizontal position, terminal width, and vertical fade level (1 top, 0 bottom). */
 export type SwatchSampler = (x: number, width: number, level: number) => Rgb;
@@ -140,18 +158,19 @@ function parseThemeRgb(ansi: string): Rgb | undefined {
 	return undefined;
 }
 
-export function backgroundSampler(background: BackgroundColor, theme: Theme, animation: GradientAnimation = "off", timeMs = 0): SwatchSampler {
-	return animateSampler(baseSampler(background, theme), animation, timeMs);
+export function backgroundSampler(background: BackgroundColor, theme: Theme, animation: GradientAnimation = "off", timeMs = 0, dynamicTint: DynamicTint = DEFAULT_DYNAMIC_TINT, now: Date = new Date()): SwatchSampler {
+	return animateSampler(baseSampler(background, theme, dynamicTint, now), animation, timeMs);
 }
 
-/** The static backdrop: the rainbow sweep itself, or a theme color scaled by the fade level. */
-function baseSampler(background: BackgroundColor, theme: Theme): SwatchSampler {
+/** The static backdrop: the rainbow sweep itself, or a theme color scaled by the fade level and, for "dynamic", the local time of day. */
+function baseSampler(background: BackgroundColor, theme: Theme, dynamicTint: DynamicTint, now: Date): SwatchSampler {
 	if (background === "rainbow") return swatchColor;
-	const rgb = parseThemeRgb(theme.getFgAnsi(background));
+	const rgb = parseThemeRgb(theme.getFgAnsi(background === "dynamic" ? dynamicTint : background));
 	if (!rgb) return swatchColor;
 	const [r, g, b] = rgb.split(";").map(Number) as [number, number, number];
+	const scale = background === "dynamic" ? daylightScale(now.getHours() + now.getMinutes() / 60) : 1;
 	return (_x: number, _width: number, level: number) => {
-		const f = Math.min(1, Math.max(0, level));
+		const f = Math.min(1, Math.max(0, level)) * scale;
 		return `${Math.round(r * f)};${Math.round(g * f)};${Math.round(b * f)}`;
 	};
 }

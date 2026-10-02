@@ -1066,6 +1066,57 @@ describe("background color setting (I-06 extension)", () => {
 		assert.equal(readPreferences().backgroundColor, "accent", "cycled one step right");
 	});
 
+	it("left from rainbow wraps to dynamic and keeps the default tint", async () => {
+		const wired = wire();
+		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
+		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		component.handleInput(KEY.down);
+		component.handleInput(KEY.left);
+		pressApply(component);
+		await handlerPromise;
+		assert.equal(readPreferences().backgroundColor, "dynamic");
+		assert.equal(readPreferences().dynamicTint, "accent");
+		assert.equal(state.dynamicTint, "accent");
+	});
+
+	it("records an applied theme color and preserves it while selecting dynamic", async () => {
+		const first = wire();
+		const firstPromise = first.pi.commands.get("topping-splash-settings")!.handler("", first.ctx.ctx as never);
+		const firstMenu = first.ctx.customComponents[0] as { handleInput(data: string): void };
+		firstMenu.handleInput(KEY.down);
+		for (let index = 0; index < 5; index++) firstMenu.handleInput(KEY.right);
+		pressApply(firstMenu);
+		await firstPromise;
+		assert.equal(readPreferences().backgroundColor, "success");
+		assert.equal(readPreferences().dynamicTint, "success");
+
+		resetModuleState();
+		const second = wire();
+		const secondPromise = second.pi.commands.get("topping-splash-settings")!.handler("", second.ctx.ctx as never);
+		const secondMenu = second.ctx.customComponents[0] as { handleInput(data: string): void };
+		secondMenu.handleInput(KEY.down);
+		for (let index = 0; index < 3; index++) secondMenu.handleInput(KEY.right);
+		pressApply(secondMenu);
+		await secondPromise;
+		assert.equal(readPreferences().backgroundColor, "dynamic");
+		assert.equal(readPreferences().dynamicTint, "success");
+		assert.equal(state.dynamicTint, "success");
+	});
+
+	it("resolves the dynamic tint from the background, then the stored key, then accent", () => {
+		const cases = [
+			{ preferences: { backgroundColor: "warning" }, expected: "warning" },
+			{ preferences: { backgroundColor: "dynamic" }, expected: "accent" },
+			{ preferences: { backgroundColor: "dynamic", dynamicTint: "error" }, expected: "error" },
+			{ preferences: { backgroundColor: "rainbow", dynamicTint: "rainbow" }, expected: "accent" },
+			{ preferences: { backgroundColor: "success", dynamicTint: "error" }, expected: "success" },
+		] as const;
+		for (const { preferences, expected } of cases) {
+			writeFileSync(join(env.agentDir, "pi-topping-splash.json"), JSON.stringify(preferences), "utf8");
+			assert.equal(readPreferences().dynamicTint, expected, JSON.stringify(preferences));
+		}
+	});
+
 	it("persists all three preferences atomically and leaves untouched toggles as-is", async () => {
 		const wired = wire();
 		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);

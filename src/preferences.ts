@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { BACKGROUND_COLOR_OPTIONS, GRADIENT_ANIMATION_OPTIONS, type BackgroundColor, type GradientAnimation } from "./color.ts";
+import { BACKGROUND_COLOR_OPTIONS, DEFAULT_DYNAMIC_TINT, GRADIENT_ANIMATION_OPTIONS, isDynamicTint, type BackgroundColor, type DynamicTint, type GradientAnimation } from "./color.ts";
 import { isModelRef } from "./model-picker.ts";
 import type { ModelRef } from "./model-picker.ts";
 
@@ -15,6 +15,8 @@ export interface SplashPreferences {
 	taglineReveal: ToggleMode;
 	/** Splash backdrop; defaults to "rainbow" when missing or unrecognized. */
 	backgroundColor: BackgroundColor;
+	/** Theme color a "dynamic" backdrop scales: the last theme color applied as the background. `readPreferences` always resolves it; optional so writers that never touch it can omit it. */
+	dynamicTint?: DynamicTint;
 	/** Animation for the splash backdrop (any background, rainbow included); defaults to "off". */
 	gradientAnimation: GradientAnimation;
 	/** "on" summarizes uncommitted changes at startup; defaults to "on" when missing or unrecognized and is "off" only when explicitly stored. */
@@ -33,12 +35,16 @@ type RawPreferences = {
 	menuGate?: unknown;
 	taglineReveal?: unknown;
 	backgroundColor?: unknown;
+	dynamicTint?: unknown;
 	gradientAnimation?: unknown;
 	changesSummary?: unknown;
 	changesSummaryModel?: unknown;
 } | null;
 
-/** Anything missing, unreadable or unrecognized falls back to the defaults: gate/reveal/changes-summary toggles "on", background "rainbow", animation "off". */
+/**
+ * Anything missing, unreadable or unrecognized falls back to the defaults: gate/reveal/changes-summary toggles "on", background "rainbow", dynamic tint "accent", animation "off".
+ * For `dynamicTint`, precedence is a theme-color `backgroundColor`, then a valid stored `dynamicTint`, then "accent"; "rainbow", "dynamic", and invalid values are excluded.
+ */
 export function readPreferences(): SplashPreferences {
 	let parsed: RawPreferences = null;
 	try {
@@ -48,6 +54,8 @@ export function readPreferences(): SplashPreferences {
 	}
 	const bg = parsed?.backgroundColor;
 	const backgroundColor = BACKGROUND_COLOR_OPTIONS.includes(bg as BackgroundColor) ? (bg as BackgroundColor) : "rainbow";
+	const dynamicTint = isDynamicTint(backgroundColor) ? backgroundColor
+		: isDynamicTint(parsed?.dynamicTint) ? parsed.dynamicTint : DEFAULT_DYNAMIC_TINT;
 	const anim = parsed?.gradientAnimation;
 	const gradientAnimation = GRADIENT_ANIMATION_OPTIONS.includes(anim as GradientAnimation) ? (anim as GradientAnimation) : "off";
 	const configuredSummaryModel = isModelRef(parsed?.changesSummaryModel)
@@ -57,6 +65,7 @@ export function readPreferences(): SplashPreferences {
 		menuGate: parsed?.menuGate === "off" ? "off" : "on",
 		taglineReveal: parsed?.taglineReveal === "off" ? "off" : "on",
 		backgroundColor,
+		dynamicTint,
 		gradientAnimation,
 		changesSummary: parsed?.changesSummary === "off" ? "off" : "on",
 		changesSummaryModel: configuredSummaryModel,

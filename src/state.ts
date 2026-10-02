@@ -1,5 +1,5 @@
 
-import type { BackgroundColor, GradientAnimation } from "./color.ts";
+import type { BackgroundColor, DynamicTint, GradientAnimation } from "./color.ts";
 import type { ShortcutHint } from "./discovery.ts";
 import type { ChangesPresentation } from "./changes-summary.ts";
 
@@ -28,6 +28,8 @@ export const state = {
 	changesStarted: false,
 	/** Current render-time splash backdrop, seeded from preferences and updated immediately on apply. */
 	backgroundColor: "rainbow" as BackgroundColor,
+	/** Current tint for the dynamic backdrop, seeded from preferences and updated immediately on apply. */
+	dynamicTint: "accent" as DynamicTint,
 	/** Current render-time backdrop animation, seeded from preferences and updated immediately on apply. */
 	gradientAnimation: "off" as GradientAnimation,
 	/**

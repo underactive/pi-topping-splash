@@ -1,7 +1,7 @@
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { backgroundSampler, RESET, panelBg, sgrBg, sgrFg, swatchColor } from "./color.ts";
-import type { BackgroundColor, GradientAnimation, Rgb, SwatchSampler } from "./color.ts";
+import { backgroundSampler, DEFAULT_DYNAMIC_TINT, RESET, panelBg, sgrBg, sgrFg, swatchColor } from "./color.ts";
+import type { BackgroundColor, DynamicTint, GradientAnimation, Rgb, SwatchSampler } from "./color.ts";
 import type { ShortcutHint } from "./discovery.ts";
 import { LOGO_INK, LOGO_LINES, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "./logo.ts";
 import { formatPromptSize, joinParts, padCenter, padRight, pickFitting, sanitizeTuiText, truncateVisible, visibleLength, wrapCommaDelimited } from "./text.ts";
@@ -240,7 +240,7 @@ export interface HeaderParts {
 	lines: string[];
 	/** Repaints just the tagline row; undefined when the panel has no tagline (nothing to reveal). */
 	repaintTagline?: () => { row: number; line: string };
-	/** Repaints every row with the backdrop advanced to `timeMs`; undefined when the backdrop is static. */
+	/** Repaints every row with the backdrop advanced to `timeMs` (and, for `dynamic`, the current local time); undefined when the backdrop is static. */
 	repaintBackdrop?: (timeMs: number) => string[];
 	/**
 	 * Asks `section` for its rows again and repaints only the ones that changed; undefined when the
@@ -268,12 +268,13 @@ export interface HeaderParts {
  *
  * Returns a `repaintTagline` hook so the reveal ticker can restyle just the tagline row instead
  * of rebuilding the whole O(W×H) splash on every 20ms tick, a `repaintBackdrop` hook so the
- * gradient animation ticker can repaint the rows without redoing this layout work, and a
- * `repaintSection` hook so a section that changes in place (a streaming summary) repaints only
- * the rows it touched.
+ * gradient animation ticker can repaint the rows without redoing this layout work. A `dynamic`
+ * backdrop reads the local clock whenever its sampler is built, so each rebuild and each
+ * `repaintBackdrop` frame reflects the current time. The `repaintSection` hook lets a section
+ * that changes in place (a streaming summary) repaint only the rows it touched.
  */
-export function buildHeaderParts(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0, prompts: string[] = [], shortcuts: ShortcutHint[] = [], section?: (band: SplashBand) => string[]): HeaderParts {
-	let sample = backgroundSampler(background, theme, animation, timeMs);
+export function buildHeaderParts(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0, prompts: string[] = [], shortcuts: ShortcutHint[] = [], section?: (band: SplashBand) => string[], dynamicTint: DynamicTint = DEFAULT_DYNAMIC_TINT): HeaderParts {
+	let sample = backgroundSampler(background, theme, animation, timeMs, dynamicTint);
 	const logoRows = LOGO_LINES.length;
 	const roomBesideLogo = width - SPLASH_MARGIN_X * 2 - LOGO_WIDTH - LOGO_GAP;
 	const sideBySide = roomBesideLogo >= PANEL_MIN_WIDTH;
@@ -354,7 +355,7 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 	const repaintBackdrop = animation !== "off"
 		? (nowMs: number) => {
 			// Reassigned rather than shadowed so a later tagline repaint paints over the same frame.
-			sample = backgroundSampler(background, theme, animation, nowMs);
+			sample = backgroundSampler(background, theme, animation, nowMs, dynamicTint);
 			return Array.from({ length: height }, (_, y) => paintRow(y, width, height, ink, panel, sample));
 		}
 		: undefined;

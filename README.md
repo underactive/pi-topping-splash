@@ -52,12 +52,17 @@ Esc also cancels. Enter on a toggle or cycle row does nothing; it only opens the
 picker.
 
 - **Startup gate menu** — show the startup gate menu below the splash on launch (ON by default)
-- **Background color** — cycle with ←/→ through `rainbow` (a full-width hue sweep) and the
-  seven active theme colors (`accent`, `border`, `borderAccent`, `borderMuted`, `success`,
-  `error`, `warning`). A theme color fades vertically from the full color at the top of the
-  splash to black at the bottom and stays constant horizontally, unlike the rainbow's left-right
-  hue sweep. Indexed (256-color) theme colors are approximated as RGB and still require a
-  truecolor-capable terminal to render the emitted backdrop.
+- **Background color** — cycle with ←/→ through `rainbow` (a full-width hue sweep), the seven
+  active theme colors (`accent`, `border`, `borderAccent`, `borderMuted`, `success`, `error`,
+  `warning`), and `dynamic` (last in the cycle). A theme color fades vertically from the full
+  color at the top of the splash to black at the bottom and stays constant horizontally, unlike
+  the rainbow's left-right hue sweep. `dynamic` uses the last theme color you applied as the
+  background (`accent` until you apply one), shows it at full strength in early afternoon and
+  dims toward 35% around 01:00 local time, with the same vertical fade. To pick its tint, apply
+  that theme color first, then apply `dynamic`. Its brightness is recomputed whenever the splash
+  repaints, continuously while an animation runs and otherwise on resize or menu actions;
+  animations wrap it like any backdrop. Indexed (256-color) theme colors are approximated as RGB
+  and still require a truecolor-capable terminal to render the emitted backdrop.
 - **Animate gradient** — cycle with ←/→ through `off` (the default) and four animations that
   work on any backdrop, `rainbow` included: `breathe` eases the whole backdrop's brightness on
   a slow sine, `flow` rolls brightness bands down the fade, `sheen` sweeps a diagonal highlight
