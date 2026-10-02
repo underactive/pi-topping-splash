@@ -1,4 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { colorToRgb } from "@earendil-works/pi-tui";
 
 export const SWATCH_SATURATION = 0.78;
 export const SWATCH_VALUE = 0.9;
@@ -50,12 +51,10 @@ export function hsvRgb(hue: number, saturation: number, value: number): Rgb {
 /**
  * Picks the plate the panel text can actually be read on. Themes that draw body text light
  * (the usual dark-terminal case) get the navy plate; dark body text gets a paper plate.
- * Both truecolor and indexed-color (256-color) ANSI sequences are analysed for luminance.
+ * Theme colors include resolved terminal defaults, so their luminance can be analysed directly.
  */
 export function panelBg(theme: Theme): Rgb {
-	const rgb = parseThemeRgb(theme.getFgAnsi("text"));
-	if (!rgb) return PANEL_BG_DARK;
-	const [r, g, b] = rgb.split(";").map(Number);
+	const { r, g, b } = colorToRgb(theme.colors.text);
 	const luminance = r * 0.299 + g * 0.587 + b * 0.114;
 	return luminance > PANEL_LUMINANCE_THRESHOLD ? PANEL_BG_DARK : PANEL_BG_LIGHT;
 }
@@ -125,39 +124,6 @@ export function daylightScale(hours: number): number {
 /** Samples the backdrop for one half-cell: horizontal position, terminal width, and vertical fade level (1 top, 0 bottom). */
 export type SwatchSampler = (x: number, width: number, level: number) => Rgb;
 
-/** Standard xterm 16-color palette, used to approximate indexed ANSI colors 0-15 as RGB. */
-const XTERM_16 = [
-	"0;0;0", "205;0;0", "0;205;0", "205;205;0", "0;0;238", "205;0;205", "0;205;205", "229;229;229",
-	"127;127;127", "255;0;0", "0;255;0", "255;255;0", "92;92;255", "255;0;255", "0;255;255", "255;255;255",
-] as const;
-
-/** Converts an xterm 256-color index (0-255) to an r;g;b triplet: 16-color palette, 6x6x6 cube, then grayscale ramp. */
-function xterm256ToRgb(index: number): Rgb {
-	if (index < 16) return XTERM_16[index]!;
-	if (index < 232) {
-		const i = index - 16;
-		const levels = [0, 95, 135, 175, 215, 255];
-		const r = levels[Math.floor(i / 36) % 6]!;
-		const g = levels[Math.floor(i / 6) % 6]!;
-		const b = levels[i % 6]!;
-		return `${r};${g};${b}`;
-	}
-	const v = 8 + (index - 232) * 10;
-	return `${v};${v};${v}`;
-}
-
-/** Parses a theme's foreground ANSI escape into an r;g;b triplet, from either truecolor or indexed sequences. */
-function parseThemeRgb(ansi: string): Rgb | undefined {
-	const truecolor = /\x1b\[38;2;(\d+);(\d+);(\d+)m/.exec(ansi);
-	if (truecolor) return `${truecolor[1]};${truecolor[2]};${truecolor[3]}`;
-	const indexed = /\x1b\[38;5;(\d+)m/.exec(ansi);
-	if (indexed) {
-		const index = Number(indexed[1]);
-		if (index >= 0 && index <= 255) return xterm256ToRgb(index);
-	}
-	return undefined;
-}
-
 export function backgroundSampler(background: BackgroundColor, theme: Theme, animation: GradientAnimation = "off", timeMs = 0, dynamicTint: DynamicTint = DEFAULT_DYNAMIC_TINT, now: Date = new Date()): SwatchSampler {
 	return animateSampler(baseSampler(background, theme, dynamicTint, now), animation, timeMs);
 }
@@ -165,9 +131,7 @@ export function backgroundSampler(background: BackgroundColor, theme: Theme, ani
 /** The static backdrop: the rainbow sweep itself, or a theme color scaled by the fade level and, for "dynamic", the local time of day. */
 function baseSampler(background: BackgroundColor, theme: Theme, dynamicTint: DynamicTint, now: Date): SwatchSampler {
 	if (background === "rainbow") return swatchColor;
-	const rgb = parseThemeRgb(theme.getFgAnsi(background === "dynamic" ? dynamicTint : background));
-	if (!rgb) return swatchColor;
-	const [r, g, b] = rgb.split(";").map(Number) as [number, number, number];
+	const { r, g, b } = colorToRgb(theme.colors[background === "dynamic" ? dynamicTint : background]);
 	const scale = background === "dynamic" ? daylightScale(now.getHours() + now.getMinutes() / 60) : 1;
 	return (_x: number, _width: number, level: number) => {
 		const f = Math.min(1, Math.max(0, level)) * scale;

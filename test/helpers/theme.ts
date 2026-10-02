@@ -44,19 +44,24 @@ export interface MakeThemeOptions {
 	mode?: "truecolor" | "256color";
 	/** Override the body-text color (drives panelBg's luminance decision). */
 	text?: string;
+	accent?: string;
+	success?: string;
 	dim?: string;
+	appearance?: "dark" | "light";
 	name?: string;
 }
 
 export function makeTheme(options: MakeThemeOptions = {}): Theme {
 	const fg = { ...FG_COLORS };
 	if (options.text !== undefined) fg.text = options.text;
+	if (options.accent !== undefined) fg.accent = options.accent;
+	if (options.success !== undefined) fg.success = options.success;
 	if (options.dim !== undefined) fg.dim = options.dim;
 	return new Theme(
 		fg as unknown as FgColors,
 		BG_COLORS as unknown as BgColors,
 		options.mode ?? "truecolor",
-		{ name: options.name ?? "test-theme" },
+		{ name: options.name ?? "test-theme", appearance: options.appearance },
 	);
 }
 

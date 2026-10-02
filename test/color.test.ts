@@ -23,7 +23,7 @@ import {
 	swatchColor,
 	isDynamicTint,
 } from "../src/color.ts";
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import { colorToRgb } from "@earendil-works/pi-tui";
 import { makeTheme } from "./helpers/theme.ts";
 
 const TRIPLET = /^(\d{1,3});(\d{1,3});(\d{1,3})$/;
@@ -140,6 +140,9 @@ describe("panelBg (C-05)", () => {
 		// Light text → high luminance → dark-terminal → navy plate
 		assert.equal(panelBg(makeTheme({ mode: "256color", text: "#e8e8e8" })), PANEL_BG_DARK);
 	});
+	it("uses resolved terminal-default text colors", () => {
+		assert.equal(panelBg(makeTheme({ text: "", appearance: "light" })), PANEL_BG_LIGHT);
+	});
 });
 
 describe("swatchColor (C-06, C-07)", () => {
@@ -205,8 +208,8 @@ describe("backgroundSampler", () => {
 		const theme = makeTheme();
 		for (const color of ["accent", "border", "borderAccent", "borderMuted", "success", "error", "warning"] as const) {
 			const sample = backgroundSampler(color, theme);
-			const expected = channels(theme.getFgAnsi(color).match(/\x1b\[38;2;(\d+;\d+;\d+)m/)![1]!);
-			assert.deepEqual(channels(sample(0, 80, 1)), expected, color);
+			const { r, g, b } = colorToRgb(theme.colors[color]);
+			assert.deepEqual(channels(sample(0, 80, 1)), [r, g, b], color);
 			assert.equal(sample(0, 80, 0), "0;0;0", color);
 			// x-independent: theme colors don't sweep horizontally.
 			assert.equal(sample(0, 80, 1), sample(40, 80, 1), color);
@@ -220,18 +223,18 @@ describe("backgroundSampler", () => {
 		assert.equal(sample(0, 80, 0), "0;0;0");
 	});
 
-	const malformedTheme = { getFgAnsi: () => "\x1b[31m" } as unknown as Theme;
-
 	it("truecolor accent sampler emits valid triplets", () => {
 		const theme = makeTheme();
 		const sample = backgroundSampler("accent", theme);
 		channels(sample(10, 80, 0.5));
 	});
 
-	it("malformed ANSI falls back to swatchColor", () => {
-		const sample = backgroundSampler("accent", malformedTheme);
-		assert.equal(sample(10, 80, 0.5), swatchColor(10, 80, 0.5));
-		assert.equal(sample(40, 80, 1), swatchColor(40, 80, 1));
+	it("resolves a terminal-default theme color instead of falling back to rainbow", () => {
+		const theme = makeTheme({ accent: "", appearance: "light" });
+		const { r, g, b } = colorToRgb(theme.colors.accent);
+		const sample = backgroundSampler("accent", theme);
+		assert.equal(sample(10, 80, 1), `${r};${g};${b}`);
+		assert.notEqual(sample(10, 80, 1), swatchColor(10, 80, 1));
 	});
 });
 
@@ -287,10 +290,12 @@ describe("dynamic backdrop (C-14)", () => {
 		assert.equal(defaultTint(0, 80, 1), accent);
 	});
 
-	it("falls back to swatchColor when the tint cannot be parsed", () => {
-		const malformedTheme = { getFgAnsi: () => "\x1b[31m" } as unknown as Theme;
-		const sample = backgroundSampler("dynamic", malformedTheme, "off", 0, "success", localDate(13));
-		assert.equal(sample(10, 80, 0.5), swatchColor(10, 80, 0.5));
+	it("resolves a terminal-default dynamic tint instead of falling back to rainbow", () => {
+		const theme = makeTheme({ success: "", appearance: "light" });
+		const { r, g, b } = colorToRgb(theme.colors.success);
+		const sample = backgroundSampler("dynamic", theme, "off", 0, "success", localDate(13));
+		assert.equal(sample(10, 80, 1), `${r};${g};${b}`);
+		assert.notEqual(sample(10, 80, 1), swatchColor(10, 80, 1));
 	});
 
 	it("wraps every animation deterministically over dynamic", () => {
