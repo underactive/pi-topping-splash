@@ -193,7 +193,7 @@ export function startChangesSummary(pi: ExtensionAPI, ctx: ExtensionContext, pre
 				presentation.version += 1;
 				// With the reveal animation on, a summary streams in rather than landing whole; a failure
 				// reason always shows at once.
-				if (summary.status === "done" && prefs.taglineReveal === "on") startSummaryStream(summary.text);
+				if (summary.status === "done" && prefs.taglineReveal === "on" && !state.conversationStarted) startSummaryStream(summary.text);
 				requestChangesRender();
 			} catch (error) {
 				if (signal.aborted || state.changes !== presentation) return;

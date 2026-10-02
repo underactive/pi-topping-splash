@@ -909,6 +909,24 @@ describe("startup changes integration (AC2-AC8)", () => {
 		assert.equal(summaryStream.timer, null, "shutdown stops the ticker");
 	});
 
+	it("does not stream a summary that lands after the first agent turn", async () => {
+		changesPreferences({ taglineReveal: "on" });
+		const response = deferred<ReturnType<typeof makeAssistantMessage>>();
+		const text = "Late response lands whole.";
+		const wired = wire({
+			projectTrusted: true,
+			execHandler: scriptedGit(env.cwd, DIRTY_STATUS),
+			streamSimple: async () => response.promise,
+		});
+		await startup(wired);
+		await waitForSummary(wired);
+		await wired.pi.emit("before_agent_start", { type: "before_agent_start", systemPrompt: "x" }, wired.ctx.ctx);
+		response.resolve(makeAssistantMessage(text));
+		await until(() => state.changes?.summary.status === "done");
+		assert.equal(summaryStream.timer, null, "the late summary does not restart the ticker");
+		assert.ok(mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n").includes(text));
+	});
+
 	it("keeps the changes-only header after gate proceed", async () => {
 		changesPreferences({ menuGate: "on", taglineReveal: "on" });
 		const response = deferred<ReturnType<typeof makeAssistantMessage>>();
