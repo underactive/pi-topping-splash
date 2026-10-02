@@ -1,4 +1,4 @@
-import { initTheme, Theme } from "@earendil-works/pi-coding-agent";
+import { initTheme, Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 
 type FgColors = ConstructorParameters<typeof Theme>[0];
 type BgColors = ConstructorParameters<typeof Theme>[1];
@@ -47,6 +47,7 @@ export interface MakeThemeOptions {
 	accent?: string;
 	success?: string;
 	dim?: string;
+	dimTokens?: readonly ThemeColor[];
 	appearance?: "dark" | "light";
 	name?: string;
 }
@@ -61,7 +62,7 @@ export function makeTheme(options: MakeThemeOptions = {}): Theme {
 		fg as unknown as FgColors,
 		BG_COLORS as unknown as BgColors,
 		options.mode ?? "truecolor",
-		{ name: options.name ?? "test-theme", appearance: options.appearance },
+		{ name: options.name ?? "test-theme", appearance: options.appearance, dim: options.dimTokens },
 	);
 }
 

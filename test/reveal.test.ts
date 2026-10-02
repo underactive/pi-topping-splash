@@ -8,7 +8,6 @@ import {
 	REVEAL_PEAK_ALPHA,
 	REVEAL_TICK_MS,
 	revealPos,
-	sgrChannels,
 	shimmerCell,
 	shimmerPalette,
 	startTaglineReveal,
@@ -21,6 +20,11 @@ import { sanitizeTuiText, visibleLength } from "../src/text.ts";
 import { resetModuleState } from "./helpers/reset.ts";
 import { enableTimers } from "./helpers/timers.ts";
 import { makeTheme } from "./helpers/theme.ts";
+
+function parseSgrChannels(ansi: string): [number, number, number] | null {
+	const match = /^\x1b\[38;2;(\d+);(\d+);(\d+)m$/.exec(ansi);
+	return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+}
 
 beforeEach(() => resetModuleState());
 afterEach(() => stopTaglineReveal());
@@ -137,18 +141,6 @@ describe("one-shot (R-06, R-07)", () => {
 	});
 });
 
-describe("sgrChannels (R-08)", () => {
-	it("parses truecolor SGR sequences", () => {
-		assert.deepEqual(sgrChannels("\x1b[38;2;10;20;30m"), [10, 20, 30]);
-		assert.deepEqual(sgrChannels("\x1b[38;2;0;0;0m"), [0, 0, 0]);
-	});
-	it("yields null for 256-color and garbage input", () => {
-		assert.equal(sgrChannels("\x1b[38;5;100m"), null);
-		assert.equal(sgrChannels(""), null);
-		assert.equal(sgrChannels("plain"), null);
-	});
-});
-
 describe("shimmerPalette (R-09)", () => {
 	it("derives base/highlight from a truecolor theme's dim and text", () => {
 		const palette = shimmerPalette(makeTheme({ text: "#e8e8e8", dim: "#808080" }));
@@ -174,7 +166,7 @@ describe("shimmerCell (R-10)", () => {
 	it("uses base ink outside the band and brightens toward the crest", () => {
 		// Crest cells also carry bold; extract the truecolor code specifically.
 		const channelAt = (dist: number): number => {
-			const parsed = sgrChannels(shimmerCell("x", dist, palette).match(/\x1b\[38;2;\d+;\d+;\d+m/)?.[0] ?? "");
+			const parsed = parseSgrChannels(shimmerCell("x", dist, palette).match(/\x1b\[38;2;\d+;\d+;\d+m/)?.[0] ?? "");
 			assert.ok(parsed, `dist=${dist}: no truecolor SGR found`);
 			return parsed[0];
 		};
@@ -200,6 +192,21 @@ describe("renderTagline (R-11, R-12, R-13)", () => {
 		startTaglineReveal();
 		timers.tick(REVEAL_TICK_MS);
 		assert.equal(sanitizeTuiText(renderTagline(theme, LONG_TAGLINE)), `- ${TAGLINE_PLACEHOLDER} -`);
+	});
+	it("reveals with resolved colors when dim is faint", (t) => {
+		const timers = enableTimers(t);
+		const faintTheme = makeTheme({ dimTokens: ["dim"] });
+		assert.ok(shimmerPalette(faintTheme), "faint truecolor colors must yield a palette");
+		startTaglineReveal();
+		const holdTicks = REVEAL_HOLD_MS / REVEAL_TICK_MS;
+		for (let i = 0; i < holdTicks + 8; i++) {
+			timers.tick(REVEAL_TICK_MS);
+		}
+		const pos = taglineReveal.pos;
+		assert.ok(pos >= 2 && pos < TAGLINE_PLACEHOLDER.length, `test setup: pos=${pos}`);
+		const visible = sanitizeTuiText(renderTagline(faintTheme, LONG_TAGLINE));
+		assert.ok(visible.startsWith(`- ${LONG_TAGLINE.slice(0, pos - 1)}`), "revealed prefix must replace the placeholder");
+		assert.ok(visible.endsWith(`${TAGLINE_PLACEHOLDER.slice(pos + 1)} -`), "unrevealed suffix must remain the placeholder");
 	});
 	it("overwrites the placeholder from the left mid-wipe", (t) => {
 		const timers = enableTimers(t);

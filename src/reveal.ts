@@ -1,8 +1,8 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { colorToRgb } from "@earendil-works/pi-tui";
 import { headerRenderState } from "./state.ts";
 import { sgrFg } from "./color.ts";
 import { sanitizeTuiText, visibleLength } from "./text.ts";
-
 
 /** Placeholder naming the tagline's two fields, wiped away by the reveal. */
 export const TAGLINE_PLACEHOLDER = "model · system prompt";
@@ -82,16 +82,14 @@ export interface ShimmerPalette {
 	highlight: [number, number, number];
 }
 
-/** Channels of a truecolor SGR; 256-color themes yield null, which disables the shimmer. */
-export function sgrChannels(ansi: string): [number, number, number] | null {
-	const match = /^\x1b\[38;2;(\d+);(\d+);(\d+)m$/.exec(ansi);
-	return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
-}
-
 export function shimmerPalette(theme: Theme): ShimmerPalette | null {
-	const base = sgrChannels(theme.getFgAnsi("dim"));
-	const highlight = sgrChannels(theme.getFgAnsi("text"));
-	return base && highlight ? { base, highlight } : null;
+	if (theme.getColorMode() !== "truecolor") return null;
+	const base = colorToRgb(theme.colors.dim);
+	const highlight = colorToRgb(theme.colors.text);
+	return {
+		base: [base.r, base.g, base.b],
+		highlight: [highlight.r, highlight.g, highlight.b],
+	};
 }
 
 /** One cell of the shimmer: a raised-cosine crest fading to the base ink outside the band. */
@@ -114,10 +112,10 @@ export function shimmerCell(ch: string, dist: number, palette: ShimmerPalette): 
  * characters) before the fallback check.
  *
  * Falls back to the settled line whenever a frame could not be drawn faithfully: a 256-color
- * theme has no channels to interpolate, a surrogate pair would desynchronize the code point index
- * from the `visibleLength` the panel budgets by, and a tagline shorter than the placeholder could
- * never overwrite all of it, so the label would still be showing once the wipe ran out of
- * characters.
+ * theme uses the settled form, a surrogate pair would desynchronize the code
+ * point index from the `visibleLength` the panel budgets by, and a tagline shorter than the
+ * placeholder could never overwrite all of it, so the label would still be showing once the wipe
+ * ran out of characters.
  */
 export function renderTagline(theme: Theme, tagline: string): string {
 	// Strip ANSI escapes from model/provider names that could break out of the themed styling.
