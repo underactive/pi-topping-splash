@@ -1311,4 +1311,16 @@ describe("gradient animation setting (I-17)", () => {
 		await emitted;
 		assert.equal(gradientAnimation.timer, null, "teardown stopped the ticker");
 	});
+
+	it("session shutdown stops both splash animations before the first turn", async () => {
+		writePreferences({ menuGate: "off", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow", changesSummary: "off" });
+		const wired = wire();
+		await startup(wired);
+		assert.notEqual(gradientAnimation.timer, null, "gradient ticker running");
+		assert.notEqual(taglineReveal.timer, null, "tagline ticker running");
+
+		await wired.pi.emit("session_shutdown", { type: "session_shutdown" }, wired.ctx.ctx);
+		assert.equal(gradientAnimation.timer, null, "shutdown stopped the gradient ticker");
+		assert.equal(taglineReveal.timer, null, "shutdown stopped the tagline ticker");
+	});
 });

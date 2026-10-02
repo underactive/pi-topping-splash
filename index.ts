@@ -28,6 +28,8 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", () => {
 		abortChangesSummary();
+		stopGradientAnimation();
+		stopTaglineReveal();
 	});
 
 	pi.on("before_agent_start", (event) => {
