@@ -145,9 +145,7 @@ describe("shimmerPalette (R-09)", () => {
 	it("derives base/highlight from a truecolor theme's dim and text", () => {
 		const palette = shimmerPalette(makeTheme({ text: "#e8e8e8", dim: "#808080" }));
 		assert.ok(palette, "truecolor theme must yield a palette");
-		const got = [palette.base, palette.highlight].map((c) => JSON.stringify(c)).sort();
-		const expected = [JSON.stringify([128, 128, 128]), JSON.stringify([232, 232, 232])].sort();
-		assert.deepEqual(got, expected);
+		assert.deepEqual(palette, { base: [128, 128, 128], highlight: [232, 232, 232] });
 	});
 	it("is disabled on 256-color themes", () => {
 		assert.equal(shimmerPalette(makeTheme({ mode: "256color" })), null);
