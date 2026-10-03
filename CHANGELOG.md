@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-10-02
 
 ### Added
 
@@ -35,6 +35,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pi 1.0.0 makes the fullscreen TUI the default, so the gate menu's row arithmetic now runs under
   the fullscreen layout for every user, not only those who opted in. The arithmetic already
   targeted that layout and is unchanged.
+
+### Fixed
+
+- The **View system prompt** gate row is capitalized, matching the menu's other entries.
+- Preferences are now written atomically — to a temporary file in the same directory, then
+  renamed over `pi-topping-splash.json` — so an interrupted or full-disk save can no longer
+  truncate the file, and a failed save leaves the previously saved settings intact.
+- `session_shutdown` stops the gradient animation and tagline reveal timers alongside the
+  changes-summary abort. Ending a session before the first agent turn previously left both
+  timers running.
+- A changes summary that resolves after the conversation has started is rendered whole instead
+  of restarting the streaming timer, which no one was left to watch.
+- Theme colors resolve through Pi's `colorToRgb` instead of a local ANSI parser. A color that
+  resolves through the terminal's defaults, or an indexed color, now renders as that color
+  rather than silently falling back to the rainbow sweep, and the info panel's plate is picked
+  from the resolved text color's luminance on every theme. The tagline shimmer still requires a
+  truecolor theme.
 
 ## [0.4.1] - 2026-09-30
 

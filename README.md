@@ -61,9 +61,10 @@ picker.
   dims toward 35% around 01:00 local time, with the same vertical fade. To pick its tint, apply
   that theme color first, then apply `dynamic`. Its brightness is sampled when the splash layout
   rebuilds (such as after resizing or applying settings) and on each gradient-animation frame;
-  ordinary menu navigation does not resample it. Animations wrap it like any backdrop. Indexed
-  (256-color) theme colors are approximated as RGB and still require a truecolor-capable terminal
-  to render the emitted backdrop.
+  ordinary menu navigation does not resample it. Animations wrap it like any backdrop. Theme
+  colors resolve through Pi's own `colorToRgb`, so indexed (256-color) and terminal-default
+  colors render as the terminal resolves them; the backdrop still needs a truecolor-capable
+  terminal to display the escapes it emits.
 - **Animate gradient** — cycle with ←/→ through `off` (the default) and four animations that
   work on any backdrop, `rainbow` included: `breathe` eases the whole backdrop's brightness on
   a slow sine, `flow` rolls brightness bands down the fade, `sheen` sweeps a diagonal highlight
@@ -82,7 +83,7 @@ picker.
   chosen model, or on the active model when none is chosen. Backspace or Delete resets the row to
   `session model`, which uses the active model.
 
-The gate, reveal, changes-summary toggle, and summary-model choice are read during startup and take effect on the next launch; the background color and gradient animation also apply immediately to an already-visible splash. All six keys are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless `PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (gate/reveal/changes summary ON, session model, background `rainbow`, animation `off`).
+The gate, reveal, changes-summary toggle, and summary-model choice are read during startup and take effect on the next launch; the background color and gradient animation also apply immediately to an already-visible splash. All seven keys are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless `PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (gate/reveal/changes summary ON, session model, background `rainbow`, dynamic tint `accent`, animation `off`).
 
 ## Splash Inventory
 
@@ -137,4 +138,4 @@ filters can execute during status/diff.
 - Splash shows but the gate does not? The startup gate menu toggle was turned off at some point — that choice persists across launches, so run `/topping-splash-settings` and turn it back on.
 - On `reload` events the gate is intentionally skipped — only a genuine `startup` reason triggers it.
 - Check that the package is installed under `~/.pi/agent/npm/node_modules/@underactive/pi-topping-splash` and that `pi --verbose` lists the loaded extension (it overrides `quietStartup`).
-- Truecolor (24-bit color) support in your terminal is required for the rainbow swatch backdrop and shimmer effect. On non-truecolor themes the shimmer and panel styling fall back to a plain render; the backdrop's truecolor escapes are left to the terminal's own handling.
+- Truecolor (24-bit color) support in your terminal is required for the rainbow swatch backdrop and the shimmer effect. On a 256-color theme the shimmer falls back to the settled tagline; the info panel's plate is still chosen from your terminal's resolved text color, and the backdrop's truecolor escapes are left to the terminal's own handling.
