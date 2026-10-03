@@ -24,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opting in, so bounded file lists and redacted diff excerpts go to the summary model's provider.
   An explicit `"changesSummary": "off"` is still honored, while an unrecognized value now resolves
   to on like the gate and reveal toggles. Turn it off with `/topping-splash-settings`.
+- Development and CI now typecheck and test against Pi 1.0.0; the
+  `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 0.99.2.
+  Pi 1.0.0 removes no public export, and none of the 46 symbols this extension imports changed
+  signature, so it needs no code changes.
+- The startup gate's vertical centering depends on the extension continuing to write
+  `quietStartup: true`. Pi 1.0.0's `quietStartup: "header"` would wrap the header in blank rows
+  that `state.splashRows` does not count, shifting the gate menu one row low. A `"header"` value
+  you set yourself is left as is.
+- Pi 1.0.0 makes the fullscreen TUI the default, so the gate menu's row arithmetic now runs under
+  the fullscreen layout for every user, not only those who opted in. The arithmetic already
+  targeted that layout and is unchanged.
 
 ## [0.4.1] - 2026-09-30
 

@@ -22,7 +22,12 @@ export function withSettings(cwd: string, fn: (settings: SettingsManager) => voi
 	}
 }
 
-/** Enables Pi's quietStartup setting for cwd when not already enabled. Returns true when the setting was changed (first call only per agent dir). */
+/**
+ * Enables Pi's quietStartup setting for cwd when not already enabled. Returns true when the setting was changed (first call only per agent dir).
+ * Writes the literal `true`, not Pi 1.0's "header": "header" wraps Pi's header in two Spacer(1) rows that
+ * `state.splashRows` does not count, so the gate's centering (gate.ts renderMenu) would sit the menu a row low.
+ * The truthiness guard is deliberate: it leaves a user's own "header" untouched.
+ */
 export function ensureQuietStartup(cwd: string): boolean {
 	let changed = false;
 	withSettings(cwd, (settings) => {
