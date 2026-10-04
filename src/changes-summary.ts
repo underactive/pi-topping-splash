@@ -18,6 +18,10 @@ export const EDITOR_RESERVED_ROWS = 6;
 const SUMMARY_ROWS_MAX = 6;
 const FILE_ROWS_MAX = 10;
 const SUMMARY_TIMEOUT_MS = 60_000;
+/** Attempts an empty answer gets before the failure is published, retries included: providers occasionally answer with no text at all. */
+const SUMMARY_EMPTY_RETRIES = 3;
+/** The one failure reason worth asking again for. */
+const EMPTY_SUMMARY_REASON = "empty response";
 /** Cells in a churn bar: the width of pi-topping-statusline's context bar. */
 export const BAR_CELLS = 20;
 /** Narrower than this and the bars are dropped rather than squeezed. */
@@ -93,8 +97,11 @@ function responseText(content: AssistantMessage["content"]): string {
 		.trim();
 }
 
-/** Make the bounded, thinking-off provider request and turn every failure into display state. */
-export async function summarizeChanges(
+/**
+ * One bounded, thinking-off provider request, turned into display state. Each attempt takes its own
+ * timeout, so a retry never inherits a spent budget from the attempt before it.
+ */
+async function requestSummary(
 	ctx: ExtensionContext,
 	model: SummaryModel,
 	prompt: { systemPrompt: string; text: string },
@@ -133,7 +140,26 @@ export async function summarizeChanges(
 		return { status: "failed", reason: errorReason(response.errorMessage ?? "request failed") };
 	}
 	const text = responseText(response.content);
-	return text ? { status: "done", text } : { status: "failed", reason: "empty response" };
+	return text ? { status: "done", text } : { status: "failed", reason: EMPTY_SUMMARY_REASON };
+}
+
+/**
+ * The summary, repeating the request while the provider answers with nothing. Only an empty answer
+ * is retried: a cancelled, timed out, refused, or thrown request is settled for this run and is
+ * published as it stands.
+ */
+export async function summarizeChanges(
+	ctx: ExtensionContext,
+	model: SummaryModel,
+	prompt: { systemPrompt: string; text: string },
+	signal: AbortSignal,
+): Promise<SummaryState> {
+	let last = await requestSummary(ctx, model, prompt, signal);
+	for (let retry = 0; retry < SUMMARY_EMPTY_RETRIES; retry++) {
+		if (last.status !== "failed" || last.reason !== EMPTY_SUMMARY_REASON) return last;
+		last = await requestSummary(ctx, model, prompt, signal);
+	}
+	return last;
 }
 
 let changesController: AbortController | null = null;

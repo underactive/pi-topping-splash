@@ -116,7 +116,10 @@ prints. The first prompt settles it on the whole text, and turning off the revea
 prints it whole. Clean repositories, non-repository directories, disabled or untrusted projects
 produce no section and no model request. The pending line is
 `summarizing local changes with provider/id…`; failures remain visible as
-`summary unavailable: <reason>` while the path listing stays on screen.
+`summary unavailable: <reason>` while the path listing stays on screen. A summary the provider
+returns with no text at all is requested again, up to three retries, before that line settles on
+`summary unavailable: empty response`; the pending line stays up through the retries, so the
+listing never flickers. Other failures (a cancelled, timed out, or refused request) are not retried.
 
 The section survives the startup gate's **New session** choice as a slim changes-only header, laid
 out the same way at the splash margin, at most 100 columns wide, on the plain terminal background
