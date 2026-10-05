@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-05
+
 ### Changed
 
 - Development and CI now typecheck and test against Pi 1.0.3; the
@@ -24,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attempt carries its own timeout, and session shutdown stops the retries. Cancelled, timed out,
   thrown, and error-stopped requests are not retried, and the pending line stays up through the
   retries, so the path listing never changes shape or flickers.
+- Change-summary cells with no additions or deletions now have zero width instead of a negative
+  width.
 
 ## [0.5.0] - 2026-10-02
 
