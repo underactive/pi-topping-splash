@@ -840,11 +840,10 @@ describe("startup changes integration (AC2-AC8)", () => {
 
 	it("keeps the listing on model failures and reports each failure reason", async () => {
 		// Only an empty answer is retried, so every other reason costs exactly one request.
-		const cases: { label: string; streamSimple: SummaryResponder; attempts: number }[] = [
-			{ label: "rejection", streamSimple: async () => { throw new Error("provider exploded"); }, attempts: 1 },
-			{ label: "error stop", streamSimple: async () => makeAssistantMessage("", "error", "provider refused"), attempts: 1 },
-			{ label: "aborted stop", streamSimple: async () => makeAssistantMessage("", "aborted"), attempts: 1 },
-			{ label: "empty text", streamSimple: async () => makeAssistantMessage(""), attempts: 4 },
+		const cases: { label: string; streamSimple: SummaryResponder }[] = [
+			{ label: "rejection", streamSimple: async () => { throw new Error("provider exploded"); } },
+			{ label: "error stop", streamSimple: async () => makeAssistantMessage("", "error", "provider refused") },
+			{ label: "aborted stop", streamSimple: async () => makeAssistantMessage("", "aborted") },
 		];
 		for (const [index, testCase] of cases.entries()) {
 			if (index > 0) resetModuleState();
@@ -855,18 +854,31 @@ describe("startup changes integration (AC2-AC8)", () => {
 			const text = mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n");
 			assert.ok(text.includes("[local changes] +1, ~1, -1"), testCase.label);
 			assert.ok(text.includes("summary unavailable:"), testCase.label);
-			assert.equal(wired.ctx.streamCalls.length, testCase.attempts, testCase.label);
+			assert.equal(wired.ctx.streamCalls.length, 1, testCase.label);
 		}
 	});
 
 	it("retries an empty summary and lands the answer a later attempt gives (CS-07)", async () => {
 		changesPreferences();
+		const responses = Array.from({ length: 4 }, () => deferred<ReturnType<typeof makeAssistantMessage>>());
 		const wired = wire({
 			projectTrusted: true,
 			execHandler: scriptedGit(env.cwd, DIRTY_STATUS),
-			streamSimple: async () => makeAssistantMessage(wired.ctx.streamCalls.length < 4 ? "" : "Recovered summary."),
+			streamSimple: async () => responses[wired.ctx.streamCalls.length - 1]!.promise,
 		});
 		await startup(wired);
+		await until(() => wired.ctx.streamCalls.length === 1);
+		assert.ok(state.changes);
+		const version = state.changes.version;
+		responses[0]!.resolve(makeAssistantMessage(""));
+		await until(() => wired.ctx.streamCalls.length === 2);
+		assert.equal(state.changes?.summary.status, "pending");
+		assert.equal(state.changes?.version, version);
+		responses[1]!.resolve(makeAssistantMessage(""));
+		await until(() => wired.ctx.streamCalls.length === 3);
+		responses[2]!.resolve(makeAssistantMessage(""));
+		await until(() => wired.ctx.streamCalls.length === 4);
+		responses[3]!.resolve(makeAssistantMessage("Recovered summary."));
 		await until(() => state.changes?.summary.status === "done");
 		assert.equal(wired.ctx.streamCalls.length, 4);
 		assert.deepEqual(state.changes?.summary, { status: "done", text: "Recovered summary." });
@@ -882,7 +894,9 @@ describe("startup changes integration (AC2-AC8)", () => {
 		await until(() => state.changes?.summary.status === "failed");
 		assert.equal(wired.ctx.streamCalls.length, 4);
 		assert.deepEqual(state.changes?.summary, { status: "failed", reason: "empty response" });
-		assert.ok(mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n").includes("summary unavailable: empty response"));
+		const text = mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n");
+		assert.ok(text.includes("[local changes] +1, ~1, -1"));
+		assert.ok(text.includes("summary unavailable: empty response"));
 	});
 
 	it("stops retrying an empty summary once the run is aborted (CS-07)", async () => {

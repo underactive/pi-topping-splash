@@ -9,18 +9,21 @@ import { GATE_DONE_ENV } from "./src/relaunch.ts";
 import { runStartupGate } from "./src/gate.ts";
 import { showSplashSettings } from "./src/settings.ts";
 
-/** Pi extension: replaces the default startup header with a full-color splash, optionally adds an interactive startup gate menu and an on-by-default uncommitted-changes summary, and registers the /topping-splash-settings command. Listens to model_select, before_agent_start, session_shutdown (abort summary work and settle its stream), and session_start. */
+function refreshPromptSize(systemPrompt: string): void {
+	const newSize = Buffer.byteLength(systemPrompt, "utf8");
+	if (newSize === state.systemPromptSize) return;
+	state.systemPromptSize = newSize;
+	headerRenderState.invalidate?.();
+	headerRenderState.requestRender?.();
+}
+
+/** Pi extension: replaces the default startup header with a full-color splash, optionally adds an interactive startup gate menu and an on-by-default uncommitted-changes summary, and registers the /topping-splash-settings command. */
 export default function piStartupGreeter(pi: ExtensionAPI) {
 	pi.on("model_select", (_event, ctx) => {
 		// Model rotation may change the base system prompt — refresh the size.
 		// Guard against calls before the model is fully initialized.
 		try {
-			const newSize = Buffer.byteLength(ctx.getSystemPrompt(), "utf8");
-			if (newSize !== state.systemPromptSize) {
-				state.systemPromptSize = newSize;
-				headerRenderState.invalidate?.();
-				headerRenderState.requestRender?.();
-			}
+			refreshPromptSize(ctx.getSystemPrompt());
 		} catch (err) {
 			if (!(err instanceof Error && /not (?:available|ready)/i.test(err.message))) throw err;
 		}
@@ -40,12 +43,7 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 			// The header scrolls away from here, so a summary still streaming settles instead of redrawing it.
 			stopSummaryStream();
 		}
-		const newSize = Buffer.byteLength(event.systemPrompt, "utf8");
-		if (newSize !== state.systemPromptSize) {
-			state.systemPromptSize = newSize;
-			headerRenderState.invalidate?.();
-			headerRenderState.requestRender?.();
-		}
+		refreshPromptSize(event.systemPrompt);
 	});
 
 	pi.on("session_start", async (event, ctx) => {
@@ -79,16 +77,14 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 		if (prefs.menuGate === "off") return;
 
 		const resolution = await runStartupGate(pi, ctx);
+		stopTaglineReveal();
+		stopGradientAnimation();
 		if (resolution === "quit") {
-			stopTaglineReveal();
-			stopGradientAnimation();
 			ctx.shutdown();
 			return;
 		}
 		// "proceed" (New session / esc): stop the splash, but retain a slim changes-only header
 		// unless the changes summary is turned off.
-		stopTaglineReveal();
-		stopGradientAnimation();
 		const clearScreen = headerRenderState.forceRedraw;
 		if (readPreferences().changesSummary === "on") installChangesHeader(ctx);
 		else ctx.ui.setHeader(() => ({ render: () => [], invalidate() {} }));

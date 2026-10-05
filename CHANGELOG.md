@@ -21,10 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no text at all, leaving the section on `summary unavailable: empty response` for the rest of
   the session. An empty answer is now requested again, up to three retries, and the first attempt to
   return text becomes the summary; only an empty final attempt still reports the failure. Each
-  attempt carries its own timeout, and the run's abort signal still cancels mid-chain, so session
-  shutdown settles the summary immediately. Cancelled, timed out, thrown, and error-stopped
-  requests are not retried, and the pending line stays up through the retries, so the path listing
-  never changes shape or flickers.
+  attempt carries its own timeout, and session shutdown stops the retries. Cancelled, timed out,
+  thrown, and error-stopped requests are not retried, and the pending line stays up through the
+  retries, so the path listing never changes shape or flickers.
 
 ## [0.5.0] - 2026-10-02
 

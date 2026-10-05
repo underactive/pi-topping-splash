@@ -146,7 +146,7 @@ async function requestSummary(
 /**
  * The summary, repeating the request while the provider answers with nothing. Only an empty answer
  * is retried: a cancelled, timed out, refused, or thrown request is settled for this run and is
- * published as it stands.
+ * returned as it stands.
  */
 export async function summarizeChanges(
 	ctx: ExtensionContext,
@@ -290,11 +290,6 @@ export function stopSummaryStream(): void {
 	changesRenderState.requestRender?.();
 }
 
-/** The part of `text` the stream has printed so far; all of it once the stream has settled. */
-function streamedPrefix(text: string): string {
-	return [...text].slice(0, Math.floor(summaryStream.shown)).join("");
-}
-
 function startTruncated(text: string, width: number): string {
 	const safe = sanitizeTuiText(text);
 	if (width <= 0) return "";
@@ -332,19 +327,14 @@ function statCell(theme: Theme, entry: ChangeEntry, omitZero: boolean): { text: 
 	const { stat } = entry;
 	if (stat?.binary) return { text: theme.fg("dim", "bin"), width: 3 };
 	if (stat) {
-		const added = `+${stat.added}`;
-		const deleted = `-${stat.deleted}`;
-		if (omitZero) {
-			const halves = [
-				...(stat.added > 0 ? [{ text: theme.fg("text", added), width: added.length }] : []),
-				...(stat.deleted > 0 ? [{ text: theme.fg("error", deleted), width: deleted.length }] : []),
-			];
-			return { text: halves.map((half) => half.text).join(" "), width: halves.reduce((sum, half) => sum + half.width + 1, -1) };
-		}
-		// Each half takes its churn-bar half's color, `text` added and `error` removed; a zero half drops to `dim`.
-		const addedText = stat.added > 0 ? theme.fg("text", added) : theme.fg("dim", added);
-		const deletedText = stat.deleted > 0 ? theme.fg("error", deleted) : theme.fg("dim", deleted);
-		return { text: `${addedText} ${deletedText}`, width: added.length + 1 + deleted.length };
+		const halves = [
+			{ count: stat.added, text: `+${stat.added}`, color: "text" as const },
+			{ count: stat.deleted, text: `-${stat.deleted}`, color: "error" as const },
+		].filter((half) => !omitZero || half.count > 0);
+		return {
+			text: halves.map((half) => theme.fg(half.count > 0 ? half.color : "dim", half.text)).join(" "),
+			width: halves.map((half) => half.text).join(" ").length,
+		};
 	}
 	if (entry.untracked || entry.kind === "added") return { text: theme.fg("dim", "new"), width: 3 };
 	return { text: "", width: 0 };
@@ -405,9 +395,9 @@ function compactChangesLine(theme: Theme, presentation: ChangesPresentation, wid
 	const separator = theme.fg("dim", " · ");
 
 	// Prefer the path with the most counted churn, retaining git's order on ties or before stats land.
+	const churn = (candidate: ChangeEntry) => candidate.stat?.binary ? 0 : (candidate.stat?.added ?? 0) + (candidate.stat?.deleted ?? 0);
 	const featured = entries.reduce<ChangeEntry | undefined>((best, entry) => {
 		if (!best) return entry;
-		const churn = (candidate: ChangeEntry) => candidate.stat?.binary ? 0 : (candidate.stat?.added ?? 0) + (candidate.stat?.deleted ?? 0);
 		return churn(entry) > churn(best) ? entry : best;
 	}, undefined);
 	if (featured) {
@@ -425,7 +415,7 @@ function compactChangesLine(theme: Theme, presentation: ChangesPresentation, wid
 	}
 
 	const normalized = sanitizeTuiText(summaryText(summary).replace(/\s+/g, " ")).trim();
-	const singleLine = summary.status === "done" ? streamedPrefix(normalized) : normalized;
+	const singleLine = summary.status === "done" ? [...normalized].slice(0, Math.floor(summaryStream.shown)).join("") : normalized;
 	const remaining = width - visibleWidth(line) - 3;
 	if (singleLine && remaining >= 4) {
 		// Cut the plain text so the ellipsis stays inside the dim span.
