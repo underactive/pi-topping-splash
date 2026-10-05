@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Development and CI now typecheck and test against Pi 1.0.3; the
+  `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.0.0.
+  Pi 1.0.1–1.0.3 remove no public export and change none of the symbols this extension imports,
+  so it needs no code changes. The 1.0.3 Home/End keybinding change does not reach the startup
+  gate, model picker, or settings menus.
+
 ### Fixed
 
 - **Retrying an empty changes summary.** The startup `[local changes]` summary sometimes came back
