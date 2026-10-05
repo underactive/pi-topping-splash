@@ -18,7 +18,7 @@ export const EDITOR_RESERVED_ROWS = 6;
 const SUMMARY_ROWS_MAX = 6;
 const FILE_ROWS_MAX = 10;
 const SUMMARY_TIMEOUT_MS = 60_000;
-/** Attempts an empty answer gets before the failure is published, retries included: providers occasionally answer with no text at all. */
+/** Retries an empty answer gets after the first attempt before the failure is published: providers occasionally answer with no text at all. */
 const SUMMARY_EMPTY_RETRIES = 3;
 /** The one failure reason worth asking again for. */
 const EMPTY_SUMMARY_REASON = "empty response";
