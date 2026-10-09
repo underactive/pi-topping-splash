@@ -9,6 +9,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import piStartupGreeter from "../index.ts";
 import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
 import { EDITOR_RESERVED_ROWS, startSummaryStream, stopSummaryStream, summarizeChanges, summaryStream } from "../src/changes-summary.ts";
+import { LOCAL_CHANGES_COMMAND, LOCAL_CHANGES_ENTRY_TYPE } from "../src/local-changes.ts";
 import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
 import { stopTaglineReveal, taglineReveal } from "../src/reveal.ts";
 import { headerRenderState, state } from "../src/state.ts";
@@ -144,13 +145,15 @@ async function persist(target: Partial<SplashPreferences>): Promise<void> {
 }
 
 describe("registration (I-01)", () => {
-	it("registers no flags, four handlers and the topping-splash-settings command", () => {
+	it("registers no flags, four handlers, both commands, and the local-changes renderer", () => {
 		const { pi } = wire();
 		assert.deepEqual(pi.registeredFlags, [], "the slash command is the only toggle — no CLI flags");
 		for (const event of ["model_select", "before_agent_start", "session_shutdown", "session_start"]) {
 			assert.ok(pi.handlers.has(event), `handler for ${event}`);
 		}
 		assert.ok(pi.commands.has("topping-splash-settings"));
+		assert.ok(pi.commands.has(LOCAL_CHANGES_COMMAND));
+		assert.ok(pi.entryRenderers.has(LOCAL_CHANGES_ENTRY_TYPE));
 		assert.ok(!pi.commands.has("topping-splash"), "old command name is gone");
 	});
 });

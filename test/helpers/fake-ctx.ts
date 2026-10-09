@@ -20,6 +20,7 @@ export interface FakeCtxHarness {
 	ctx: ExtensionContext;
 	bag: FakeCtxBag;
 	notifications: { message: string; type: string | undefined }[];
+	statusCalls: { key: string; text: string | undefined }[];
 	setThemeCalls: (string | Theme)[];
 	setHeaderCalls: unknown[];
 	setFooterCalls: unknown[];
@@ -66,6 +67,7 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 	const harness = {
 		bag,
 		notifications: [],
+		statusCalls: [],
 		setThemeCalls: [],
 		setHeaderCalls: [],
 		setFooterCalls: [],
@@ -81,6 +83,9 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 		},
 		notify(message: string, type?: "info" | "warning" | "error"): void {
 			harness.notifications.push({ message, type });
+		},
+		setStatus(key: string, text: string | undefined): void {
+			harness.statusCalls.push({ key, text });
 		},
 		setHeader(factory: unknown): void {
 			harness.setHeaderCalls.push(factory);

@@ -76,14 +76,21 @@ picker.
 - **Model + prompt size reveal animation** — shimmer-reveal the model · prompt-size tagline on
   the splash, and stream the changes summary in a character at a time; when OFF both render their
   final text immediately (ON by default)
-- **Summarize uncommitted changes** — show the info panel's `[local changes]` section with a model summary of uncommitted changes (ON by default); turning it off skips git and the model request.
+- **Summarize uncommitted changes** — show the info panel's `[local changes]` section with a model
+  summary of uncommitted changes (ON by default); turning it off skips the startup git scan and
+  model request, but does not disable `/local-changes`.
 - **Summary model** — Enter (or Space) opens the same two-pane model picker as the startup gate:
   type to filter, Tab or ←/→ to switch panes, Enter to select. The thinking pane belongs to that
   shared picker but is ignored here, since summaries always run with thinking off. It starts on the
   chosen model, or on the active model when none is chosen. Backspace or Delete resets the row to
   `session model`, which uses the active model.
 
-The gate, reveal, changes-summary toggle, and summary-model choice are read during startup and take effect on the next launch; the background color and gradient animation also apply immediately to an already-visible splash. All seven keys are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless `PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (gate/reveal/changes summary ON, session model, background `rainbow`, dynamic tint `accent`, animation `off`).
+The gate, reveal, and changes-summary toggle take effect on the next launch. Startup reads the
+Summary model at launch. `/local-changes` reads that model each time a run starts. The background
+color and gradient animation also apply immediately to an already-visible splash. All seven keys
+are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless
+`PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (gate/reveal/
+changes summary ON, session model, background `rainbow`, dynamic tint `accent`, animation `off`).
 
 ## Splash Inventory
 
@@ -131,6 +138,28 @@ not a guarantee. Because the summary is on by default, turn it off with
 `/topping-splash-settings` (or `"changesSummary": "off"` in `pi-topping-splash.json`) when that
 privacy trade-off is not acceptable. Pi's project-trust setting is also required because Git
 filters can execute during status/diff.
+
+## Local changes command
+
+Run `/local-changes` in a trusted project in TUI mode. The command ignores arguments. It allows
+one active run at a time. The footer reports `collecting local changes…`, then
+`summarizing local changes with provider/id…` when a model is available.
+
+The command adds a display-only entry. It shows file paths with churn bars and line counts. The
+entry uses the same plate as the splash, up to 100 columns wide. It shows up to 20 file paths.
+When more files exist, it shows the first 20 paths and an extra `… N more` row. It shows at most 6
+summary rows. The summary lands whole and does not stream. The editor stays usable during the run.
+A clean tree displays `none`. Git failure displays `not a git repository, or git is unavailable`.
+Summary failure displays `summary unavailable: <reason>`. An empty answer gets the same three retries as
+the startup summary.
+
+The command runs when the startup summary toggle is off. It uses the configured Summary model, or
+the active session model when no model is set. It reads the Summary model each time a run starts.
+Each run collects fresh data and requests a new summary; it does not use a cache.
+
+Pi stores the entry in the session file. The entry stays out of model context after `/reload`,
+resume, and `/compact`. The command uses the same bounded, redacted diff input as the startup
+summary. Session shutdown aborts an active run. An aborted run adds no entry.
 
 ## Troubleshooting
 

@@ -37,7 +37,7 @@ export const SUMMARY_MS_PER_CHAR = REVEAL_MS_PER_CHAR / 2;
 /** Rows the listing needs below its gap: the heading, one file row, the blank row above the summary, and one summary row. Shorter budgets use a single line. */
 export const LISTING_MIN_ROWS = 4;
 /** The section heading, bracketed like the info panel's other headings. */
-const HEADING = "[local changes]";
+export const CHANGES_HEADING = "[local changes]";
 /** How much of each statusline git color survives the dim; the rest is the backdrop showing through. */
 const GIT_COLOR_STRENGTH = 0.6;
 
@@ -68,6 +68,17 @@ export interface ChangesPresentation {
 	version: number;
 }
 
+/** Where a changes run publishes each stage, and whether its presentation is still wanted. */
+export interface ChangesSink {
+	publish(presentation: ChangesPresentation): void;
+	isCurrent(presentation: ChangesPresentation): boolean;
+}
+
+export type ChangesOutcome =
+	| { kind: "unavailable" }
+	| { kind: "clean" }
+	| { kind: "changes"; presentation: ChangesPresentation };
+
 type SummaryModel = NonNullable<ExtensionContext["model"]>;
 
 /** Resolve a configured summary model, falling back to the active session model when needed. */
@@ -83,7 +94,7 @@ export function resolveSummaryModel(
 	return { reason: "no model selected" };
 }
 
-function errorReason(error: unknown): string {
+export function errorReason(error: unknown): string {
 	const raw = error instanceof Error ? error.message : String(error);
 	const firstLine = sanitizeTuiText(raw).split(/\r?\n/, 1)[0]?.trim() ?? "";
 	return firstLine ? truncateToWidth(firstLine, 80, ELLIPSIS) : "request failed";
@@ -164,8 +175,58 @@ export async function summarizeChanges(
 
 let changesController: AbortController | null = null;
 
-function requestChangesRender(): void {
-	changesRenderState.requestRender?.();
+/** One collection and summary run. Returns undefined when the run was aborted or its presentation went stale. */
+export async function runChangesPipeline(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	modelRef: ModelRef | undefined,
+	signal: AbortSignal,
+	sink: ChangesSink,
+): Promise<ChangesOutcome | undefined> {
+	const snapshot = await collectChanges(pi, ctx.cwd, signal);
+	if (signal.aborted) return undefined;
+	if (!snapshot) return { kind: "unavailable" };
+	if (snapshot.entries.length === 0) return { kind: "clean" };
+
+	const resolved = resolveSummaryModel(ctx, modelRef);
+	const presentation: ChangesPresentation = {
+		entries: snapshot.entries,
+		summary: "reason" in resolved
+			? { status: "failed", reason: resolved.reason }
+			: { status: "pending", modelLabel: resolved.label },
+		version: 1,
+	};
+	sink.publish(presentation);
+
+	// Line counts fill in once the listing is already on screen; without them the rows carry no bars.
+	const stats = await collectLineStats(pi, snapshot.root, signal);
+	if (signal.aborted || !sink.isCurrent(presentation)) return undefined;
+	if (stats && stats.size > 0) {
+		presentation.entries = presentation.entries.map((entry) => {
+			const stat = stats.get(entry.path);
+			return stat ? { ...entry, stat } : entry;
+		});
+		presentation.version += 1;
+		sink.publish(presentation);
+	}
+	if ("reason" in resolved) return { kind: "changes", presentation };
+
+	try {
+		const details = await collectChangeDetails(pi, snapshot, signal);
+		if (signal.aborted || !sink.isCurrent(presentation)) return undefined;
+		const prompt = buildSummaryPrompt(snapshot, details);
+		const summary = await summarizeChanges(ctx, resolved.model, prompt, signal);
+		if (signal.aborted || !sink.isCurrent(presentation)) return undefined;
+		presentation.summary = summary;
+		presentation.version += 1;
+		sink.publish(presentation);
+	} catch (error) {
+		if (signal.aborted || !sink.isCurrent(presentation)) return undefined;
+		presentation.summary = { status: "failed", reason: errorReason(error) };
+		presentation.version += 1;
+		sink.publish(presentation);
+	}
+	return { kind: "changes", presentation };
 }
 
 /**
@@ -178,55 +239,19 @@ export function startChangesSummary(pi: ExtensionAPI, ctx: ExtensionContext, pre
 	state.changesStarted = true;
 	const controller = new AbortController();
 	changesController = controller;
-	const signal = controller.signal;
 
 	void (async () => {
 		try {
-			const snapshot = await collectChanges(pi, ctx.cwd, signal);
-			if (!snapshot || snapshot.entries.length === 0 || signal.aborted) return;
-
-			const resolved = resolveSummaryModel(ctx, prefs.changesSummaryModel);
-			const presentation: ChangesPresentation = {
-				entries: snapshot.entries,
-				summary: "reason" in resolved
-					? { status: "failed", reason: resolved.reason }
-					: { status: "pending", modelLabel: resolved.label },
-				version: 1,
-			};
-			state.changes = presentation;
-			requestChangesRender();
-
-			// Line counts fill in once the listing is already on screen; without them the rows carry no bars.
-			const stats = await collectLineStats(pi, snapshot.root, signal);
-			if (signal.aborted || state.changes !== presentation) return;
-			if (stats && stats.size > 0) {
-				presentation.entries = presentation.entries.map((entry) => {
-					const stat = stats.get(entry.path);
-					return stat ? { ...entry, stat } : entry;
-				});
-				presentation.version += 1;
-				requestChangesRender();
-			}
-			if ("reason" in resolved) return;
-
-			try {
-				const details = await collectChangeDetails(pi, snapshot, signal);
-				if (signal.aborted || state.changes !== presentation) return;
-				const prompt = buildSummaryPrompt(snapshot, details);
-				const summary = await summarizeChanges(ctx, resolved.model, prompt, signal);
-				if (state.changes !== presentation || signal.aborted) return;
-				presentation.summary = summary;
-				presentation.version += 1;
-				// With the reveal animation on, a summary streams in rather than landing whole; a failure
-				// reason always shows at once.
-				if (summary.status === "done" && prefs.taglineReveal === "on" && !state.conversationStarted) startSummaryStream(summary.text);
-				requestChangesRender();
-			} catch (error) {
-				if (signal.aborted || state.changes !== presentation) return;
-				presentation.summary = { status: "failed", reason: errorReason(error) };
-				presentation.version += 1;
-				requestChangesRender();
-			}
+			await runChangesPipeline(pi, ctx, prefs.changesSummaryModel, controller.signal, {
+				publish(presentation) {
+					state.changes = presentation;
+					// With the reveal animation on, a summary streams in rather than landing whole; a failure
+					// reason always shows at once.
+					if (presentation.summary.status === "done" && prefs.taglineReveal === "on" && !state.conversationStarted) startSummaryStream(presentation.summary.text);
+					changesRenderState.requestRender?.();
+				},
+				isCurrent: (presentation) => state.changes === presentation,
+			});
 		} catch {
 			// Git discovery is display-only. Non-repositories, missing git, and aborted runs are silent.
 		} finally {
@@ -361,12 +386,12 @@ function churnBar(theme: Theme, stat: LineStat | undefined, maxChurn: number, ce
 	].join("");
 }
 
-function summaryText(summary: SummaryState): string {
+export function summaryText(summary: SummaryState): string {
 	if (summary.status === "done") return summary.text;
 	return summary.status === "pending" ? `summarizing local changes with ${summary.modelLabel}…` : `summary unavailable: ${summary.reason}`;
 }
 
-function summaryLines(theme: Theme, summary: SummaryState, width: number): string[] {
+function summaryLines(theme: Theme, summary: SummaryState, width: number, shown: number): string[] {
 	const safeWidth = Math.max(1, width);
 	if (summary.status !== "done") return [theme.fg("dim", sanitizeTuiText(summaryText(summary)))];
 	const lines: string[] = [];
@@ -376,7 +401,7 @@ function summaryLines(theme: Theme, summary: SummaryState, width: number): strin
 		lines.push(...(wrapped.length > 0 ? wrapped : [""]));
 	}
 	// Wrapped as the whole text, so the stream fills rows already laid out instead of reflowing them.
-	let left = summaryStream.shown;
+	let left = shown;
 	return lines.map((line) => {
 		const chars = [...line];
 		const printed = chars.slice(0, Math.max(0, Math.floor(left))).join("");
@@ -386,9 +411,9 @@ function summaryLines(theme: Theme, summary: SummaryState, width: number): strin
 }
 
 /** One row for a budget too short for the listing: the heading and its counts, the most changed path, and a summary preview. */
-function compactChangesLine(theme: Theme, presentation: ChangesPresentation, width: number, margin: number, colors: Record<ChangeKind, string>): string {
+function compactChangesLine(theme: Theme, presentation: ChangesPresentation, width: number, margin: number, colors: Record<ChangeKind, string>, shown: number): string {
 	const { entries, summary } = presentation;
-	let line = `${" ".repeat(margin)}${theme.fg("warning", HEADING)}`;
+	let line = `${" ".repeat(margin)}${theme.fg("warning", CHANGES_HEADING)}`;
 	const counts = kindCounts(entries);
 	// The counts come whole or not at all.
 	if (counts && visibleWidth(line) + 1 + counts.length <= width) line += ` ${theme.fg("text", counts)}`;
@@ -415,7 +440,7 @@ function compactChangesLine(theme: Theme, presentation: ChangesPresentation, wid
 	}
 
 	const normalized = sanitizeTuiText(summaryText(summary).replace(/\s+/g, " ")).trim();
-	const singleLine = summary.status === "done" ? [...normalized].slice(0, Math.floor(summaryStream.shown)).join("") : normalized;
+	const singleLine = summary.status === "done" ? [...normalized].slice(0, Math.floor(shown)).join("") : normalized;
 	const remaining = width - visibleWidth(line) - 3;
 	if (singleLine && remaining >= 4) {
 		// Cut the plain text so the ellipsis stays inside the dim span.
@@ -430,6 +455,12 @@ interface ChangesLayout {
 	width: number;
 	/** Columns kept clear on the left, and again on the right of the listing's rows. */
 	margin: number;
+	/** Characters of a done summary printed so far; Infinity prints it whole. */
+	shown: number;
+	/** Maximum rows allocated to the file list; whether overflow uses one is controlled below. */
+	fileRowsMax: number;
+	/** Whether the overflow row uses one of `fileRowsMax` rows. */
+	overflowInsideCap: boolean;
 }
 
 /**
@@ -449,7 +480,7 @@ function layoutChangesRows(theme: Theme, presentation: ChangesPresentation, layo
 	const rows: string[] = rowsAvailable > 1 ? [""] : [];
 	const budget = rowsAvailable - rows.length;
 	if (budget < LISTING_MIN_ROWS) {
-		rows.push(compactChangesLine(theme, presentation, width, margin, colors));
+		rows.push(compactChangesLine(theme, presentation, width, margin, colors, layout.shown));
 		return rows.map((row) => padRight(fitCell(row, width), width));
 	}
 	const contentWidth = Math.max(1, width - margin * 2);
@@ -463,11 +494,12 @@ function layoutChangesRows(theme: Theme, presentation: ChangesPresentation, layo
 		spare -= granted;
 		return granted;
 	};
-	const fileRows = 1 + claim(Math.min(FILE_ROWS_MAX, entries.length) - 1);
+	const listed = 1 + claim(Math.min(layout.fileRowsMax, entries.length) - 1);
+	const overflow = entries.length > listed;
+	const pathRows = overflow && layout.overflowInsideCap ? listed - 1 : listed;
+	const visible = entries.slice(0, pathRows);
+	const showMore = overflow && (layout.overflowInsideCap || claim(1) === 1);
 	const summaryRows = 1 + claim(SUMMARY_ROWS_MAX - 1);
-
-	const overflow = entries.length > fileRows;
-	const visible = entries.slice(0, overflow ? fileRows - 1 : fileRows);
 	const cells = visible.map((entry) => statCell(theme, entry, false));
 	const statWidth = Math.max(0, ...cells.map((cell) => cell.width));
 	// After the marker and its space, the line counts take room down to PATH_MIN_WIDTH path columns;
@@ -485,18 +517,18 @@ function layoutChangesRows(theme: Theme, presentation: ChangesPresentation, layo
 
 	const frame = (content: string): string => `${indent}${fitCell(content, contentWidth)}`;
 	const counts = kindCounts(entries);
-	rows.push(frame(`${theme.fg("warning", HEADING)}${counts ? ` ${theme.fg("text", counts)}` : ""}`));
+	rows.push(frame(`${theme.fg("warning", CHANGES_HEADING)}${counts ? ` ${theme.fg("text", counts)}` : ""}`));
 	visible.forEach((entry, index) => {
 		let row = `${paint(colors[entry.kind], MARKER[entry.kind])} ${padRight(theme.fg("text", startTruncated(entry.path, pathWidth)), pathWidth)}`;
 		if (barCells > 0) row += ` ${churnBar(theme, entry.stat, maxChurn, barCells)}`;
 		if (showStats) row += ` ${" ".repeat(statWidth - cells[index].width)}${cells[index].text}`;
 		rows.push(frame(row));
 	});
-	if (overflow) rows.push(frame(theme.fg("dim", `… ${entries.length - visible.length} more`)));
+	if (showMore) rows.push(frame(theme.fg("dim", `… ${entries.length - visible.length} more`)));
 
 	// Blank in every state, so the file rows keep their places when the summary lands.
 	rows.push("");
-	const rendered = summaryLines(theme, presentation.summary, contentWidth);
+	const rendered = summaryLines(theme, presentation.summary, contentWidth, layout.shown);
 	const shown = rendered.slice(0, summaryRows);
 	if (shown.length > 0 && rendered.length > shown.length) {
 		shown[shown.length - 1] = fitCell(shown[shown.length - 1], contentWidth);
@@ -513,17 +545,39 @@ function layoutChangesRows(theme: Theme, presentation: ChangesPresentation, layo
 export function renderChangesBlock(theme: Theme, presentation: ChangesPresentation | null, width: number, maxRows: number): string[] {
 	const rowsAvailable = Math.floor(maxRows);
 	if (!presentation || rowsAvailable < 1 || width < 1) return [];
-	return layoutChangesRows(theme, presentation, { width: Math.min(width, CHANGES_MAX_WIDTH), margin: SPLASH_MARGIN_X }, rowsAvailable);
+	return layoutChangesRows(theme, presentation, {
+		width: Math.min(width, CHANGES_MAX_WIDTH),
+		margin: SPLASH_MARGIN_X,
+		shown: summaryStream.shown,
+		fileRowsMax: FILE_ROWS_MAX,
+		overflowInsideCap: true,
+	}, rowsAvailable);
 }
 
 /**
  * The listing as the info panel's closing section, after `[extensions]`: `width` is the panel's
  * text width, and the rows start flush with its other sections, in at most `maxRows` rows.
+ * `fileRowsMax` caps the listing; `overflowInsideCap` controls whether its overflow row consumes
+ * one of those rows.
  */
-export function layoutChangesSection(theme: Theme, presentation: ChangesPresentation | null, width: number, maxRows: number): string[] {
+export function layoutChangesSection(
+	theme: Theme,
+	presentation: ChangesPresentation | null,
+	width: number,
+	maxRows: number,
+	shown = summaryStream.shown,
+	fileRowsMax = FILE_ROWS_MAX,
+	overflowInsideCap = true,
+): string[] {
 	const rowsAvailable = Math.floor(maxRows);
 	if (!presentation || rowsAvailable < 1 || width < 1) return [];
-	return layoutChangesRows(theme, presentation, { width, margin: 0 }, rowsAvailable);
+	return layoutChangesRows(theme, presentation, {
+		width,
+		margin: 0,
+		shown,
+		fileRowsMax,
+		overflowInsideCap,
+	}, rowsAvailable);
 }
 
 /** Install the post-gate changes-only header without rewiring the splash's render-state signal. */

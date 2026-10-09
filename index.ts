@@ -8,6 +8,7 @@ import { readPreferences } from "./src/preferences.ts";
 import { GATE_DONE_ENV } from "./src/relaunch.ts";
 import { runStartupGate } from "./src/gate.ts";
 import { showSplashSettings } from "./src/settings.ts";
+import { abortLocalChanges, registerLocalChanges } from "./src/local-changes.ts";
 
 function refreshPromptSize(systemPrompt: string): void {
 	const newSize = Buffer.byteLength(systemPrompt, "utf8");
@@ -17,7 +18,7 @@ function refreshPromptSize(systemPrompt: string): void {
 	headerRenderState.requestRender?.();
 }
 
-/** Pi extension: replaces the default startup header with a full-color splash, optionally adds an interactive startup gate menu and an on-by-default uncommitted-changes summary, and registers the /topping-splash-settings command. */
+/** Pi extension: installs the splash, optional startup gate, and on-by-default startup changes summary. It registers /topping-splash-settings and /local-changes. */
 export default function piStartupGreeter(pi: ExtensionAPI) {
 	pi.on("model_select", (_event, ctx) => {
 		// Model rotation may change the base system prompt — refresh the size.
@@ -31,6 +32,7 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", () => {
 		abortChangesSummary();
+		abortLocalChanges();
 		stopGradientAnimation();
 		stopTaglineReveal();
 	});
@@ -100,4 +102,5 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 			await showSplashSettings(ctx);
 		},
 	});
+	registerLocalChanges(pi);
 }

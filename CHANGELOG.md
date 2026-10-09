@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`/local-changes`** runs on demand in a trusted TUI project, even when the startup summary is
+  off. It adds the settled file list, churn bars, line counts, and model summary as a display-only
+  transcript entry. Pi excludes this entry from model context after reload and compaction. The
+  command adds clean and unavailable states. It ignores arguments. It allows one active run.
+
 ## [0.5.1] - 2026-10-05
 
 ### Changed

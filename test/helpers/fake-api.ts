@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
+import type { EntryRenderer, ExtensionAPI, ExtensionContext, ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
 import type { Model } from "@earendil-works/pi-ai";
 
 export interface FakePiBag {
@@ -19,6 +19,9 @@ export interface FakePiHarness {
 	setModelCalls: Model<any>[];
 	setThinkingCalls: string[];
 	execCalls: { command: string; args: string[]; options?: ExecOptions }[];
+	appendedEntries: { customType: string; data: unknown }[];
+	entryRenderers: Map<string, EntryRenderer>;
+	sentMessages: unknown[];
 	/** Run every registered handler for `event` in order, awaiting each. */
 	emit(event: string, payload: unknown, ctx: ExtensionContext): Promise<void>;
 }
@@ -40,6 +43,9 @@ export function createFakePi(initial: Partial<FakePiBag> = {}): FakePiHarness {
 	const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
 	const setModelCalls: Model<any>[] = [];
 	const setThinkingCalls: string[] = [];
+	const appendedEntries: { customType: string; data: unknown }[] = [];
+	const entryRenderers = new Map<string, EntryRenderer>();
+	const sentMessages: unknown[] = [];
 
 	const pi = {
 		registerFlag(name: string, options: unknown): void {
@@ -55,6 +61,18 @@ export function createFakePi(initial: Partial<FakePiBag> = {}): FakePiHarness {
 			options: { description?: string; handler: (args: string, ctx: unknown) => Promise<void> | void },
 		): void {
 			commands.set(name, options);
+		},
+		registerEntryRenderer<T = unknown>(customType: string, renderer: EntryRenderer<T>): void {
+			entryRenderers.set(customType, renderer as EntryRenderer);
+		},
+		appendEntry<T = unknown>(customType: string, data?: T): void {
+			appendedEntries.push({ customType, data });
+		},
+		sendMessage(message: unknown): void {
+			sentMessages.push(message);
+		},
+		sendUserMessage(content: unknown): void {
+			sentMessages.push(content);
 		},
 		getCommands(): unknown[] {
 			return bag.commandsInfo;
@@ -87,6 +105,9 @@ export function createFakePi(initial: Partial<FakePiBag> = {}): FakePiHarness {
 		setModelCalls,
 		setThinkingCalls,
 		execCalls: bag.execCalls,
+		appendedEntries,
+		entryRenderers,
+		sentMessages,
 		async emit(event: string, payload: unknown, ctx: ExtensionContext): Promise<void> {
 			for (const handler of handlers.get(event) ?? []) {
 				await handler(payload, ctx);

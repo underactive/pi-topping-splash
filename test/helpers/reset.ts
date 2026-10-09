@@ -1,5 +1,6 @@
 import { changesRenderState, headerRenderState, state } from "../../src/state.ts";
 import { abortChangesSummary, summaryStream } from "../../src/changes-summary.ts";
+import { abortLocalChanges } from "../../src/local-changes.ts";
 import { gradientAnimation, stopGradientAnimation } from "../../src/animate.ts";
 import {
 	REVEAL_BAND_HALF,
@@ -16,6 +17,7 @@ import {
  */
 export function resetModuleState(): void {
 	abortChangesSummary();
+	abortLocalChanges();
 	summaryStream.lastTickAt = 0;
 	summaryStream.shown = Number.POSITIVE_INFINITY;
 	summaryStream.total = 0;

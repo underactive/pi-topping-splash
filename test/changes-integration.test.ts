@@ -124,6 +124,7 @@ describe("startup changes lifecycle", () => {
 
 		response.resolve(makeAssistantMessage("Added a new path and changed the existing implementation."));
 		await until(() => state.changes?.summary.status === "done");
+		assert.equal(state.changes?.version, 3, "one presentation publishes versions 1, 2, and 3");
 		assert.notEqual(summaryStream.timer, null, "the summary streams rather than landing whole");
 		assert.equal(header.render(100).map(sanitizeTuiText).join("\n").includes("Added a new path"), false);
 		stopSummaryStream();
