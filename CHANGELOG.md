@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-10
+
 ### Added
 
 - **`/local-changes`** summarizes uncommitted changes on demand in a trusted TUI project, even when
@@ -25,11 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code changes. Claude
   Haiku 5.5 (`anthropic/claude-haiku-5-5`) can now appear in the Summary model picker when
   Anthropic credentials are available.
-
-## [0.5.1] - 2026-10-05
-
-### Changed
-
 - Development and CI now typecheck and test against Pi 1.0.3; the
   `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.0.0.
   Pi 1.0.1–1.0.3 remove no public export and change none of the symbols this extension imports,
