@@ -103,6 +103,8 @@ function fixtureData(summary = "A short model summary."): Extract<LocalChangesEn
 			{ path: "src/changed.ts", kind: "changed", untracked: false, stat: { added: 12, deleted: 3, binary: false } },
 			{ path: "src/new.ts", kind: "added", untracked: true },
 		],
+		counts: { added: 1, changed: 1, deleted: 0 },
+		total: 2,
 		summary: { status: "done", text: summary },
 	};
 }
@@ -139,11 +141,12 @@ function subcommands(harness: Harness): string[] {
 }
 
 describe("/local-changes contracts", () => {
-	it("LC-01 registers the command and renderer with the display-only description", () => {
+	it("LC-01 describes model-bound excerpts and session-isolated output", () => {
 		const harness = makeHarness();
 		const command = harness.pi.commands.get(LOCAL_CHANGES_COMMAND);
 		assert.ok(command);
-		assert.match(command.description ?? "", /never sent to the model/);
+		assert.match(command.description ?? "", /diff excerpts go to that model's provider/);
+		assert.match(command.description ?? "", /entry stays out of session context/);
 		assert.ok(harness.pi.entryRenderers.has(LOCAL_CHANGES_ENTRY_TYPE));
 	});
 
@@ -165,6 +168,8 @@ describe("/local-changes contracts", () => {
 		if (data.kind !== "changes") return;
 		assert.equal(data.entries.length, 3);
 		assert.equal(data.entries.find((entry) => entry.path === "changed.ts")?.stat?.added, 1);
+		assert.deepEqual(data.counts, { added: 1, changed: 1, deleted: 1 });
+		assert.equal(data.total, 3);
 		assert.equal(data.summary.status, "done");
 		const text = rendered(renderRegisteredEntry(harness, data)!);
 		assert.match(text, /\[local changes\] \+1, ~1, -1/);
@@ -173,7 +178,7 @@ describe("/local-changes contracts", () => {
 		assert.match(text, /deleted\.ts/);
 		assert.match(text, /▇/);
 		assert.match(text, /\+1 -1/);
-		assert.match(text, /new/);
+		assert.match(text, /\+ new\.ts .*\bnew\b/);
 		assert.match(text, /SUMMARY-SENTINEL: changed\.ts gained one line\./);
 		assert.deepEqual(harness.pi.sentMessages, []);
 	});
@@ -454,31 +459,46 @@ describe("/local-changes contracts", () => {
 		stopSummaryStream();
 	});
 
-	it("LC-14 shows up to 20 paths, an extra overflow row, 6 summary rows, and 31 plate rows", () => {
-		const entries = Array.from({ length: 25 }, (_, index) => ({ path: `src/file-${index}.ts`, kind: "changed" as const, untracked: false }));
-		const summary = Array.from({ length: 20 }, (_, index) => `SUMMARY-${String(index).padStart(2, "0")}`).join("\n");
-		const data: Extract<LocalChangesEntryData, { kind: "changes" }> = { kind: "changes", entries, summary: { status: "done", text: summary } };
+	it("LC-14 persists 20 paths with full counts and renders the overflow row", async () => {
+		const paths = Array.from({ length: 25 }, (_, index) => `src/file-${index}.ts`);
+		const status = paths.map((path) => `?? ${path}\0`).join("");
+		const harness = makeHarness({ status, streamSimple: async () => makeAssistantMessage("Summary complete.\n".repeat(5) + "Summary complete.") });
+		await callLocalChanges(harness);
+		await until(() => harness.pi.appendedEntries.length === 1);
+		const data = getEntryData(harness);
+		assert.equal(data.kind, "changes");
+		if (data.kind !== "changes") return;
+		assert.equal(data.entries.length, LOCAL_CHANGES_FILE_ROWS_MAX);
+		assert.deepEqual(data.counts, { added: 25, changed: 0, deleted: 0 });
+		assert.equal(data.total, 25);
+
 		const section = layoutChangesSection(
 			makeTheme(),
-			{ entries, summary: data.summary, version: 0 },
+			{ entries: data.entries, summary: data.summary, version: 0 },
 			96,
 			Number.POSITIVE_INFINITY,
 			Number.POSITIVE_INFINITY,
 			LOCAL_CHANGES_FILE_ROWS_MAX,
 			false,
+			data.counts,
+			data.total,
 		);
 		const lines = rendered(section).split("\n");
 		assert.equal(lines.filter((line) => /^[+~-] /.test(line)).length, LOCAL_CHANGES_FILE_ROWS_MAX);
-		assert.match(lines[1] ?? "", /\[local changes\] ~25/);
+		assert.match(lines[1] ?? "", /\[local changes\] \+25/);
 		assert.ok(lines.some((line) => line.trim() === "… 5 more"));
-		assert.equal(lines.filter((line) => line.startsWith("SUMMARY-")).length, 6);
 		const plate = renderLocalChangesEntry(makeTheme(), data, 120);
 		assert.equal(plate.length, 31);
 		assert.match(rendered(plate), /… 5 more/);
 
 		const boundaryLines = (count: number) => rendered(renderLocalChangesEntry(
 			makeTheme(),
-			{ ...data, entries: entries.slice(0, count) },
+			{
+				...data,
+				entries: paths.slice(0, Math.min(count, LOCAL_CHANGES_FILE_ROWS_MAX)).map((path) => ({ path, kind: "added" as const, untracked: true })),
+				counts: { added: count, changed: 0, deleted: 0 },
+				total: count,
+			},
 			120,
 		)).split("\n");
 		const exactlyTwenty = boundaryLines(LOCAL_CHANGES_FILE_ROWS_MAX);
@@ -496,6 +516,8 @@ describe("/local-changes contracts", () => {
 			"not data",
 			{ kind: "unknown" },
 			{ kind: "changes", entries: [{ path: 4, kind: "changed", untracked: false }], summary: { status: "done", text: "x" } },
+			{ ...fixtureData(), counts: { added: -1, changed: 1, deleted: 0 } },
+			{ ...fixtureData(), total: 3 },
 			{ kind: "changes", entries: [{ path: "x", kind: "changed", untracked: false }], summary: { status: "pending", modelLabel: "model" } },
 			{ kind: "changes", entries: [{ path: "x", kind: "changed", untracked: false }] },
 		];

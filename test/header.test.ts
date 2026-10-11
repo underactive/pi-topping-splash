@@ -52,7 +52,7 @@ describe("withSettings (H-01)", () => {
 		});
 		assert.equal(ran, true);
 	});
-	it("swallows callback errors", () => {
+	it("logs callback errors instead of throwing", () => {
 		withSettings(env.cwd, () => {
 			throw new Error("boom");
 		});

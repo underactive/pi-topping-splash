@@ -842,11 +842,12 @@ describe("startup changes integration (AC2-AC8)", () => {
 	});
 
 	it("keeps the listing on model failures and reports each failure reason", async () => {
-		// Only an empty answer is retried, so every other reason costs exactly one request.
-		const cases: { label: string; streamSimple: SummaryResponder }[] = [
+		// Empty responses other than token-limit truncations are retried; other failures cost one request.
+		const cases: { label: string; streamSimple: SummaryResponder; expected?: string }[] = [
 			{ label: "rejection", streamSimple: async () => { throw new Error("provider exploded"); } },
 			{ label: "error stop", streamSimple: async () => makeAssistantMessage("", "error", "provider refused") },
 			{ label: "aborted stop", streamSimple: async () => makeAssistantMessage("", "aborted") },
+			{ label: "token limit", streamSimple: async () => makeAssistantMessage("", "length"), expected: "summary unavailable: token limit reached" },
 		];
 		for (const [index, testCase] of cases.entries()) {
 			if (index > 0) resetModuleState();
@@ -856,7 +857,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 			await until(() => state.changes?.summary.status === "failed");
 			const text = mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n");
 			assert.ok(text.includes("[local changes] +1, ~1, -1"), testCase.label);
-			assert.ok(text.includes("summary unavailable:"), testCase.label);
+			assert.ok(text.includes(testCase.expected ?? "summary unavailable:"), testCase.label);
 			assert.equal(wired.ctx.streamCalls.length, 1, testCase.label);
 		}
 	});

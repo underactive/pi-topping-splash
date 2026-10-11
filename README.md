@@ -1,6 +1,6 @@
 # pi-topping-splash
 
-Pi extension that replaces the default startup header with an edge-to-edge full-color splash and adds an interactive startup gate menu to the session launch flow.
+Pi extension that replaces the default startup header with an edge-to-edge full-color splash, adds an interactive startup gate menu to the session launch flow, and adds a `/local-changes` command that summarizes uncommitted changes in the transcript.
 
 ![pi-splash](https://raw.githubusercontent.com/underactive/pi-topping-splash/main/media/pi-splash.png)
 
@@ -158,8 +158,9 @@ the active session model when no model is set. It reads the Summary model each t
 Each run collects fresh data and requests a new summary; it does not use a cache.
 
 Pi stores the entry in the session file. The entry stays out of model context after `/reload`,
-resume, and `/compact`. The command uses the same bounded, redacted diff input as the startup
-summary. Session shutdown aborts an active run. An aborted run adds no entry.
+resume, and `/compact`. Each run sends the same bounded file lists and diff excerpts as the startup summary to the Summary
+model's provider, with sensitive-looking contents withheld and common secrets redacted best-effort.
+Session shutdown aborts an active run. An aborted run adds no entry.
 
 ## Troubleshooting
 

@@ -1,17 +1,12 @@
-
 import type { BackgroundColor, DynamicTint, GradientAnimation } from "./color.ts";
 import type { ShortcutHint } from "./discovery.ts";
 import type { ChangesPresentation } from "./changes-summary.ts";
 
-/**
- * Module-scoped state that lives for the lifetime of the extension process (not per-session).
- * - `quietStartupEnsured` guards the settings write so it only runs once per process.
- * - `loadedSkills`/`loadedExtensions` cache the most recent header item lists so the header
- *   component's `render()` (invoked on every TUI frame) doesn't need to re-scan commands/tools.
- * Bundled into one object so the intentional shared-state pattern is explicit at a glance.
- */
+/** Process-lifetime shared state (not per-session). */
 export const state = {
+	/** Guards the quietStartup settings write to once per process. */
 	quietStartupEnsured: false,
+	/** Cached so render() never re-scans commands or tools. */
 	loadedSkills: [] as string[],
 	loadedExtensions: [] as string[],
 	loadedContext: [] as string[],

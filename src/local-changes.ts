@@ -1,6 +1,6 @@
-import type { CustomEntry, ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import type { ChangeEntry } from "./changes.ts";
+import type { ChangeEntry, ChangeKind, LineStat } from "./changes.ts";
 import {
 	CHANGES_HEADING,
 	errorReason,
@@ -24,9 +24,13 @@ export const LOCAL_CHANGES_ENTRY_TYPE = "pi-topping-splash:local-changes";
 /** Maximum paths shown by the transcript entry before its overflow row. */
 export const LOCAL_CHANGES_FILE_ROWS_MAX = 20;
 const STATUS_KEY = "pi-topping-splash:local-changes";
+const ENTRY_KEYS = Object.keys({ path: true, kind: true, untracked: true, stat: true } satisfies Record<keyof ChangeEntry, true>);
+const STAT_KEYS = Object.keys({ added: true, deleted: true, binary: true } satisfies Record<keyof LineStat, true>);
+const CHANGE_KINDS = ["added", "changed", "deleted"] as const;
 
+/** Persisted in session files; isLocalChangesEntryData rejects unknown keys, so any field change hides entries written by other versions. */
 export type LocalChangesEntryData =
-	| { kind: "changes"; entries: ChangeEntry[]; summary: SummaryState }
+	| { kind: "changes"; entries: ChangeEntry[]; counts: Record<ChangeKind, number>; total: number; summary: SummaryState }
 	| { kind: "clean" }
 	| { kind: "unavailable" };
 
@@ -39,22 +43,33 @@ export function isLocalChangesEntryData(value: unknown): value is LocalChangesEn
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
 	const data = value as Record<string, unknown>;
 	if (data.kind === "clean" || data.kind === "unavailable") return hasOnlyKeys(data, ["kind"]);
-	if (data.kind !== "changes" || !hasOnlyKeys(data, ["kind", "entries", "summary"]) || !Array.isArray(data.entries) || data.entries.length === 0) return false;
+	if (data.kind !== "changes" || !hasOnlyKeys(data, ["kind", "entries", "counts", "total", "summary"]) || !Array.isArray(data.entries) || data.entries.length === 0) return false;
 	const entriesValid = data.entries.every((entry) => {
 		if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
 		const candidate = entry as Record<string, unknown>;
-		if (!hasOnlyKeys(candidate, ["path", "kind", "untracked", "stat"]) || typeof candidate.path !== "string"
+		if (!hasOnlyKeys(candidate, ENTRY_KEYS) || typeof candidate.path !== "string"
 			|| (candidate.kind !== "added" && candidate.kind !== "changed" && candidate.kind !== "deleted")
 			|| typeof candidate.untracked !== "boolean") return false;
 		if (candidate.stat === undefined) return true;
 		if (typeof candidate.stat !== "object" || candidate.stat === null || Array.isArray(candidate.stat)) return false;
 		const stat = candidate.stat as Record<string, unknown>;
-		return hasOnlyKeys(stat, ["added", "deleted", "binary"])
+		return hasOnlyKeys(stat, STAT_KEYS)
 			&& typeof stat.added === "number" && Number.isSafeInteger(stat.added) && stat.added >= 0
 			&& typeof stat.deleted === "number" && Number.isSafeInteger(stat.deleted) && stat.deleted >= 0
 			&& typeof stat.binary === "boolean";
 	});
-	if (!entriesValid || typeof data.summary !== "object" || data.summary === null || Array.isArray(data.summary)) return false;
+	if (!entriesValid || typeof data.counts !== "object" || data.counts === null || Array.isArray(data.counts)) return false;
+	const counts = data.counts as Record<string, unknown>;
+	if (!hasOnlyKeys(counts, CHANGE_KINDS)) return false;
+	let countsTotal = 0;
+	for (const kind of CHANGE_KINDS) {
+		const count = counts[kind];
+		if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) return false;
+		countsTotal += count;
+	}
+	if (!Number.isSafeInteger(countsTotal) || typeof data.total !== "number" || !Number.isSafeInteger(data.total)
+		|| data.total < data.entries.length || data.total !== countsTotal
+		|| typeof data.summary !== "object" || data.summary === null || Array.isArray(data.summary)) return false;
 	const summary = data.summary as Record<string, unknown>;
 	return (summary.status === "done" && hasOnlyKeys(summary, ["status", "text"]) && typeof summary.text === "string")
 		|| (summary.status === "failed" && hasOnlyKeys(summary, ["status", "reason"]) && typeof summary.reason === "string");
@@ -76,14 +91,12 @@ export function renderLocalChangesEntry(theme: Theme, data: LocalChangesEntryDat
 			Number.POSITIVE_INFINITY,
 			LOCAL_CHANGES_FILE_ROWS_MAX,
 			false,
+			data.counts,
+			data.total,
 		).slice(1);
-	} else if (data.kind === "clean") {
-		body = [fitCell(theme.fg("warning", CHANGES_HEADING), inner), fitCell(theme.fg("text", "none"), inner)];
 	} else {
-		body = [
-			fitCell(theme.fg("warning", CHANGES_HEADING), inner),
-			fitCell(theme.fg("dim", "not a git repository, or git is unavailable"), inner),
-		];
+		const note = data.kind === "clean" ? theme.fg("text", "none") : theme.fg("dim", "not a git repository, or git is unavailable");
+		body = [fitCell(theme.fg("warning", CHANGES_HEADING), inner), fitCell(note, inner)];
 	}
 	const panel: PanelPlacement = { x: 0, y: 0, width: plate, bg: panelBg(theme), lines: ["", ...body, ""] };
 	return panel.lines.map((_, y) => paintPanelRow(panel, y));
@@ -123,8 +136,8 @@ export function registerLocalChanges(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand(LOCAL_CHANGES_COMMAND, {
-		description: "Show uncommitted changes, a churn graph, and a model summary in the transcript (never sent to the model).",
-		handler: async (_args, ctx: ExtensionCommandContext) => {
+		description: "Summarize uncommitted changes with the Summary model and show them in the transcript (diff excerpts go to that model's provider; the entry stays out of session context).",
+		handler: async (_args, ctx) => {
 			if (!ctx.hasUI || ctx.mode !== "tui") {
 				ctx.ui.notify("/local-changes requires TUI mode", "error");
 				return;
@@ -155,7 +168,12 @@ export function registerLocalChanges(pi: ExtensionAPI): void {
 					const data: LocalChangesEntryData = outcome.kind === "changes"
 						? {
 							kind: "changes",
-							entries: outcome.presentation.entries,
+							entries: outcome.presentation.entries.slice(0, LOCAL_CHANGES_FILE_ROWS_MAX),
+							counts: outcome.presentation.entries.reduce<Record<ChangeKind, number>>((counts, entry) => {
+								counts[entry.kind] += 1;
+								return counts;
+							}, { added: 0, changed: 0, deleted: 0 }),
+							total: outcome.presentation.entries.length,
 							summary: outcome.presentation.summary,
 						}
 						: { kind: outcome.kind };

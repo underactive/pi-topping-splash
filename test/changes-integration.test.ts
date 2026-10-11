@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { Component } from "@earendil-works/pi-tui";
 import piStartupGreeter from "../index.ts";
-import { renderChangesBlock, resolveSummaryModel, stopSummaryStream, summaryStream } from "../src/changes-summary.ts";
+import { resolveSummaryModel, stopSummaryStream, summaryStream } from "../src/changes-summary.ts";
 import { writePreferences } from "../src/preferences.ts";
 import { state } from "../src/state.ts";
 import { sanitizeTuiText } from "../src/text.ts";
@@ -117,7 +117,6 @@ describe("startup changes lifecycle", () => {
 		assert.ok(state.changes);
 		const pendingText = header.render(100).map(sanitizeTuiText).join("\n");
 		assert.match(pendingText, /\[local changes\] \+/);
-		assert.match(pendingText, /\+|~/);
 		assert.match(pendingText, /summarizing local changes with session\/model-a/);
 		assert.equal(harness.ctx.streamCalls[0]?.options?.reasoning, undefined);
 		assert.equal(harness.ctx.streamCalls[0]?.options?.maxTokens, 400);
@@ -147,14 +146,3 @@ describe("startup changes lifecycle", () => {
 	});
 });
 
-describe("changes-only header", () => {
-	it("renders nothing for a clean state and exact-width rows for a presentation", () => {
-		const presentation = {
-			entries: [{ path: "src/file.ts", kind: "changed" as const, untracked: false }],
-			summary: { status: "failed" as const, reason: "request failed" },
-			version: 1,
-		};
-		assert.deepEqual(renderChangesBlock(makeTheme(), null, 80, 20), []);
-		assert.ok(renderChangesBlock(makeTheme(), presentation, 80, 20).every((line) => line.length > 0));
-	});
-});

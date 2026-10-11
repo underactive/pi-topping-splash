@@ -151,13 +151,13 @@ async function requestSummary(
 		return { status: "failed", reason: errorReason(response.errorMessage ?? "request failed") };
 	}
 	const text = responseText(response.content);
-	return text ? { status: "done", text } : { status: "failed", reason: EMPTY_SUMMARY_REASON };
+	if (text) return { status: "done", text };
+	return { status: "failed", reason: response.stopReason === "length" ? "token limit reached" : EMPTY_SUMMARY_REASON };
 }
 
 /**
- * The summary, repeating the request while the provider answers with nothing. Only an empty answer
- * is retried: a cancelled, timed out, refused, or thrown request is settled for this run and is
- * returned as it stands.
+ * The summary, repeating empty responses unless the provider stopped at the token limit. Cancelled,
+ * timed out, refused, or thrown requests are settled for this run and returned as they stand.
  */
 export async function summarizeChanges(
 	ctx: ExtensionContext,
@@ -229,10 +229,7 @@ export async function runChangesPipeline(
 	return { kind: "changes", presentation };
 }
 
-/**
- * Start one detached collection/summarization run. The collector is deliberately started by the
- * session-start handler before the gate-mode early return, so splash-only mode gets the same data.
- */
+/** Start the one detached collection/summarization run for this process. */
 export function startChangesSummary(pi: ExtensionAPI, ctx: ExtensionContext, prefs: SplashPreferences): void {
 	if (state.changesStarted) return;
 	if (prefs.changesSummary !== "on" || !ctx.isProjectTrusted()) return;
@@ -253,7 +250,7 @@ export function startChangesSummary(pi: ExtensionAPI, ctx: ExtensionContext, pre
 				isCurrent: (presentation) => state.changes === presentation,
 			});
 		} catch {
-			// Git discovery is display-only. Non-repositories, missing git, and aborted runs are silent.
+			// Detached and display-only: an unexpected failure must not surface as an unhandled rejection.
 		} finally {
 			if (changesController === controller) changesController = null;
 		}
@@ -339,9 +336,9 @@ function changeColors(theme: Theme): Record<ChangeKind, string> {
 }
 
 /** `+a, ~c, -d` across every entry, omitting kinds with no paths; the heading paints it like the other sections' counts. */
-function kindCounts(entries: ChangeEntry[]): string {
+function kindCounts(entries: ChangeEntry[], counts?: Record<ChangeKind, number>): string {
 	return (["added", "changed", "deleted"] as const)
-		.map((kind) => ({ kind, count: entries.filter((entry) => entry.kind === kind).length }))
+		.map((kind) => ({ kind, count: counts?.[kind] ?? entries.filter((entry) => entry.kind === kind).length }))
 		.filter((part) => part.count > 0)
 		.map((part) => `${MARKER[part.kind]}${part.count}`)
 		.join(", ");
@@ -411,12 +408,12 @@ function summaryLines(theme: Theme, summary: SummaryState, width: number, shown:
 }
 
 /** One row for a budget too short for the listing: the heading and its counts, the most changed path, and a summary preview. */
-function compactChangesLine(theme: Theme, presentation: ChangesPresentation, width: number, margin: number, colors: Record<ChangeKind, string>, shown: number): string {
+function compactChangesLine(theme: Theme, presentation: ChangesPresentation, width: number, margin: number, colors: Record<ChangeKind, string>, shown: number, counts?: Record<ChangeKind, number>): string {
 	const { entries, summary } = presentation;
 	let line = `${" ".repeat(margin)}${theme.fg("warning", CHANGES_HEADING)}`;
-	const counts = kindCounts(entries);
+	const countText = kindCounts(entries, counts);
 	// The counts come whole or not at all.
-	if (counts && visibleWidth(line) + 1 + counts.length <= width) line += ` ${theme.fg("text", counts)}`;
+	if (countText && visibleWidth(line) + 1 + countText.length <= width) line += ` ${theme.fg("text", countText)}`;
 	const separator = theme.fg("dim", " · ");
 
 	// Prefer the path with the most counted churn, retaining git's order on ties or before stats land.
@@ -457,10 +454,14 @@ interface ChangesLayout {
 	margin: number;
 	/** Characters of a done summary printed so far; Infinity prints it whole. */
 	shown: number;
-	/** Maximum rows allocated to the file list; whether overflow uses one is controlled below. */
+	/** Most path rows listed; the `… N more` row counts against this cap only when `overflowInsideCap` is set. */
 	fileRowsMax: number;
 	/** Whether the overflow row uses one of `fileRowsMax` rows. */
 	overflowInsideCap: boolean;
+	/** Counts across all changes when the persisted listing contains only a visible subset. */
+	counts?: Record<ChangeKind, number>;
+	/** Total changes when the persisted listing contains only a visible subset. */
+	total?: number;
 }
 
 /**
@@ -480,12 +481,12 @@ function layoutChangesRows(theme: Theme, presentation: ChangesPresentation, layo
 	const rows: string[] = rowsAvailable > 1 ? [""] : [];
 	const budget = rowsAvailable - rows.length;
 	if (budget < LISTING_MIN_ROWS) {
-		rows.push(compactChangesLine(theme, presentation, width, margin, colors, layout.shown));
+		rows.push(compactChangesLine(theme, presentation, width, margin, colors, layout.shown, layout.counts));
 		return rows.map((row) => padRight(fitCell(row, width), width));
 	}
 	const contentWidth = Math.max(1, width - margin * 2);
 
-	// Rows are claimed in priority order from the budget and the entry count alone, so the listing
+	// Rows are claimed in priority order from the budget and the total count alone, so the listing
 	// never moves when the summary lands: after the minimal listing, the remaining files, then more
 	// summary.
 	let spare = budget - LISTING_MIN_ROWS;
@@ -494,8 +495,9 @@ function layoutChangesRows(theme: Theme, presentation: ChangesPresentation, layo
 		spare -= granted;
 		return granted;
 	};
-	const listed = 1 + claim(Math.min(layout.fileRowsMax, entries.length) - 1);
-	const overflow = entries.length > listed;
+	const total = layout.total ?? entries.length;
+	const listed = 1 + claim(Math.min(layout.fileRowsMax, total) - 1);
+	const overflow = total > listed;
 	const pathRows = overflow && layout.overflowInsideCap ? listed - 1 : listed;
 	const visible = entries.slice(0, pathRows);
 	const showMore = overflow && (layout.overflowInsideCap || claim(1) === 1);
@@ -516,15 +518,15 @@ function layoutChangesRows(theme: Theme, presentation: ChangesPresentation, layo
 	const maxChurn = Math.max(1, ...churn);
 
 	const frame = (content: string): string => `${indent}${fitCell(content, contentWidth)}`;
-	const counts = kindCounts(entries);
-	rows.push(frame(`${theme.fg("warning", CHANGES_HEADING)}${counts ? ` ${theme.fg("text", counts)}` : ""}`));
+	const countText = kindCounts(entries, layout.counts);
+	rows.push(frame(`${theme.fg("warning", CHANGES_HEADING)}${countText ? ` ${theme.fg("text", countText)}` : ""}`));
 	visible.forEach((entry, index) => {
 		let row = `${paint(colors[entry.kind], MARKER[entry.kind])} ${padRight(theme.fg("text", startTruncated(entry.path, pathWidth)), pathWidth)}`;
 		if (barCells > 0) row += ` ${churnBar(theme, entry.stat, maxChurn, barCells)}`;
 		if (showStats) row += ` ${" ".repeat(statWidth - cells[index].width)}${cells[index].text}`;
 		rows.push(frame(row));
 	});
-	if (showMore) rows.push(frame(theme.fg("dim", `… ${entries.length - visible.length} more`)));
+	if (showMore) rows.push(frame(theme.fg("dim", `… ${total - visible.length} more`)));
 
 	// Blank in every state, so the file rows keep their places when the summary lands.
 	rows.push("");
@@ -555,10 +557,12 @@ export function renderChangesBlock(theme: Theme, presentation: ChangesPresentati
 }
 
 /**
- * The listing as the info panel's closing section, after `[extensions]`: `width` is the panel's
- * text width, and the rows start flush with its other sections, in at most `maxRows` rows.
+ * The listing section shared by the info panel and transcript entry: `width` is the available
+ * text width; in the info panel, rows start flush with its other sections, in at most `maxRows` rows.
  * `fileRowsMax` caps the listing; `overflowInsideCap` controls whether its overflow row consumes
- * one of those rows.
+ * one of those rows. `shown` defaults to the startup summary stream's progress; pass
+ * `Number.POSITIVE_INFINITY` to print a done summary whole regardless of that stream. `counts`
+ * and `total` override aggregates derived from `presentation.entries` when only a visible subset is stored.
  */
 export function layoutChangesSection(
 	theme: Theme,
@@ -568,6 +572,8 @@ export function layoutChangesSection(
 	shown = summaryStream.shown,
 	fileRowsMax = FILE_ROWS_MAX,
 	overflowInsideCap = true,
+	counts?: Record<ChangeKind, number>,
+	total?: number,
 ): string[] {
 	const rowsAvailable = Math.floor(maxRows);
 	if (!presentation || rowsAvailable < 1 || width < 1) return [];
@@ -577,6 +583,8 @@ export function layoutChangesSection(
 		shown,
 		fileRowsMax,
 		overflowInsideCap,
+		counts,
+		total,
 	}, rowsAvailable);
 }
 
