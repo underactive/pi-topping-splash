@@ -10,7 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`/local-changes`** runs on demand in a trusted TUI project, even when the startup summary is
-  off. It adds the settled file list, churn bars, line counts, and model summary as a display-only
+  off.
+
+### Changed
+
+- Development and CI now typecheck and test against Pi 1.1.0; the
+  `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.0.3.
+  Pi 1.0.4–1.1.0 remove no public export, and of the 52 symbols this extension imports only
+  `AssistantMessage` changed (optional `durationMs`), so it needs no code changes. Claude
+  Haiku 5.5 (`anthropic/claude-haiku-5-5`) can now appear in the Summary model picker when
+  Anthropic credentials are available. It adds the settled file list, churn bars, line counts, and model summary as a display-only
   transcript entry. Pi excludes this entry from model context after reload and compaction. The
   command adds clean and unavailable states. It ignores arguments. It allows one active run.
 
