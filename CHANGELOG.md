@@ -9,8 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`/local-changes`** runs on demand in a trusted TUI project, even when the startup summary is
-  off.
+- **`/local-changes`** summarizes uncommitted changes on demand in a trusted TUI project, even when
+  the startup summary is off. It appends the settled file list, churn bars, line counts, and model
+  summary as a display-only transcript entry that Pi keeps out of model context after reload and
+  compaction; a clean tree shows `none`, and a git failure shows that git is unavailable. It ignores
+  arguments and allows one active run. Like the startup summary, it sends bounded, redacted diff
+  excerpts to the Summary model's provider.
 
 ### Changed
 
@@ -19,9 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Pi 1.0.4–1.1.0 remove no public export, and of the 52 symbols this extension imports only
   `AssistantMessage` changed (optional `durationMs`), so it needs no code changes. Claude
   Haiku 5.5 (`anthropic/claude-haiku-5-5`) can now appear in the Summary model picker when
-  Anthropic credentials are available. It adds the settled file list, churn bars, line counts, and model summary as a display-only
-  transcript entry. Pi excludes this entry from model context after reload and compaction. The
-  command adds clean and unavailable states. It ignores arguments. It allows one active run.
+  Anthropic credentials are available.
 
 ## [0.5.1] - 2026-10-05
 
