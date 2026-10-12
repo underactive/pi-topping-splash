@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.1] - 2026-10-10
+## [0.5.2] - 2026-10-12
 
 ### Added
 
@@ -27,6 +27,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code changes. Claude
   Haiku 5.5 (`anthropic/claude-haiku-5-5`) can now appear in the Summary model picker when
   Anthropic credentials are available.
+
+### Fixed
+
+- **Retrying a changes summary cut off by the token limit.** The 0.5.1 retry did not tell an empty
+  answer caused by the provider's output token limit from a genuinely empty answer. It repeated the
+  cut-off request up to three more times and then settled on `summary unavailable: empty response`,
+  which named no cause. An empty answer with stop reason `length` now settles on the first attempt
+  as `summary unavailable: token limit reached`. A genuinely empty answer with a stop reason other
+  than `length`, `aborted`, or `error` still retries up to three times. This covers the startup
+  `[local changes]` summary and `/local-changes`, which share one collection and summary run.
+
+## [0.5.1] - 2026-10-05
+
+### Changed
+
 - Development and CI now typecheck and test against Pi 1.0.3; the
   `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.0.0.
   Pi 1.0.1–1.0.3 remove no public export and change none of the symbols this extension imports,
