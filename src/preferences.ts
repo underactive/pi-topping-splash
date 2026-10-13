@@ -43,7 +43,7 @@ type RawPreferences = {
 } | null;
 
 /**
- * Anything missing, unreadable or unrecognized falls back to the defaults: gate/reveal/changes-summary toggles "on", background "rainbow", dynamic tint "accent", animation "off".
+ * Anything missing, unreadable or unrecognized falls back to the defaults: gate "off", reveal/changes-summary toggles "on", background "rainbow", dynamic tint "accent", animation "off".
  * For `dynamicTint`, precedence is a theme-color `backgroundColor`, then a valid stored `dynamicTint`, then "accent"; "rainbow", "dynamic", and invalid values are excluded.
  */
 export function readPreferences(): SplashPreferences {
@@ -63,7 +63,7 @@ export function readPreferences(): SplashPreferences {
 		? { provider: parsed.changesSummaryModel.provider, id: parsed.changesSummaryModel.id }
 		: undefined;
 	return {
-		menuGate: parsed?.menuGate === "off" ? "off" : "on",
+		menuGate: parsed?.menuGate === "on" ? "on" : "off",
 		taglineReveal: parsed?.taglineReveal === "off" ? "off" : "on",
 		backgroundColor,
 		dynamicTint,

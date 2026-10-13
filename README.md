@@ -51,7 +51,7 @@ where ←/→ choose **Apply** (save and close) or **Cancel** and Enter fires th
 Esc also cancels. Enter on a toggle or cycle row does nothing; it only opens the **Summary model**
 picker.
 
-- **Startup gate menu** — show the startup gate menu below the splash on launch (ON by default)
+- **Startup gate menu** — show the startup gate menu below the splash on launch (OFF by default; turn it on here if you want the gate)
 - **Background color** — cycle with ←/→ through `rainbow` (a full-width hue sweep), the seven
   active theme colors (`accent`, `border`, `borderAccent`, `borderMuted`, `success`, `error`,
   `warning`), and `dynamic` (last in the cycle). A theme color fades vertically from the full
@@ -168,7 +168,7 @@ Session shutdown aborts an active run. An aborted run adds no entry.
 
 - Ensure Pi is running in TUI mode (`--no-tui` disables the splash).
 - Both the splash and the gate are skipped when the environment variable `PI_SPLASH_GATE_DONE=1` is set — an internal guard the extension sets on sessions it relaunches so the gate cannot re-trigger in a loop; relaunched sessions start on a clean screen.
-- Splash shows but the gate does not? The startup gate menu toggle was turned off at some point — that choice persists across launches, so run `/topping-splash-settings` and turn it back on.
+- Splash shows but the gate does not? The startup gate menu is off by default and stays off until you turn it on — run `/topping-splash-settings` and enable **Startup gate menu** if you want the gate on every launch.
 - On `reload` events the gate is intentionally skipped — only a genuine `startup` reason triggers it.
 - Check that the package is installed under `~/.pi/agent/npm/node_modules/@underactive/pi-topping-splash` and that `pi --verbose` lists the loaded extension (it overrides `quietStartup`).
 - Truecolor (24-bit color) support in your terminal is required for the rainbow swatch backdrop and the shimmer effect. On a 256-color theme the shimmer falls back to the settled tagline; the info panel's plate is still chosen from your terminal's resolved text color, and the backdrop's truecolor escapes are left to the terminal's own handling.

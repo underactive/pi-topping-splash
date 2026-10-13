@@ -160,6 +160,7 @@ describe("registration (I-01)", () => {
 
 describe("session_start gating (I-02, I-03, I-10)", () => {
 	it("shows header and gate on a genuine TUI startup; Esc proceeds", async () => {
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
 		const wired = wire();
 		const emitted = startup(wired);
 		await until(() => wired.ctx.customComponents.length > 0);
@@ -172,6 +173,7 @@ describe("session_start gating (I-02, I-03, I-10)", () => {
 	});
 
 	it("Quit in the gate shuts pi down (I-04)", async () => {
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
 		const wired = wire();
 		const emitted = startup(wired);
 		await until(() => wired.ctx.customComponents.length > 0);
@@ -302,13 +304,13 @@ describe("model_select (I-08) and before_agent_start (I-09)", () => {
 describe("commands (I-06, I-07)", () => {
 	it("applying the toggle persists the flipped value and notifies success", async () => {
 		const wired = wire();
-		assert.equal(readPreferences().menuGate, "on", "starts at the default");
+		assert.equal(readPreferences().menuGate, "off", "starts at the default");
 		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
 		component.handleInput(KEY.space);
 		pressApply(component);
 		await handlerPromise;
-		assert.equal(readPreferences().menuGate, "off", "choice written to disk");
+		assert.equal(readPreferences().menuGate, "on", "choice written to disk");
 		assert.equal(readPreferences().taglineReveal, "on", "untouched toggle keeps its value");
 		assert.equal(wired.ctx.setHeaderCalls.length, 0, "header untouched — the gate is decided at startup");
 		assert.ok(
@@ -327,7 +329,7 @@ describe("commands (I-06, I-07)", () => {
 		await handlerPromise;
 		const prefs = readPreferences();
 		assert.equal(prefs.taglineReveal, "off", "choice written to disk");
-		assert.equal(prefs.menuGate, "on", "gate preference untouched");
+		assert.equal(prefs.menuGate, "off", "gate preference untouched");
 	});
 
 	it("escape cancels without writing or notifying success", async () => {
@@ -337,7 +339,7 @@ describe("commands (I-06, I-07)", () => {
 		component.handleInput(KEY.space);
 		component.handleInput(KEY.esc);
 		await handlerPromise;
-		assert.equal(readPreferences().menuGate, "on", "preference untouched");
+		assert.equal(readPreferences().menuGate, "off", "preference untouched");
 		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false, "no file written");
 		assert.ok(!wired.ctx.notifications.some((n) => n.type === "info"), "no success notification");
 	});
@@ -376,7 +378,7 @@ describe("commands (I-06, I-07)", () => {
 		}
 		assert.ok(wired.ctx.notifications.some((n) => n.type === "error"), "failure reported to the user");
 		assert.ok(!wired.ctx.notifications.some((n) => n.type === "info"), "no false success notification");
-		assert.equal(readPreferences().menuGate, "on", "preference unchanged after the failed write");
+		assert.equal(readPreferences().menuGate, "off", "preference unchanged after the failed write");
 	});
 
 	it("non-TUI mode notifies an error and shows no menu", async () => {
@@ -444,7 +446,7 @@ describe("startup changes settings (I-18)", () => {
 		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false, "nothing written yet");
 		pressApply(menu);
 		await finished;
-		assert.equal(readPreferences().menuGate, "off", "the staged toggle survived the stray Enters");
+		assert.equal(readPreferences().menuGate, "on", "the staged toggle survived the stray Enters");
 	});
 
 	it("Tab hands the arrow keys to the action bar and back to the rows", async () => {
@@ -468,7 +470,7 @@ describe("startup changes settings (I-18)", () => {
 		menu.handleInput(KEY.right);
 		menu.handleInput(KEY.enter);
 		await finished;
-		assert.equal(readPreferences().menuGate, "on", "staged change discarded");
+		assert.equal(readPreferences().menuGate, "off", "staged change discarded");
 		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false, "no file written");
 		assert.ok(!wired.ctx.notifications.some((n) => n.type === "info"), "no success notification");
 	});
@@ -593,7 +595,7 @@ describe("startup changes settings (I-18)", () => {
 		pressApply(menu);
 		await finished;
 		const prefs = readPreferences();
-		assert.equal(prefs.menuGate, "on");
+		assert.equal(prefs.menuGate, "off");
 		assert.equal(prefs.backgroundColor, "rainbow");
 	});
 
@@ -1051,9 +1053,16 @@ describe("menuGate persistence (I-14)", () => {
 		return wired;
 	}
 
-	it("defaults to on (gate shown) with no preference file written yet", () => {
-		assert.equal(readPreferences().menuGate, "on");
+	it("defaults to off (splash-only) with no preference file written yet", () => {
+		assert.equal(readPreferences().menuGate, "off");
 		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false);
+	});
+
+	it("a fresh TUI startup with no preference file keeps the splash and mounts no gate", async () => {
+		const wired = wire();
+		await startup(wired);
+		assert.equal(wired.ctx.setHeaderCalls.length, 1, "splash installed");
+		assert.equal(wired.ctx.customComponents.length, 0, "no gate");
 	});
 
 	it("menuGate:off keeps the splash and drops the gate on every later launch", async () => {
@@ -1085,15 +1094,13 @@ describe("menuGate persistence (I-14)", () => {
 		await emitted;
 	});
 
-	it("a corrupt preference file falls back to the gate instead of throwing", async () => {
+	it("a corrupt preference file falls back to splash-only instead of throwing", async () => {
 		writeFileSync(join(env.agentDir, "pi-topping-splash.json"), "{not json", "utf8");
-		assert.equal(readPreferences().menuGate, "on");
+		assert.equal(readPreferences().menuGate, "off");
 		const wired = wire();
-		const emitted = startup(wired);
-		await until(() => wired.ctx.customComponents.length > 0);
-		assert.equal(wired.ctx.customComponents.length, 1, "gate still shown");
-		(wired.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput("\x1b");
-		await emitted;
+		await startup(wired);
+		assert.equal(wired.ctx.setHeaderCalls.length, 1, "splash still installed");
+		assert.equal(wired.ctx.customComponents.length, 0, "no gate");
 	});
 });
 
@@ -1128,22 +1135,17 @@ describe("changesSummary default (I-14)", () => {
 describe("tagline reveal preference (I-15)", () => {
 	it("defaults to on: startup starts the reveal", async () => {
 		const wired = wire();
-		const emitted = startup(wired);
-		await until(() => wired.ctx.customComponents.length > 0);
+		await startup(wired);
+		await until(() => wired.ctx.setHeaderCalls.length > 0);
 		assert.notEqual(taglineReveal.timer, null, "reveal ticker running");
-		(wired.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput("\x1b");
-		await emitted;
 	});
 
 	it("taglineReveal:off installs the splash without ever starting the reveal", async () => {
 		await persist({ taglineReveal: "off" });
 		const wired = wire();
-		const emitted = startup(wired);
-		await until(() => wired.ctx.customComponents.length > 0);
+		await startup(wired);
 		assert.ok(wired.ctx.setHeaderCalls.length >= 1, "splash still installed");
 		assert.equal(taglineReveal.timer, null, "reveal never started");
-		(wired.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput("\x1b");
-		await emitted;
 	});
 
 	it("taglineReveal:off combines with menuGate:off (splash-only, settled)", async () => {
@@ -1231,7 +1233,7 @@ describe("background color setting (I-06 extension)", () => {
 		await handlerPromise;
 		const prefs = readPreferences();
 		assert.equal(prefs.backgroundColor, "border");
-		assert.equal(prefs.menuGate, "on", "untouched toggle keeps its value");
+		assert.equal(prefs.menuGate, "off", "untouched toggle keeps its value");
 		assert.equal(prefs.taglineReveal, "on", "untouched toggle keeps its value");
 		assert.equal(prefs.changesSummary, "on", "untouched summary toggle keeps its default");
 	});
@@ -1325,7 +1327,7 @@ describe("gradient animation setting (I-17)", () => {
 		const prefs = readPreferences();
 		assert.equal(prefs.gradientAnimation, "breathe", "cycled one step right");
 		assert.equal(prefs.backgroundColor, "rainbow", "untouched cycle keeps its value");
-		assert.equal(prefs.menuGate, "on", "untouched toggle keeps its value");
+		assert.equal(prefs.menuGate, "off", "untouched toggle keeps its value");
 	});
 
 	it("an invalid persisted value falls back to off", () => {

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The startup gate menu now defaults to off when `menuGate` is missing from preferences (new installs
+  and unreadable files). Turn it on with `/topping-splash-settings` if you want the gate on launch.
+
 ## [0.5.2] - 2026-10-12
 
 ### Added

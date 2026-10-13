@@ -311,6 +311,7 @@ describe("installHeader (H-04, H-05)", () => {
 	});
 
 	it("reserves gate rows for the changes block and keeps the changes-only header separate", () => {
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
 		const { tui, ctx } = install();
 		state.changes = {
 			entries: [{ path: "file.ts", kind: "changed", untracked: false }],
