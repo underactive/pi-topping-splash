@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The startup gate menu now defaults to off when `menuGate` is missing from preferences (new installs
   and unreadable files). Turn it on with `/topping-splash-settings` if you want the gate on launch.
+- Development and CI now typecheck and test against Pi 1.2.0; the
+  `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.1.0.
+  No source changes were required: `before_agent_start` is now a `messageType` union, but its
+  `systemPrompt` remains on the shared base type, so the handler also covers custom `triggerTurn`
+  runs. Pi's per-key OpenRouter model availability also flows into the existing Summary model picker.
 
 ## [0.5.2] - 2026-10-12
 
