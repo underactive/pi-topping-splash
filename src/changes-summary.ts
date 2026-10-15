@@ -137,7 +137,8 @@ async function requestSummary(
 						},
 					],
 				},
-				{ signal: requestSignal, maxTokens: 400 },
+				// OpenCode providers reject requests without a session id (sent as x-opencode-session).
+				{ signal: requestSignal, maxTokens: 400, sessionId: ctx.sessionManager.getSessionId() },
 			)
 			.result();
 	} catch (error) {

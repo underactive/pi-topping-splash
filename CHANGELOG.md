@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `systemPrompt` remains on the shared base type, so the handler also covers custom `triggerTurn`
   runs. Pi's per-key OpenRouter model availability also flows into the existing Summary model picker.
 
+### Fixed
+
+- Local-changes summaries now send the Pi session id with the model request, so OpenCode Zen and
+  OpenCode Go models no longer fail with `400 MissingSessionID`.
+
 ## [0.5.2] - 2026-10-12
 
 ### Added

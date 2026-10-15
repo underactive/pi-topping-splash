@@ -47,6 +47,8 @@ export interface FakeCtxOptions {
 	streamSimple?: (model: Model<any>, context: Context, options?: SimpleStreamOptions) => Promise<AssistantMessage>;
 }
 
+export const FAKE_SESSION_ID = "fake-session-id";
+
 /** Implements only the ExtensionContext surface the extension touches. */
 export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 	const bag: FakeCtxBag = {
@@ -129,6 +131,9 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 			return bag.hasUI;
 		},
 		cwd: options.cwd,
+		sessionManager: {
+			getSessionId: () => FAKE_SESSION_ID,
+		},
 		modelRegistry: {
 			getAvailable: () => bag.models,
 			find: (provider: string, id: string) =>

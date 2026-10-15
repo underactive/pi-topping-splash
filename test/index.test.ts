@@ -16,7 +16,7 @@ import { headerRenderState, state } from "../src/state.ts";
 import { buildHeaderParts } from "../src/splash.ts";
 import { sanitizeTuiText } from "../src/text.ts";
 import { setArgv, setEnv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
-import { createFakeCtx, makeAssistantMessage, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
+import { createFakeCtx, FAKE_SESSION_ID, makeAssistantMessage, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
 import { createFakePi, type FakePiBag, type FakePiHarness } from "./helpers/fake-api.ts";
 import { createFakeTui, type FakeTuiHarness } from "./helpers/fake-tui.ts";
 import { KEY } from "./helpers/keys.ts";
@@ -903,6 +903,20 @@ describe("startup changes integration (AC2-AC8)", () => {
 		const text = mountedHeader(wired).render(100).map(sanitizeTuiText).join("\n");
 		assert.ok(text.includes("[local changes] +1, ~1, -1"));
 		assert.ok(text.includes("summary unavailable: empty response"));
+	});
+
+	it("sends the session id so OpenCode providers accept the request", async () => {
+		const model = makeModel("opencode-go", "model");
+		const harness = createFakeCtx({
+			cwd: env.cwd,
+			theme: makeTheme(),
+			tui: createFakeTui().tui,
+			model,
+			models: [model],
+			streamSimple: async () => makeAssistantMessage("Summary."),
+		});
+		await summarizeChanges(harness.ctx, model, { systemPrompt: "system", text: "text" }, new AbortController().signal);
+		assert.equal(harness.streamCalls[0]?.options?.sessionId, FAKE_SESSION_ID);
 	});
 
 	it("stops retrying an empty summary once the run is aborted (CS-07)", async () => {
