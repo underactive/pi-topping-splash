@@ -78,7 +78,8 @@ picker.
   randomly selects one of the other options (`symbol` or `logo`) per startup. The `logo` option plays
   the 21-frame pi logo animation from `https://pi.dev/install.sh` once, at twice the scale that
   fits the glyph slot, in its own slot with the splash shadow; it holds the final
-  source frame after playback. Frames and RGB values were transcribed on 2026-10-17. It falls back to the glyph art when the active theme is not truecolor,
+  source frame after playback, and that held mark is what sits centered beside the info panel, so
+  the pieces fall in from the top edge when the panel is shorter than the animation. Frames and RGB values were transcribed on 2026-10-17. It falls back to the glyph art when the active theme is not truecolor,
   in Apple Terminal, or when `TERM=dumb`; in tmux, set `COLORTERM=truecolor` or `PI_TRUE_COLOR=1`
   if Pi does not detect 24-bit color.
 - **Model + prompt size reveal animation** — shimmer-reveal the model · prompt-size tagline on
@@ -122,7 +123,7 @@ churn bar and its line counts against `HEAD`, which fill in just after the listi
 summary sits a blank row below the last file row. Untracked files show `new` and binary files
 `bin`; narrow panels drop the bars, then the line counts. The section spends only the rows the gate
 or editor leaves free below the splash, growing the panel and the gradient around it downward while
-the lists above stay put and the pi glyph stays centered beside the taller panel (the installer logo sits 4 rows above center). When those rows cannot
+the lists above stay put and the logo stays centered beside the taller panel (the installer logo by its held mark, not its animation box). When those rows cannot
 hold the listing, the section is one line instead: `[local changes] +3, ~4, -3 · ~ src/changes-summary.ts +12 ·
 Refactors…` (counts, most changed file, and summary preview, as space permits). Added, changed, and
 deleted paths appear before the model request finishes, and the summary streams in under the file

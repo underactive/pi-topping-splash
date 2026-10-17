@@ -9,7 +9,6 @@ import {
 	buildPanelLines,
 	buildShortcutSection,
 	LOGO_GAP,
-	LOGO_LIFT_ROWS,
 	MAX_SPLASH_ROW_SHARE,
 	PANEL_MARGIN_Y,
 	PANEL_MAX_WIDTH,
@@ -347,36 +346,39 @@ describe("installer logo compositor (S-15, S-16)", () => {
 		}
 	});
 
-	it("lifts the installer brand mark LOGO_LIFT_ROWS above the splash's vertical center, side by side", () => {
-		// The glyph stays exactly centered; only the installer logo gets the optical lift.
-		// Use a section big enough that the panel outgrows the installer slot, so the lift is visible
-		// and the top-edge clamp (`max(0, ...)`) does not hide it.
-		const section = () => Array.from({ length: 40 }, () => "x");
-		// Frame 0 paints at source row 0, so its topmost ink cell sits exactly at `logoY`. The white
-		// hand-off frame would gap down to row 9 instead.
+	it("centers the installer's held mark on the splash, side by side, with the drop-in runway above it", () => {
+		// Both styles center what the viewer sees: the glyph outright, the installer by the frame it
+		// holds after playback rather than by its slot, whose top rows are only runway for the frames
+		// that fall into place. Frame 0 paints from the slot's first row, so it shows where the slot starts.
 		const FIRST_FRAME = 0;
 		const paletteSgrs = Object.values(INSTALLER_LOGO_PALETTE).flatMap((color) => [`\x1b[38;2;${color}m`, `\x1b[48;2;${color}m`]);
 		const logoInkSgr = `\x1b[38;2;${LOGO_INK}m`;
-		const topmostInkRow = (lines: string[], needles: string[]): number => {
-			for (let row = 0; row < lines.length; row++) {
-				if (needles.some((code) => lines[row]!.includes(code))) return row;
-			}
-			return -1;
-		};
+		const inkRows = (lines: string[], needles: string[]): number[] =>
+			lines.flatMap((line, row) => needles.some((code) => line.includes(code)) ? [row] : []);
+		const slot = installerLogoMetrics();
+		assert.ok(slot.markTop > 0 && slot.markTop + slot.markRows === slot.rows, "the held mark fills the slot's bottom, under the runway");
+		// A panel taller than the slot shows the whole runway above the centered mark.
+		const section = () => Array.from({ length: 40 }, () => "x");
 		for (const width of [120, 160]) {
-			const installer = buildHeaderParts(width, 100, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], section, "accent", "logo", FIRST_FRAME);
+			const held = buildHeaderParts(width, 100, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], section, "accent", "logo");
+			const first = buildHeaderParts(width, 100, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], section, "accent", "logo", FIRST_FRAME);
 			const glyph = buildHeaderParts(width, 100, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], section, "accent", "symbol");
-			const slot = installerLogoMetrics();
-			const height = installer.lines.length;
-			assert.equal(height, glyph.lines.length, "same splash height either way");
-			const installerMinY = topmostInkRow(installer.lines, paletteSgrs);
-			const glyphMinY = topmostInkRow(glyph.lines, [logoInkSgr]);
-			assert.equal(installerMinY, Math.max(0, Math.floor((height - slot.rows) / 2) - LOGO_LIFT_ROWS), `width ${width}: installer mark lifted LOGO_LIFT_ROWS above center`);
-			assert.equal(glyphMinY, Math.floor((height - LOGO_LINES.length) / 2), `width ${width}: glyph stays exactly centered`);
-			assert.ok(installerMinY < glyphMinY, `width ${width}: installer mark sits above the centered glyph`);
-			// A splash no taller than the installer slot clamps the lift at the top edge.
-			const tight = buildHeaderParts(width, 60, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], undefined, "accent", "logo", FIRST_FRAME);
-			assert.equal(topmostInkRow(tight.lines, paletteSgrs), 0, `width ${width}: clamp at the top edge when the slot fills the splash`);
+			const height = held.lines.length;
+			assert.equal(height, glyph.lines.length, `width ${width}: same splash height either way`);
+			const centeredTop = Math.floor((height - slot.markRows) / 2);
+			const heldRows = inkRows(held.lines, paletteSgrs);
+			assert.deepEqual([heldRows[0], heldRows.at(-1)], [centeredTop, centeredTop + slot.markRows - 1], `width ${width}: held mark centered on the splash`);
+			assert.equal(inkRows(first.lines, paletteSgrs)[0], centeredTop - slot.markTop, `width ${width}: the slot starts markTop rows above the mark`);
+			assert.equal(inkRows(glyph.lines, [logoInkSgr])[0], Math.floor((height - LOGO_LINES.length) / 2), `width ${width}: glyph stays exactly centered`);
+			// A panel shorter than the slot still centers the mark; the runway above it clips at the top edge.
+			const tight = installerParts(width);
+			const tightFirst = installerParts(width, "off", FIRST_FRAME);
+			const tightTop = Math.floor((tight.lines.length - slot.markRows) / 2);
+			assert.ok(tightTop < slot.markTop, `width ${width}: the slot would start above the splash`);
+			const tightRows = inkRows(tight.lines, paletteSgrs);
+			assert.deepEqual([tightRows[0], tightRows.at(-1)], [tightTop, tightTop + slot.markRows - 1], `width ${width}: held mark centered on the short splash`);
+			assert.equal(inkRows(tightFirst.lines, paletteSgrs)[0], 0, `width ${width}: runway clips at the top edge`);
+			assertLinesExact(tightFirst.lines, width, `clipped frame 0 width=${width}`);
 		}
 	});
 });

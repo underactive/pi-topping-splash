@@ -5,7 +5,7 @@ import type { BackgroundColor, DynamicTint, GradientAnimation, Rgb, SwatchSample
 import type { ShortcutHint } from "./discovery.ts";
 import { LOGO_INK, LOGO_LINES, LOGO_ROWS, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "./logo.ts";
 import type { ConcreteLogoStyle } from "./logo.ts";
-import { INSTALLER_LOGO_ANIMATION_BOUNDS, INSTALLER_LOGO_FRAMES, INSTALLER_LOGO_LAST_FRAME, INSTALLER_LOGO_PALETTE } from "./installer-logo.ts";
+import { INSTALLER_LOGO_ANIMATION_BOUNDS, INSTALLER_LOGO_FRAMES, INSTALLER_LOGO_HELD_BOUNDS, INSTALLER_LOGO_LAST_FRAME, INSTALLER_LOGO_PALETTE } from "./installer-logo.ts";
 import { formatPromptSize, joinParts, padCenter, padRight, pickFitting, sanitizeTuiText, truncateVisible, visibleLength, wrapCommaDelimited } from "./text.ts";
 import { renderTagline } from "./reveal.ts";
 
@@ -26,13 +26,6 @@ export const PANEL_MAX_WIDTH = 100;
 export const PANEL_MIN_WIDTH = 34;
 /** Rows of bare swatch above and below the panel, so the rainbow reads as an unbroken band there. */
 export const PANEL_MARGIN_Y = 1;
-/**
- * Rows the installer logo sits above the splash's exact vertical center, so the brand mark reads
- * as optically balanced instead of slightly low against the taller info panel beside it. Clamped
- * at the top edge, so a splash no taller than the logo cannot lift the mark off the first row.
- * The pi glyph (the default `symbol` style) stays exactly centered — it does not need the lift.
- */
-export const LOGO_LIFT_ROWS = 4;
 /**
  * Ceiling on how much of the terminal the splash may occupy, so the startup gate below it still
  * fits. Past this the lists collapse to a wrapped counts summary.
@@ -203,16 +196,23 @@ export function stampLogo(ink: Map<number, Ink>, width: number, height: number, 
  */
 export const INSTALLER_LOGO_DISPLAY_SCALE = 2;
 
-/** Scale, reserved columns, and content rows for the installer mark, shadow excluded from the row count. */
-export function installerLogoMetrics(): { scale: number; width: number; rows: number } {
-	const { width: maxWidth, height: maxHeight } = INSTALLER_LOGO_ANIMATION_BOUNDS;
+/**
+ * Scale, reserved columns, and content rows for the installer mark, shadow excluded from the row
+ * count. The slot spans every frame's pixels; `markTop`/`markRows` locate the held final frame
+ * inside it, below the runway the drop-in frames fall through.
+ */
+export function installerLogoMetrics(): { scale: number; width: number; rows: number; markTop: number; markRows: number } {
+	const { y: slotY, width: maxWidth, height: maxHeight } = INSTALLER_LOGO_ANIMATION_BOUNDS;
 	const fitted = Math.max(1, Math.floor(Math.min(LOGO_WIDTH / maxWidth, (2 * LOGO_ROWS) / maxHeight)));
 	const scale = fitted * INSTALLER_LOGO_DISPLAY_SCALE;
 	const contentW = maxWidth * scale;
 	const contentSub = maxHeight * scale;
 	const width = contentW + LOGO_SHADOW_OFFSET;
 	const rows = Math.ceil(contentSub / 2);
-	return { scale, width, rows };
+	const { y: heldY, height: heldHeight } = INSTALLER_LOGO_HELD_BOUNDS;
+	const markTop = Math.floor(((heldY - slotY) * scale) / 2);
+	const markRows = Math.ceil(((heldY - slotY + heldHeight) * scale) / 2) - markTop;
+	return { scale, width, rows, markTop, markRows };
 }
 
 /** Stamps a source frame at the animation-wide scale, enlarged by `INSTALLER_LOGO_DISPLAY_SCALE`. */
@@ -410,9 +410,13 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 	const appended = section?.(band) ?? [];
 	const lines = appended.length > 0 ? [...selected.lines.slice(0, -1), ...appended, ""] : selected.lines;
 	const height = splashHeight(lines);
-	// Side by side, the logo and the panel are both centered on the finished splash, section included.
-	const logoLift = logoStyle === "logo" && sideBySide ? LOGO_LIFT_ROWS : 0;
-	const logoY = sideBySide ? Math.max(0, Math.floor((height - logoRows) / 2) - logoLift) : 0;
+	// Side by side, the panel and the mark the viewer sees are both centered on the finished splash,
+	// section included: the glyph outright, the installer by its held frame. That frame sits
+	// `markTop` rows into its slot, below the runway the drop-in frames fall through, so the slot
+	// starts that much higher and the runway clips at the top edge when the panel is shorter than it.
+	const markTop = installerSlot?.markTop ?? 0;
+	const markRows = installerSlot?.markRows ?? logoRows;
+	const logoY = sideBySide ? Math.floor((height - markRows) / 2) - markTop : 0;
 	const panelY = sideBySide ? Math.floor((height - lines.length) / 2) : listsY;
 	const taglineText = buildTaglineText(innerWidth, model, systemPromptSize);
 	const taglineRow = selected.taglineIndex;

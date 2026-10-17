@@ -95,6 +95,8 @@ function pixelBounds(frames: readonly LogoFrame[]): PixelBounds {
 
 /** The source-pixel union used to compute one shared scale for every frame. */
 export const INSTALLER_LOGO_ANIMATION_BOUNDS = pixelBounds(INSTALLER_LOGO_FRAMES);
+/** The final frame's own pixels: the mark that holds after playback, in the lower rows of the union. */
+export const INSTALLER_LOGO_HELD_BOUNDS = pixelBounds([INSTALLER_LOGO_FRAMES[INSTALLER_LOGO_LAST_FRAME]!]);
 
 /** Select the frame held at `timeMs`, clamping on the final frame. */
 export function installerFrameIndex(timeMs: number): number {

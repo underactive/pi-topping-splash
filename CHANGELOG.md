@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Logo style** setting for the splash banner with `random`, `symbol`, and `logo` options. The `random` option (the default) randomly selects between `symbol` and `logo` on startup. The `logo` option plays the 21-frame animation
-  transcribed from `https://pi.dev/install.sh` at one scale derived from all source frames, drawn at twice the glyph-slot fit in its own slot four rows above center beside the info panel, and holds the final frame after one-shot playback. It falls back to the glyph art when truecolor is unavailable or the terminal is unsupported.
+  transcribed from `https://pi.dev/install.sh` at one scale derived from all source frames, drawn at twice the glyph-slot fit in its own slot beside the info panel, and holds the final frame after one-shot playback. Side by side, that held mark, not the animation's full box, is what sits centered on the panel, so the drop-in frames fall from the top edge when the panel is shorter than the animation. It falls back to the glyph art when truecolor is unavailable or the terminal is unsupported.
 
 ## [0.5.3] - 2026-10-16
 
