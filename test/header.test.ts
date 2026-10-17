@@ -279,7 +279,7 @@ describe("installHeader (H-04, H-05)", () => {
 		}
 	});
 
-	it("a random installer selection starts its one-shot playback on the first render", (t) => {
+	it("a random installer selection stays stable after invalidation", (t) => {
 		enableTimers(t);
 		const restoreTerm = setEnv("TERM", "xterm-256color");
 		const restoreTermProgram = setEnv("TERM_PROGRAM", undefined);
@@ -291,8 +291,13 @@ describe("installHeader (H-04, H-05)", () => {
 			assert.equal(state.logoStyle, "random", "random seeds shared state");
 			const lines = component.render(120);
 			assert.equal(logoAnimation.frame, 0, "first render paints the initial installer frame");
-			assert.notEqual(logoAnimation.timer, null, "first render starts the one-shot ticker");
+			const playbackTimer = logoAnimation.timer;
+			assert.notEqual(playbackTimer, null, "first render starts the one-shot ticker");
 			assertLinesExact(lines, 120, "random installer header lines");
+			Math.random = () => 0.1;
+			headerRenderState.invalidate?.();
+			assert.deepEqual(component.render(120), lines, "invalidation keeps the selected logo and layout");
+			assert.equal(logoAnimation.timer, playbackTimer, "invalidation does not stop the selected logo playback");
 		} finally {
 			Math.random = random;
 			restoreTermProgram();

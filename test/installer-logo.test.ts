@@ -85,16 +85,12 @@ describe("installer logo transcription (IL-01..IL-04)", () => {
 			assert.equal(resolveLogoStyle("symbol", "truecolor"), "symbol");
 			assert.equal(resolveLogoStyle("logo", "truecolor"), "logo");
 			assert.equal(resolveLogoStyle("logo", "256color"), "symbol");
-			assert.ok(["symbol", "logo"].includes(resolveLogoStyle("random", "truecolor")));
-			assert.equal(resolveLogoStyle("random", "256color"), "symbol");
 			process.env.TERM = "dumb";
 			assert.equal(resolveLogoStyle("logo", "truecolor"), "symbol");
-			assert.equal(resolveLogoStyle("random", "truecolor"), "symbol");
 			if (process.platform === "darwin") {
 				process.env.TERM = "xterm-256color";
 				process.env.TERM_PROGRAM = "Apple_Terminal";
 				assert.equal(resolveLogoStyle("logo", "truecolor"), "symbol");
-				assert.equal(resolveLogoStyle("random", "truecolor"), "symbol");
 			}
 		} finally {
 			if (previousTerm === undefined) delete process.env.TERM;

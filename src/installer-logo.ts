@@ -2,8 +2,8 @@ import { isAppleTerminalSession } from "@earendil-works/pi-tui";
 import type { TerminalColorMode } from "@earendil-works/pi-tui";
 import { rgbFromHex } from "./color.ts";
 import type { Rgb } from "./color.ts";
-import { LOGO_INK, LOGO_STYLE_OPTIONS, pickRandomLogoStyle } from "./logo.ts";
-import type { ConcreteLogoStyle, LogoStyle } from "./logo.ts";
+import { LOGO_INK } from "./logo.ts";
+import type { ConcreteLogoStyle } from "./logo.ts";
 
 /**
  * Literal transcription of `pi_logo_animation` / `draw_logo_frame` from
@@ -114,9 +114,8 @@ export function installerFrameIndex(timeMs: number): number {
 }
 
 /** The installer animation needs RGB color and half-block-safe row alignment. */
-export function resolveLogoStyle(style: LogoStyle, colorMode: TerminalColorMode): ConcreteLogoStyle {
-	const concrete = style === "random" ? pickRandomLogoStyle() : style;
-	if (concrete !== "logo" || colorMode !== "truecolor" || process.env.TERM === "dumb" || isAppleTerminalSession()) {
+export function resolveLogoStyle(style: ConcreteLogoStyle, colorMode: TerminalColorMode): ConcreteLogoStyle {
+	if (style !== "logo" || colorMode !== "truecolor" || process.env.TERM === "dumb" || isAppleTerminalSession()) {
 		return "symbol";
 	}
 	return "logo";

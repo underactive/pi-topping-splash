@@ -3,7 +3,8 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import type { TUI } from "@earendil-works/pi-tui";
 import { DEFAULT_DYNAMIC_TINT } from "./color.ts";
 import type { BackgroundColor, GradientAnimation } from "./color.ts";
-import type { ConcreteLogoStyle, LogoStyle } from "./logo.ts";
+import { pickRandomLogoStyle } from "./logo.ts";
+import type { ConcreteLogoStyle } from "./logo.ts";
 import { changesRenderState, headerRenderState, state } from "./state.ts";
 import { gradientAnimation, logoAnimation, startGradientAnimation, startLogoAnimation, stopLogoAnimation } from "./animate.ts";
 import { startTaglineReveal, taglineReveal } from "./reveal.ts";
@@ -50,6 +51,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 	state.dynamicTint = prefs.dynamicTint ?? DEFAULT_DYNAMIC_TINT;
 	state.gradientAnimation = prefs.gradientAnimation;
 	state.logoStyle = prefs.logoStyle ?? "random";
+	const randomLogoStyle: ConcreteLogoStyle = pickRandomLogoStyle();
 	ctx.ui.setHeader((tui: TUI, theme: Theme) => {
 		headerRenderState.requestRender = () => tui.requestRender();
 		changesRenderState.requestRender = () => tui.requestRender();
@@ -75,7 +77,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 		let cachedRepaintLogo: ((frame: number) => { row: number; line: string }[]) | undefined = undefined;
 		const component = {
 			render: (width: number): string[] => {
-				const logoStyle = cachedLogoStyle ?? resolveLogoStyle(state.logoStyle, theme.getColorMode());
+				const logoStyle = cachedLogoStyle ?? resolveLogoStyle(state.logoStyle === "random" ? randomLogoStyle : state.logoStyle, theme.getColorMode());
 				if (logoStyle === "symbol") stopLogoAnimation();
 				else if (logoStyle === "logo" && !logoAnimation.timer && !logoAnimation.completed && !state.conversationStarted) startLogoAnimation();
 				const rows = tui.terminal.rows;
@@ -184,6 +186,5 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 	if (prefs.taglineReveal === "on") startTaglineReveal();
 	if (prefs.gradientAnimation !== "off") startGradientAnimation();
 	// Render stops this ticker when the theme or terminal forces the glyph fallback.
-	// For "random", state.logoStyle is resolved once render runs (or ticker starts if logo is picked).
 	if (state.logoStyle === "logo") startLogoAnimation();
 }
