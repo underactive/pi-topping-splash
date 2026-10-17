@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Logo style** setting for the splash banner with `random`, `symbol`, and `logo` options. The `random` option (the default) randomly selects between `symbol` and `logo` on startup. The `logo` option plays the 21-frame animation
+  transcribed from `https://pi.dev/install.sh` at one scale derived from all source frames, holds the
+  final frame after playback, and falls back to the glyph art when truecolor is unavailable or the terminal is unsupported.
+
+### Changed
+
+- The installer splash logo is drawn at twice the scale that fits the glyph slot, in its own wider and taller slot, so the mark is not a small patch in the banner.
+- The installer splash logo now sits `LOGO_LIFT_ROWS` (4) above the splash's exact vertical center, for optical balance against the taller info panel beside it; the pi glyph stays exactly centered. Clamped at the top edge, so a splash no taller than the installer slot cannot lift the mark off the first row.
+- **Logo style** defaults to `random`, which randomly selects one of the other options (`symbol` or `logo`) per startup. Missing or unrecognized preferences resolve to `random`.
+
+### Fixed
+
+- The installer logo animation now remains on its final frame after its one-shot playback instead of restarting on a later header render.
+
 ## [0.5.3] - 2026-10-16
 
 ### Changed

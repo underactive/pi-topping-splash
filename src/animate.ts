@@ -1,4 +1,5 @@
 import { headerRenderState } from "./state.ts";
+import { INSTALLER_LOGO_DURATION_MS, INSTALLER_LOGO_LAST_FRAME, INSTALLER_LOGO_LOOP, installerFrameIndex } from "./installer-logo.ts";
 
 /**
  * Repaint cadence of the animated backdrop. Deliberately far coarser than the reveal's 20ms
@@ -39,4 +40,57 @@ export function stopGradientAnimation(): void {
 	if (!gradientAnimation.timer) return;
 	clearInterval(gradientAnimation.timer);
 	gradientAnimation.timer = null;
+}
+
+/** Frame-change cadence for the installer logo; its shortest source hold is 75ms. */
+export const LOGO_TICK_MS = 20;
+
+/** One-shot installer logo clock; idle holds the final source frame. */
+export const logoAnimation = {
+	timer: null as ReturnType<typeof setInterval> | null,
+	lastTickAt: 0,
+	timeMs: 0,
+	frame: INSTALLER_LOGO_LAST_FRAME,
+	tick: 0,
+	completed: false,
+};
+
+/** Starts (or replays) the installer animation; an active ticker keeps its current run. */
+export function startLogoAnimation(): void {
+	if (logoAnimation.timer) return;
+	logoAnimation.timeMs = 0;
+	logoAnimation.frame = 0;
+	logoAnimation.completed = false;
+	logoAnimation.lastTickAt = Date.now();
+	logoAnimation.tick++;
+	headerRenderState.requestRender?.();
+	logoAnimation.timer = setInterval(() => {
+		const now = Date.now();
+		const step = Math.min(now - logoAnimation.lastTickAt, LOGO_TICK_MS * 2);
+		logoAnimation.lastTickAt = now;
+		logoAnimation.timeMs += step;
+		const frame = installerFrameIndex(logoAnimation.timeMs);
+		if (frame !== logoAnimation.frame) {
+			logoAnimation.frame = frame;
+			logoAnimation.tick++;
+			headerRenderState.requestRender?.();
+		}
+		if (!INSTALLER_LOGO_LOOP && logoAnimation.timeMs >= INSTALLER_LOGO_DURATION_MS) {
+			logoAnimation.completed = true;
+			stopLogoAnimation();
+		}
+	}, LOGO_TICK_MS);
+	logoAnimation.timer.unref();
+}
+
+/** Stops the clock and restores the final installer source frame. */
+export function stopLogoAnimation(): void {
+	if (!logoAnimation.timer) return;
+	clearInterval(logoAnimation.timer);
+	logoAnimation.timer = null;
+	if (logoAnimation.frame !== INSTALLER_LOGO_LAST_FRAME) {
+		logoAnimation.frame = INSTALLER_LOGO_LAST_FRAME;
+		logoAnimation.tick++;
+		headerRenderState.requestRender?.();
+	}
 }

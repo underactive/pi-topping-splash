@@ -1,7 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { BACKGROUND_COLOR_OPTIONS, DEFAULT_DYNAMIC_TINT, GRADIENT_ANIMATION_OPTIONS, isDynamicTint, type BackgroundColor, type GradientAnimation } from "./color.ts";
-import { startGradientAnimation, stopGradientAnimation } from "./animate.ts";
+import { LOGO_STYLE_OPTIONS } from "./logo.ts";
+import type { LogoStyle } from "./logo.ts";
+import { startGradientAnimation, startLogoAnimation, stopGradientAnimation, stopLogoAnimation } from "./animate.ts";
 import { GATE_PANEL_MAX_WIDTH, renderPopupBox } from "./gate-ui.ts";
 import { TwoPaneModelThinking, availableModelRefs, modelRefLabel } from "./model-picker.ts";
 import type { ModelRef } from "./model-picker.ts";
@@ -15,6 +17,7 @@ interface SplashSettingsValues {
 	taglineReveal: boolean;
 	backgroundColor: BackgroundColor;
 	gradientAnimation: GradientAnimation;
+	logoStyle: LogoStyle;
 	changesSummary: boolean;
 	changesSummaryModel: string;
 }
@@ -84,6 +87,7 @@ export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
 		taglineReveal: prefs.taglineReveal === "on",
 		backgroundColor: prefs.backgroundColor,
 		gradientAnimation: prefs.gradientAnimation,
+		logoStyle: prefs.logoStyle ?? "random",
 		changesSummary: prefs.changesSummary === "on",
 		changesSummaryModel: summaryModel ? modelRefLabel(summaryModel) : SESSION_MODEL_LABEL,
 	};
@@ -103,6 +107,7 @@ export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
 					items: [
 						{ id: "backgroundColor", label: "Background color", value: values.backgroundColor, cycleValues: BACKGROUND_COLOR_OPTIONS },
 						{ id: "gradientAnimation", label: "Animate gradient", value: values.gradientAnimation, cycleValues: GRADIENT_ANIMATION_OPTIONS },
+						{ id: "logoStyle", label: "Logo style", value: values.logoStyle, cycleValues: LOGO_STYLE_OPTIONS },
 					],
 				},
 				{
@@ -144,9 +149,10 @@ export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
 
 		const backgroundColor = result.values.backgroundColor;
 		const gradientAnimation = result.values.gradientAnimation;
+		const logoStyle = result.values.logoStyle;
 		const dynamicTint = isDynamicTint(backgroundColor) ? backgroundColor : prefs.dynamicTint ?? DEFAULT_DYNAMIC_TINT;
-		// Gate/reveal and startup-summary keys are read at startup; background and animation also
-		// apply immediately below, to a splash that may already be visible. Applying a theme color
+		// Gate/reveal and startup-summary keys are read at startup; background, animation, and logo
+		// style also apply immediately below, to a splash that may already be visible. Applying a theme color
 		// also records it as the tint for the dynamic backdrop.
 		if (writePreferences({
 			menuGate: result.values.menuGate ? "on" : "off",
@@ -154,6 +160,7 @@ export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
 			backgroundColor,
 			dynamicTint,
 			gradientAnimation,
+			logoStyle,
 			changesSummary: result.values.changesSummary ? "on" : "off",
 			changesSummaryModel: summaryModel,
 		})) {
@@ -161,6 +168,13 @@ export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
 			state.backgroundColor = backgroundColor;
 			state.dynamicTint = dynamicTint;
 			state.gradientAnimation = gradientAnimation;
+			const logoChanged = logoStyle !== state.logoStyle;
+			state.logoStyle = logoStyle;
+			if (logoStyle === "logo") {
+				if (logoChanged && !state.conversationStarted && headerRenderState.requestRender) startLogoAnimation();
+			} else {
+				stopLogoAnimation();
+			}
 			// requestRender doubles as the "a splash header is wired" signal: without one there
 			// is nothing to animate, so the ticker stays off until the next startup seeds it.
 			// conversationStarted means the splash has scrolled (or is about to scroll) off-viewport,

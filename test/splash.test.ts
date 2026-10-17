@@ -9,6 +9,7 @@ import {
 	buildPanelLines,
 	buildShortcutSection,
 	LOGO_GAP,
+	LOGO_LIFT_ROWS,
 	MAX_SPLASH_ROW_SHARE,
 	PANEL_MARGIN_Y,
 	PANEL_MAX_WIDTH,
@@ -18,13 +19,16 @@ import {
 	paintRow,
 	paintSplash,
 	SPLASH_MARGIN_X,
+	installerLogoMetrics,
+	stampInstallerLogo,
 	stampLogo,
 	SWATCH_CELL,
 	type Ink,
 	type PanelPlacement,
 	type SplashBand,
 } from "../src/splash.ts";
-import { LOGO_INK, LOGO_LINES, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "../src/logo.ts";
+import { LOGO_INK, LOGO_LINES, LOGO_ROWS, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "../src/logo.ts";
+import { INSTALLER_LOGO_ANIMATION_BOUNDS, INSTALLER_LOGO_FRAMES, INSTALLER_LOGO_LAST_FRAME, INSTALLER_LOGO_PALETTE } from "../src/installer-logo.ts";
 import { PANEL_BG_DARK } from "../src/color.ts";
 import { sanitizeTuiText, visibleLength } from "../src/text.ts";
 import { resetModuleState } from "./helpers/reset.ts";
@@ -228,9 +232,152 @@ describe("paint primitives (S-05, S-10)", () => {
 		const colors = new Set<string>();
 		for (const key of ink.keys()) {
 			assert.ok(Number.isInteger(key) && key >= 0 && key < width * height, `cell ${key} out of bounds`);
-			colors.add(ink.get(key)!.color);
+			colors.add(ink.get(key)!.color!);
 		}
 		assert.deepEqual([...colors].sort(), [LOGO_INK, LOGO_SHADOW].sort());
+	});
+});
+
+describe("installer logo compositor (S-15, S-16)", () => {
+	const installerParts = (width: number, animation: "off" | "breathe" = "off", frame = INSTALLER_LOGO_LAST_FRAME) =>
+		buildHeaderParts(width, 60, theme, [], [], [], MODEL, 2048, "rainbow", animation, 0, [], [], undefined, "accent", "logo", frame);
+
+	it("stamps bounded half-block cells, all frame colors, and a down-right shadow", () => {
+		const width = 80;
+		const height = 40;
+		const originX = 3;
+		const originY = 2;
+		let finalShadowCells: { x: number; y: number }[] = [];
+		let finalLogoCells: { x: number; y: number }[] = [];
+		for (const [frameIndex, frame] of INSTALLER_LOGO_FRAMES.entries()) {
+			const ink = new Map<number, Ink>();
+			stampInstallerLogo(ink, width, height, originX, originY, frameIndex);
+			assert.ok(ink.size > 0, `frame ${frameIndex} paints cells`);
+			const colors = new Set<string>();
+			const shadowCells: { x: number; y: number }[] = [];
+			const logoCells: { x: number; y: number }[] = [];
+			for (const [index, cell] of ink) {
+				assert.ok(Number.isInteger(index) && index >= 0 && index < width * height, `frame ${frameIndex} cell ${index} in bounds`);
+				assert.equal(cell.ch, "▀");
+				if (cell.color) colors.add(cell.color);
+				if (cell.backdrop) colors.add(cell.backdrop);
+				const point = { x: index % width, y: Math.floor(index / width) };
+				if (cell.color === LOGO_SHADOW || cell.backdrop === LOGO_SHADOW) shadowCells.push(point);
+				if (Object.values(INSTALLER_LOGO_PALETTE).some((color) => cell.color === color || cell.backdrop === color)) logoCells.push(point);
+			}
+			const { x, y, width: cropWidth, height: cropHeight } = INSTALLER_LOGO_ANIMATION_BOUNDS;
+			const usedKeys = new Set(frame.pixels.slice(y, y + cropHeight).map((row) => row.slice(x, x + cropWidth)).join("").replaceAll(".", ""));
+			for (const key of usedKeys) assert.ok(colors.has(INSTALLER_LOGO_PALETTE[key]!), `frame ${frameIndex} visible color ${key} stamped`);
+			for (const color of colors) assert.ok(color === LOGO_SHADOW || Object.values(INSTALLER_LOGO_PALETTE).includes(color));
+			if (frameIndex === INSTALLER_LOGO_LAST_FRAME) {
+				finalShadowCells = shadowCells;
+				finalLogoCells = logoCells;
+			}
+		}
+		assert.equal(Math.min(...finalShadowCells.map((point) => point.x)), Math.min(...finalLogoCells.map((point) => point.x)) + LOGO_SHADOW_OFFSET);
+		assert.equal(Math.min(...finalShadowCells.map((point) => point.y)), Math.min(...finalLogoCells.map((point) => point.y)) + LOGO_SHADOW_OFFSET);
+	});
+
+	it("keeps the final hand-off frame on the animation-wide scale", () => {
+		const ink = new Map<number, Ink>();
+		const width = 80;
+		stampInstallerLogo(ink, width, 32, 20, 3, INSTALLER_LOGO_LAST_FRAME);
+		const white = INSTALLER_LOGO_PALETTE.w;
+		const body = [...ink.entries()].flatMap(([index, cell]) =>
+			cell.color === white || cell.backdrop === white
+				? [{ x: index % width, y: Math.floor(index / width) }]
+				: [],
+		);
+		assert.ok(body.length > 0, "final source pixels are stamped with the installer white");
+		const minX = Math.min(...body.map(({ x }) => x));
+		const maxX = Math.max(...body.map(({ x }) => x));
+		const minY = Math.min(...body.map(({ y }) => y));
+		const maxY = Math.max(...body.map(({ y }) => y));
+		const { scale } = installerLogoMetrics();
+		const fitted = Math.floor(Math.min(LOGO_WIDTH / INSTALLER_LOGO_ANIMATION_BOUNDS.width, (2 * LOGO_ROWS) / INSTALLER_LOGO_ANIMATION_BOUNDS.height));
+		assert.equal(scale, fitted * 2, "the installer mark is twice the glyph-slot fit");
+		assert.equal(maxX - minX + 1, 4 * scale, "final frame's four active columns use the doubled shared scale");
+		assert.equal(maxY - minY + 1, 12, "the half-block raster is twice as tall as the previous scale-3 mark");
+	});
+
+	it("keeps both styles exact-width and preserves layout, repaint scope, and the glyph default", () => {
+		const glyphDefault = buildHeaderParts(120, 60, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], undefined, "accent", "symbol");
+		assert.deepEqual(
+			buildHeaderParts(120, 60, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], undefined, "accent", "symbol", 0).lines,
+			glyphDefault.lines,
+			"the explicit glyph style preserves the original bytes",
+		);
+		assert.equal(glyphDefault.repaintLogo, undefined);
+		assert.notEqual(installerParts(120).repaintLogo, undefined);
+		for (const style of ["symbol", "logo"] as const) {
+			for (let width = 1; width <= 200; width++) {
+				const parts = buildHeaderParts(width, 60, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], undefined, "accent", style);
+				assertLinesExact(parts.lines, width, `${style} header width=${width}`);
+			}
+		}
+		const slot = installerLogoMetrics();
+		for (const width of [120, 160]) {
+			const glyph = buildHeaderParts(width, 60, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], undefined, "accent", "symbol");
+			assert.equal(installerParts(width).lines.length, slot.rows + 2, `side-by-side installer grows to its slot at width ${width}`);
+			assert.ok(glyph.lines.length < slot.rows + 2, `glyph band stays shorter than the installer slot at width ${width}`);
+		}
+		const parts = installerParts(120, "breathe");
+		const repainted = parts.repaintLogo!(0);
+		assert.ok(repainted.length > 0);
+		assert.ok(repainted.length <= slot.rows + 1);
+		assert.ok(repainted.every(({ row }) => row >= 0 && row < parts.lines.length));
+		assert.ok(repainted.at(-1)!.row - repainted[0]!.row <= slot.rows);
+		const afterLogo = parts.repaintBackdrop!(2000);
+		const expected = installerParts(120, "breathe", 0).repaintBackdrop!(2000);
+		assert.deepEqual(afterLogo, expected, "backdrop repaint sees the latest shared ink frame");
+	});
+
+	it("keeps the final source frame's shadow inside its row budget in both layouts", () => {
+		const esc = String.fromCharCode(27);
+		const sgrs = (mode: 38 | 48, color: string) => `${esc}[${mode};2;${color}m`;
+		const shadowSgrs = [sgrs(38, LOGO_SHADOW), sgrs(48, LOGO_SHADOW)];
+		const bodySgrs = Object.values(INSTALLER_LOGO_PALETTE).flatMap((color) => [sgrs(38, color), sgrs(48, color)]);
+		for (const width of [60, 160]) {
+			const lines = installerParts(width).lines;
+			const shadowRows = lines.flatMap((line, row) => shadowSgrs.some((code) => line.includes(code)) ? [row] : []);
+			const bodyRows = lines.flatMap((line, row) => bodySgrs.some((code) => line.includes(code)) ? [row] : []);
+			assert.ok(shadowRows.length > 0 && bodyRows.length > 0, `logo and shadow at width ${width}`);
+			assert.equal(Math.max(...shadowRows), Math.max(...bodyRows) + LOGO_SHADOW_OFFSET, `one-row shadow at width ${width}`);
+			assert.ok(!shadowSgrs.some((code) => lines[Math.max(...shadowRows) + 1]?.includes(code)), `shadow does not leak at width ${width}`);
+		}
+	});
+
+	it("lifts the installer brand mark LOGO_LIFT_ROWS above the splash's vertical center, side by side", () => {
+		// The glyph stays exactly centered; only the installer logo gets the optical lift.
+		// Use a section big enough that the panel outgrows the installer slot, so the lift is visible
+		// and the top-edge clamp (`max(0, ...)`) does not hide it.
+		const section = () => Array.from({ length: 40 }, () => "x");
+		// Frame 0 paints at source row 0, so its topmost ink cell sits exactly at `logoY` (slot.offsetYSub
+		// is 0 for the animation bounds). The white hand-off frame would gap down to row 9 instead.
+		const FIRST_FRAME = 0;
+		const paletteSgrs = Object.values(INSTALLER_LOGO_PALETTE).flatMap((color) => [`\x1b[38;2;${color}m`, `\x1b[48;2;${color}m`]);
+		const logoInkSgr = `\x1b[38;2;${LOGO_INK}m`;
+		const topmostInkRow = (lines: string[], needles: string[]): number => {
+			for (let row = 0; row < lines.length; row++) {
+				if (needles.some((code) => lines[row]!.includes(code))) return row;
+			}
+			return -1;
+		};
+		for (const width of [120, 160]) {
+			const installer = buildHeaderParts(width, 100, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], section, "accent", "logo", FIRST_FRAME);
+			const glyph = buildHeaderParts(width, 100, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], section, "accent", "symbol");
+			const slot = installerLogoMetrics();
+			const height = installer.lines.length;
+			assert.equal(height, glyph.lines.length, "same splash height either way");
+			const installerMinY = topmostInkRow(installer.lines, paletteSgrs);
+			const glyphMinY = topmostInkRow(glyph.lines, [logoInkSgr]);
+			assert.equal(installerMinY, Math.max(0, Math.floor((height - slot.rows) / 2) - LOGO_LIFT_ROWS), `width ${width}: installer mark lifted LOGO_LIFT_ROWS above center`);
+			assert.equal(glyphMinY, Math.floor((height - LOGO_LINES.length) / 2), `width ${width}: glyph stays exactly centered`);
+			assert.ok(installerMinY < glyphMinY, `width ${width}: installer mark sits above the centered glyph`);
+			// A splash no taller than the installer slot clamps the lift at the top edge.
+			const tight = buildHeaderParts(width, 60, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], undefined, "accent", "logo", FIRST_FRAME);
+			assert.equal(topmostInkRow(tight.lines, paletteSgrs), 0, `width ${width}: clamp at the top edge when the slot fills the splash`);
+		}
 	});
 });
 
@@ -240,7 +387,7 @@ describe("shadow spare row (S-09)", () => {
 
 	it("side-by-side: glyph rows span the logo plus one shadow row", () => {
 		const width = 160;
-		const lines = buildHeader(width, 60, theme, [], [], [], MODEL, 2048);
+		const lines = buildHeader(width, 60, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], undefined, undefined, "symbol");
 		const panelX = width - SPLASH_MARGIN_X - Math.min(PANEL_MAX_WIDTH, width - SPLASH_MARGIN_X * 2 - LOGO_WIDTH - LOGO_GAP);
 		const rows = glyphRows(lines, panelX);
 		assert.ok(rows.length > 0, "logo ink present");
@@ -252,7 +399,7 @@ describe("shadow spare row (S-09)", () => {
 	});
 
 	it("stacked: the row below the logo carries the shadow, the next is bare swatch", () => {
-		const lines = buildHeader(40, 60, theme, [], [], [], MODEL, 2048);
+		const lines = buildHeader(40, 60, theme, [], [], [], MODEL, 2048, "rainbow", "off", 0, [], [], undefined, undefined, "symbol");
 		assert.match(sanitizeTuiText(lines[LOGO_LINES.length] ?? ""), /[^▀ ]/, "spare row carries shadow glyphs");
 		assert.doesNotMatch(sanitizeTuiText(lines[LOGO_LINES.length + 1] ?? ""), /[^▀ ]/, "shadow stops at the spare row");
 	});
@@ -363,7 +510,7 @@ describe("layout stacking (S-08)", () => {
 	const sideBySideMin = 2 * SPLASH_MARGIN_X + LOGO_WIDTH + LOGO_GAP + PANEL_MIN_WIDTH;
 
 	it("wide terminals put the panel beside the logo", () => {
-		const lines = buildHeader(sideBySideMin + 20, 50, theme, ["AGENTS.md"], ["alpha"], ["beta"], MODEL, 4000, "rainbow", "off", 0, [], []);
+		const lines = buildHeader(sideBySideMin + 20, 50, theme, ["AGENTS.md"], ["alpha"], ["beta"], MODEL, 4000, "rainbow", "off", 0, [], [], undefined, undefined, "symbol");
 		assert.ok(
 			lines.some((l) => l.includes(logoFg) && l.includes(panelBgSgr)),
 			"some row should carry both logo ink and panel plate",
@@ -371,7 +518,7 @@ describe("layout stacking (S-08)", () => {
 	});
 
 	it("narrow terminals stack the panel under the logo", () => {
-		const lines = buildHeader(sideBySideMin - 6, 60, theme, ["AGENTS.md"], ["alpha"], ["beta"], MODEL, 4000, "rainbow", "off", 0, [], []);
+		const lines = buildHeader(sideBySideMin - 6, 60, theme, ["AGENTS.md"], ["alpha"], ["beta"], MODEL, 4000, "rainbow", "off", 0, [], [], undefined, undefined, "symbol");
 		assert.equal(
 			lines.some((l) => l.includes(logoFg) && l.includes(panelBgSgr)),
 			false,
@@ -457,7 +604,7 @@ describe("panel section (S-14)", () => {
 	const EXTENSIONS = ["beta"];
 	const SECTION = ["", "[gamma] 2", "delta"];
 	const build = (width: number, termRows: number, section?: (band: SplashBand) => string[], animation: "off" | "breathe" = "off", background: "rainbow" | "accent" = "rainbow") =>
-		buildHeaderParts(width, termRows, theme, CONTEXT, SKILLS, EXTENSIONS, MODEL, 4000, background, animation, 0, [], [], section);
+		buildHeaderParts(width, termRows, theme, CONTEXT, SKILLS, EXTENSIONS, MODEL, 4000, background, animation, 0, [], [], section, undefined, "symbol");
 	const bandOf = (width: number, termRows: number): SplashBand => {
 		let seen: SplashBand | undefined;
 		build(width, termRows, (band) => { seen = band; return []; });
@@ -513,14 +660,14 @@ describe("panel section (S-14)", () => {
 		}
 	});
 
-	it("centers the logo and the panel on the finished splash, section included", () => {
+	it("centers the glyph and the panel on the finished splash, section included", () => {
 		// Panel taller than the logo (120x50), and logo taller until the section outgrows it (160x10).
 		for (const [width, termRows] of [[120, 50], [160, 10]] as const) {
 			for (const extra of [0, 3, 12, 20]) {
 				const parts = build(width, termRows, () => Array.from({ length: extra }, () => "x"));
 				const height = parts.lines.length;
 				const label = `${width}x${termRows} with ${extra} section rows`;
-				assert.equal(parts.lines.findIndex((line) => line.includes(LOGO_FG_SGR)), Math.floor((height - LOGO_LINES.length) / 2), `${label}: logo centered`);
+				assert.equal(parts.lines.findIndex((line) => line.includes(LOGO_FG_SGR)), Math.floor((height - LOGO_LINES.length) / 2), `${label}: glyph centered`);
 				const rows = panelRows(parts.lines);
 				assert.equal(rows[0], Math.floor((height - rows.length) / 2), `${label}: panel centered`);
 			}

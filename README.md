@@ -22,7 +22,7 @@ Requires Node.js 22.19.0 or newer. The current release is developed and tested a
 
 Run `/topping-splash-settings` (TUI mode only) or pick **Settings** in the startup gate menu
 to open a settings menu in three sections: the startup gate toggle, the splash banner's background
-color and gradient animation, and the info panel's reveal animation and startup changes
+color, gradient animation, and logo style, and the info panel's reveal animation and startup changes
 summary:
 
 ```text
@@ -33,6 +33,7 @@ summary:
 ╟─ Splash Banner ──────────────────────────────────────────────────────────╢
 ║    [■] Background color                                     ‹ rainbow ›  ║
 ║    [■] Animate gradient                                         ‹ off ›  ║
+║    [■] Logo style                                            ‹ symbol ›  ║
 ║                                                                          ║
 ╟─ Info Panel ─────────────────────────────────────────────────────────────╢
 ║    [■] Model + prompt size reveal animation                          ON  ║
@@ -43,7 +44,7 @@ summary:
 ║                                                 [ Apply ]    ‹ Cancel ›  ║
 ╟──────────────────────────────────────────────────────────────────────────╢
 ║  ↑↓ move  ␣ toggle  ←→ cycle  ⏎ pick  ⌫ clear  ⇥ actions  esc cancel     ║
-╚═══════════════════════════════════════════════════════════════════[ 1/6 ]╝
+╚═══════════════════════════════════════════════════════════════════[ 1/7 ]╝
 ```
 
 Move with ↑/↓, toggle with Space, and cycle with ←/→. Tab jumps to the action bar at the bottom,
@@ -73,6 +74,13 @@ picker.
   they modulate the vertical fade. The animation runs while the splash is on screen — during
   the gate, or with the gate off until the first agent turn — then stops for the rest of the
   session, since the splash scrolls away once the conversation grows.
+- **Logo style** — cycle between `random` (the default), `symbol`, and `logo`. The `random` option
+  randomly selects one of the other options (`symbol` or `logo`) per startup. The `logo` option plays
+  the 21-frame pi logo animation from `https://pi.dev/install.sh` once, at twice the scale that
+  fits the glyph slot, in its own slot with the splash shadow; it holds the final
+  source frame after playback. Frames and RGB values were transcribed on 2026-10-17. It falls back to the glyph art when the active theme is not truecolor,
+  in Apple Terminal, or when `TERM=dumb`; in tmux, set `COLORTERM=truecolor` or `PI_TRUE_COLOR=1`
+  if Pi does not detect 24-bit color.
 - **Model + prompt size reveal animation** — shimmer-reveal the model · prompt-size tagline on
   the splash, and stream the changes summary in a character at a time; when OFF both render their
   final text immediately (ON by default)
@@ -87,10 +95,10 @@ picker.
 
 The gate, reveal, and changes-summary toggle take effect on the next launch. Startup reads the
 Summary model at launch. `/local-changes` reads that model each time a run starts. The background
-color and gradient animation also apply immediately to an already-visible splash. All seven keys
+color, gradient animation, and logo style also apply immediately to an already-visible splash. All eight keys
 are stored together in `pi-topping-splash.json` inside pi's agent directory (`~/.pi/agent` unless
-`PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (gate/reveal/
-changes summary ON, session model, background `rainbow`, dynamic tint `accent`, animation `off`).
+`PI_CODING_AGENT_DIR` says otherwise); delete that file to return to the defaults (gate OFF, reveal/
+changes summary ON, session model, background `rainbow`, dynamic tint `accent`, animation `off`, logo style `random`).
 
 ## Splash Inventory
 
@@ -171,4 +179,4 @@ Session shutdown aborts an active run. An aborted run adds no entry.
 - Splash shows but the gate does not? The startup gate menu is off by default and stays off until you turn it on — run `/topping-splash-settings` and enable **Startup gate menu** if you want the gate on every launch.
 - On `reload` events the gate is intentionally skipped — only a genuine `startup` reason triggers it.
 - Check that the package is installed under `~/.pi/agent/npm/node_modules/@underactive/pi-topping-splash` and that `pi --verbose` lists the loaded extension (it overrides `quietStartup`).
-- Truecolor (24-bit color) support in your terminal is required for the rainbow swatch backdrop and the shimmer effect. On a 256-color theme the shimmer falls back to the settled tagline; the info panel's plate is still chosen from your terminal's resolved text color, and the backdrop's truecolor escapes are left to the terminal's own handling.
+- Truecolor (24-bit color) support in your terminal is required for the rainbow swatch backdrop and the shimmer effect. The installer logo also uses truecolor and falls back to glyph art on 256-color themes and Apple Terminal. Under tmux, set `COLORTERM=truecolor` or `PI_TRUE_COLOR=1` if Pi does not detect 24-bit color. On a 256-color theme the shimmer falls back to the settled tagline; the info panel's plate is still chosen from your terminal's resolved text color, and the backdrop's truecolor escapes are left to the terminal's own handling.

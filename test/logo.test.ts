@@ -1,6 +1,24 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { LOGO, LOGO_INK, LOGO_LINES, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "../src/logo.ts";
+import { CONCRETE_LOGO_STYLE_OPTIONS, LOGO, LOGO_INK, LOGO_LINES, LOGO_ROWS, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_STYLE_OPTIONS, LOGO_WIDTH, pickRandomLogoStyle } from "../src/logo.ts";
+
+describe("logo style (L-05)", () => {
+	it("offers random first and exposes the shared slot height", () => {
+		assert.deepEqual(LOGO_STYLE_OPTIONS, ["random", "symbol", "logo"]);
+		assert.deepEqual(CONCRETE_LOGO_STYLE_OPTIONS, ["symbol", "logo"]);
+		assert.equal(LOGO_ROWS, LOGO_LINES.length);
+	});
+
+	it("pickRandomLogoStyle selects only from concrete options", () => {
+		const seen = new Set<string>();
+		for (let i = 0; i < 100; i++) {
+			const picked = pickRandomLogoStyle();
+			assert.ok(CONCRETE_LOGO_STYLE_OPTIONS.includes(picked));
+			seen.add(picked);
+		}
+		assert.equal(seen.size, 2, "both symbol and logo should be selected over multiple iterations");
+	});
+});
 
 describe("logo geometry (L-01)", () => {
 	it("LOGO_WIDTH is the widest line", () => {

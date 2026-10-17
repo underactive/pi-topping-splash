@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { BACKGROUND_COLOR_OPTIONS, DEFAULT_DYNAMIC_TINT, GRADIENT_ANIMATION_OPTIONS, isDynamicTint, type BackgroundColor, type DynamicTint, type GradientAnimation } from "./color.ts";
 import { isModelRef } from "./model-picker.ts";
+import { LOGO_STYLE_OPTIONS } from "./logo.ts";
+import type { LogoStyle } from "./logo.ts";
 import type { ModelRef } from "./model-picker.ts";
 
 /** A persisted feature toggle. Individual preferences document their own default. */
@@ -20,6 +22,8 @@ export interface SplashPreferences {
 	dynamicTint?: DynamicTint;
 	/** Animation for the splash backdrop (any background, rainbow included); defaults to "off". */
 	gradientAnimation: GradientAnimation;
+	/** Banner logo style; `readPreferences` always resolves it, optional so unrelated writers can omit it. */
+	logoStyle?: LogoStyle;
 	/** "on" summarizes uncommitted changes at startup; defaults to "on" when missing or unrecognized and is "off" only when explicitly stored. */
 	changesSummary: ToggleMode;
 	/** Model for the changes summary; undefined means the session model. */
@@ -38,12 +42,12 @@ type RawPreferences = {
 	backgroundColor?: unknown;
 	dynamicTint?: unknown;
 	gradientAnimation?: unknown;
+	logoStyle?: unknown;
 	changesSummary?: unknown;
 	changesSummaryModel?: unknown;
 } | null;
 
-/**
- * Anything missing, unreadable or unrecognized falls back to the defaults: gate "off", reveal/changes-summary toggles "on", background "rainbow", dynamic tint "accent", animation "off".
+/** Anything missing, unreadable or unrecognized falls back to the defaults: gate "off", reveal/changes-summary toggles "on", background "rainbow", dynamic tint "accent", animation "off", logo style "random".
  * For `dynamicTint`, precedence is a theme-color `backgroundColor`, then a valid stored `dynamicTint`, then "accent"; "rainbow", "dynamic", and invalid values are excluded.
  */
 export function readPreferences(): SplashPreferences {
@@ -59,6 +63,7 @@ export function readPreferences(): SplashPreferences {
 		: isDynamicTint(parsed?.dynamicTint) ? parsed.dynamicTint : DEFAULT_DYNAMIC_TINT;
 	const anim = parsed?.gradientAnimation;
 	const gradientAnimation = GRADIENT_ANIMATION_OPTIONS.includes(anim as GradientAnimation) ? (anim as GradientAnimation) : "off";
+	const logoStyle = LOGO_STYLE_OPTIONS.includes(parsed?.logoStyle as LogoStyle) ? (parsed?.logoStyle as LogoStyle) : "random";
 	const configuredSummaryModel = isModelRef(parsed?.changesSummaryModel)
 		? { provider: parsed.changesSummaryModel.provider, id: parsed.changesSummaryModel.id }
 		: undefined;
@@ -68,6 +73,7 @@ export function readPreferences(): SplashPreferences {
 		backgroundColor,
 		dynamicTint,
 		gradientAnimation,
+		logoStyle,
 		changesSummary: parsed?.changesSummary === "off" ? "off" : "on",
 		changesSummaryModel: configuredSummaryModel,
 	};

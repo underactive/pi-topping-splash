@@ -3,7 +3,9 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { backgroundSampler, DEFAULT_DYNAMIC_TINT, RESET, panelBg, sgrBg, sgrFg, swatchColor } from "./color.ts";
 import type { BackgroundColor, DynamicTint, GradientAnimation, Rgb, SwatchSampler } from "./color.ts";
 import type { ShortcutHint } from "./discovery.ts";
-import { LOGO_INK, LOGO_LINES, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "./logo.ts";
+import { LOGO_INK, LOGO_LINES, LOGO_ROWS, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "./logo.ts";
+import type { ConcreteLogoStyle, LogoStyle } from "./logo.ts";
+import { INSTALLER_LOGO_ANIMATION_BOUNDS, INSTALLER_LOGO_FRAMES, INSTALLER_LOGO_LAST_FRAME, INSTALLER_LOGO_PALETTE } from "./installer-logo.ts";
 import { formatPromptSize, joinParts, padCenter, padRight, pickFitting, sanitizeTuiText, truncateVisible, visibleLength, wrapCommaDelimited } from "./text.ts";
 import { renderTagline } from "./reveal.ts";
 
@@ -24,6 +26,13 @@ export const PANEL_MAX_WIDTH = 100;
 export const PANEL_MIN_WIDTH = 34;
 /** Rows of bare swatch above and below the panel, so the rainbow reads as an unbroken band there. */
 export const PANEL_MARGIN_Y = 1;
+/**
+ * Rows the installer logo sits above the splash's exact vertical center, so the brand mark reads
+ * as optically balanced instead of slightly low against the taller info panel beside it. Clamped
+ * at the top edge, so a splash no taller than the logo cannot lift the mark off the first row.
+ * The pi glyph (the default `symbol` style) stays exactly centered — it does not need the lift.
+ */
+export const LOGO_LIFT_ROWS = 4;
 /**
  * Ceiling on how much of the terminal the splash may occupy, so the startup gate below it still
  * fits. Past this the lists collapse to a wrapped counts summary.
@@ -131,7 +140,8 @@ export function buildPanelLines(theme: Theme, innerWidth: number, body: string[]
 /** A logo cell painted over the swatch backdrop. */
 export interface Ink {
 	ch: string;
-	color: Rgb;
+	/** The swatch's top-half sample when absent. */
+	color?: Rgb;
 	/** What shows through the glyph's unpainted half; the swatch when absent. */
 	backdrop?: Rgb;
 }
@@ -188,6 +198,75 @@ export function stampLogo(ink: Map<number, Ink>, width: number, height: number, 
 	}
 }
 
+/**
+ * The installer mark is drawn this many times larger than the scale that fits the glyph slot.
+ * The glyph fit stays the shared scale across frames; this only changes how big that raster is.
+ */
+export const INSTALLER_LOGO_DISPLAY_SCALE = 2;
+
+/** Scale, reserved columns, and content rows for the installer mark, shadow excluded from the row count. */
+export function installerLogoMetrics(): { scale: number; width: number; rows: number; offsetX: number; offsetYSub: number } {
+	const { width: maxWidth, height: maxHeight } = INSTALLER_LOGO_ANIMATION_BOUNDS;
+	const fitted = Math.max(1, Math.floor(Math.min(LOGO_WIDTH / maxWidth, (2 * LOGO_ROWS) / maxHeight)));
+	const scale = fitted * INSTALLER_LOGO_DISPLAY_SCALE;
+	const contentW = maxWidth * scale;
+	const contentSub = maxHeight * scale;
+	const width = contentW + LOGO_SHADOW_OFFSET;
+	const rows = Math.ceil(contentSub / 2);
+	return {
+		scale,
+		width,
+		rows,
+		offsetX: Math.floor((width - LOGO_SHADOW_OFFSET - contentW) / 2),
+		offsetYSub: Math.floor((2 * rows - contentSub) / 4) * 2,
+	};
+}
+
+/** Stamps a source frame at the animation-wide scale, enlarged by `INSTALLER_LOGO_DISPLAY_SCALE`. */
+export function stampInstallerLogo(ink: Map<number, Ink>, width: number, height: number, originX: number, originY: number, frame: number): void {
+	const frameData = INSTALLER_LOGO_FRAMES[Math.max(0, Math.min(INSTALLER_LOGO_FRAMES.length - 1, frame))]!;
+	const { x: cropX, y: cropY, width: maxWidth, height: maxHeight } = INSTALLER_LOGO_ANIMATION_BOUNDS;
+	const { scale, offsetX, offsetYSub } = installerLogoMetrics();
+	const subpixels = new Map<number, Rgb>();
+	const touched = new Set<number>();
+	const setPixel = (x: number, subY: number, color: Rgb): void => {
+		if (x < 0 || x >= width || subY < 0 || subY >= 2 * height) return;
+		subpixels.set(subY * width + x, color);
+		touched.add(Math.floor(subY / 2) * width + x);
+	};
+	const place = (colorFor: (pixel: string) => Rgb | undefined, dx: number, dySub: number): void => {
+		frameData.pixels.slice(cropY, cropY + maxHeight).forEach((row, pixelY) => {
+			const markRow = row.slice(cropX, cropX + maxWidth);
+			for (let pixelX = 0; pixelX < markRow.length; pixelX++) {
+				const color = colorFor(markRow[pixelX]!);
+				if (!color) continue;
+				for (let sy = 0; sy < scale; sy++) {
+					for (let sx = 0; sx < scale; sx++) {
+						setPixel(
+							originX + offsetX + pixelX * scale + sx + dx,
+							2 * originY + offsetYSub + pixelY * scale + sy + dySub,
+							color,
+						);
+					}
+				}
+			}
+		});
+	};
+	place((pixel) => pixel === "." ? undefined : LOGO_SHADOW, LOGO_SHADOW_OFFSET, 2 * LOGO_SHADOW_OFFSET);
+	place((pixel) => pixel === "." ? undefined : INSTALLER_LOGO_PALETTE[pixel], 0, 0);
+	for (const index of touched) {
+		const row = Math.floor(index / width);
+		const x = index % width;
+		const top = subpixels.get((row * 2) * width + x);
+		const bottom = subpixels.get((row * 2 + 1) * width + x);
+		ink.set(index, {
+			ch: SWATCH_CELL,
+			...(top === undefined ? {} : { color: top }),
+			...(bottom === undefined ? {} : { backdrop: bottom }),
+		});
+	}
+}
+
 /** Renders the panel's slice of row `y`: one padded interior line on the plate. */
 export function paintPanelRow(panel: PanelPlacement, y: number): string {
 	const text = `${" ".repeat(PANEL_PADDING_X)}${panel.lines[y - panel.y] ?? ""}`;
@@ -213,7 +292,7 @@ export function paintRow(y: number, width: number, height: number, ink: Map<numb
 			continue;
 		}
 		const cell = ink.get(y * width + x);
-		const cellFg = cell ? cell.color : sample(x, width, levelFg);
+		const cellFg = cell?.color ?? sample(x, width, levelFg);
 		const cellBg = cell?.backdrop ?? sample(x, width, levelBg);
 		if (cellFg !== currentFg) {
 			row += sgrFg(cellFg);
@@ -247,6 +326,8 @@ export interface HeaderParts {
 	 * panel has no section. Null when the section's row count moved, which only a rebuild can place.
 	 */
 	repaintSection?: () => { row: number; line: string }[] | null;
+	/** Repaints the logo slot for a new installer animation frame. */
+	repaintLogo?: (frame: number) => { row: number; line: string }[];
 }
 
 /**
@@ -259,7 +340,7 @@ export interface HeaderParts {
  * files (AGENTS.md/CLAUDE.md), skills, prompt templates, and extensions. Shortcut keys reflect
  * Pi's effective global keybindings via `keyText()`. Each under a `[shortcuts] N`/`[context] N`/
  * `[skills] N`/`[prompts] N`/`[extensions] N` heading, mirroring pi's /loaded ordering.
- * Every layout keeps a spare row below the logo, where its drop shadow lands.
+ * Every layout keeps a spare row below either logo style, where its drop shadow lands.
  *
  * `section` is asked, once the lists are laid out, for rows to close the panel with, after
  * `[extensions]`. They join the panel above its closing padding row and grow it, and the splash
@@ -273,10 +354,12 @@ export interface HeaderParts {
  * `repaintBackdrop` frame reflects the current time. The `repaintSection` hook lets a section
  * that changes in place (a streaming summary) repaint only the rows it touched.
  */
-export function buildHeaderParts(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0, prompts: string[] = [], shortcuts: ShortcutHint[] = [], section?: (band: SplashBand) => string[], dynamicTint: DynamicTint = DEFAULT_DYNAMIC_TINT): HeaderParts {
+export function buildHeaderParts(width: number, termRows: number, theme: Theme, context: string[], skills: string[], extensions: string[], model?: { id: string; provider: string }, systemPromptSize?: number, background: BackgroundColor = "rainbow", animation: GradientAnimation = "off", timeMs = 0, prompts: string[] = [], shortcuts: ShortcutHint[] = [], section?: (band: SplashBand) => string[], dynamicTint: DynamicTint = DEFAULT_DYNAMIC_TINT, logoStyle: ConcreteLogoStyle = "symbol", logoFrame = INSTALLER_LOGO_LAST_FRAME): HeaderParts {
 	let sample = backgroundSampler(background, theme, animation, timeMs, dynamicTint);
-	const logoRows = LOGO_LINES.length;
-	const roomBesideLogo = width - SPLASH_MARGIN_X * 2 - LOGO_WIDTH - LOGO_GAP;
+	const installerSlot = logoStyle === "logo" ? installerLogoMetrics() : undefined;
+	const logoWidth = installerSlot?.width ?? LOGO_WIDTH;
+	const logoRows = installerSlot?.rows ?? LOGO_ROWS;
+	const roomBesideLogo = width - SPLASH_MARGIN_X * 2 - logoWidth - LOGO_GAP;
 	const sideBySide = roomBesideLogo >= PANEL_MIN_WIDTH;
 	const panelWidth = sideBySide
 		? Math.min(PANEL_MAX_WIDTH, roomBesideLogo)
@@ -326,7 +409,7 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 	const countFrame = frame(buildCountsLine(theme, context, skills, extensions, shortcuts, prompts, innerWidth));
 	const selected = listed && splashHeight(listed.lines) <= rowBudget ? listed : countFrame;
 	const panelX = sideBySide ? width - SPLASH_MARGIN_X - panelWidth : Math.max(0, Math.floor((width - panelWidth) / 2));
-	const logoX = sideBySide ? Math.max(SPLASH_MARGIN_X, Math.floor((panelX - LOGO_WIDTH) / 2)) : Math.max(0, Math.floor((width - LOGO_WIDTH) / 2));
+	const logoX = sideBySide ? Math.max(SPLASH_MARGIN_X, Math.floor((panelX - logoWidth) / 2)) : Math.max(0, Math.floor((width - logoWidth) / 2));
 	// The section's budget is measured against the lists alone. Centering the taller panel afterwards
 	// never needs more rows than that budget allowed, since the lists' panel sits at least a margin down.
 	const listsY = sideBySide ? Math.floor((splashHeight(selected.lines) - selected.lines.length) / 2) : logoRows + 1 + PANEL_MARGIN_Y;
@@ -335,13 +418,17 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 	const lines = appended.length > 0 ? [...selected.lines.slice(0, -1), ...appended, ""] : selected.lines;
 	const height = splashHeight(lines);
 	// Side by side, the logo and the panel are both centered on the finished splash, section included.
-	const logoY = sideBySide ? Math.floor((height - logoRows) / 2) : 0;
+	// The installer brand mark lifts `LOGO_LIFT_ROWS` above that center (clamped at the top edge) for
+	// optical balance against the taller info panel; the pi glyph stays exactly centered.
+	const logoLift = logoStyle === "logo" && sideBySide ? LOGO_LIFT_ROWS : 0;
+	const logoY = sideBySide ? Math.max(0, Math.floor((height - logoRows) / 2) - logoLift) : 0;
 	const panelY = sideBySide ? Math.floor((height - lines.length) / 2) : listsY;
 	const taglineText = buildTaglineText(innerWidth, model, systemPromptSize);
 	const taglineRow = selected.taglineIndex;
 	const panel: PanelPlacement = { x: panelX, y: panelY, width: panelWidth, bg: panelBg(theme), lines, taglineRow: taglineRow === -1 ? undefined : taglineRow };
 	const ink = new Map<number, Ink>();
-	stampLogo(ink, width, height, logoX, logoY);
+	if (logoStyle === "logo") stampInstallerLogo(ink, width, height, logoX, logoY, logoFrame);
+	else stampLogo(ink, width, height, logoX, logoY);
 	const painted = Array.from({ length: height }, (_, y) => paintRow(y, width, height, ink, panel, sample));
 
 	const taglineIdx = panel.taglineRow;
@@ -361,6 +448,17 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 		: undefined;
 	// The section's rows start where the lists' closing padding row was.
 	const sectionStart = selected.lines.length - 1;
+	const repaintLogo = logoStyle === "logo"
+		? (nextFrame: number) => {
+			ink.clear();
+			stampInstallerLogo(ink, width, height, logoX, logoY, nextFrame);
+			const repainted: { row: number; line: string }[] = [];
+			for (let row = Math.max(0, logoY); row <= Math.min(height - 1, logoY + logoRows); row++) {
+				repainted.push({ row, line: paintRow(row, width, height, ink, panel, sample) });
+			}
+			return repainted;
+		}
+		: undefined;
 	const repaintSection = section && appended.length > 0
 		? () => {
 			const next = section(band);
@@ -375,5 +473,5 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 			return repainted;
 		}
 		: undefined;
-	return { lines: painted, repaintTagline, repaintBackdrop, repaintSection };
+	return { lines: painted, repaintTagline, repaintBackdrop, repaintSection, repaintLogo };
 }

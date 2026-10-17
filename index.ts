@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { headerRenderState, state } from "./src/state.ts";
 import { stopTaglineReveal } from "./src/reveal.ts";
-import { stopGradientAnimation } from "./src/animate.ts";
+import { stopGradientAnimation, stopLogoAnimation } from "./src/animate.ts";
 import { ensureQuietStartup, installHeader } from "./src/header.ts";
 import { abortChangesSummary, installChangesHeader, startChangesSummary, stopSummaryStream } from "./src/changes-summary.ts";
 import { readPreferences } from "./src/preferences.ts";
@@ -34,6 +34,7 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 		abortChangesSummary();
 		abortLocalChanges();
 		stopGradientAnimation();
+		stopLogoAnimation();
 		stopTaglineReveal();
 	});
 
@@ -41,6 +42,7 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 		if (!state.conversationStarted) {
 			state.conversationStarted = true;
 			stopGradientAnimation();
+			stopLogoAnimation();
 			stopTaglineReveal();
 			// The header scrolls away from here, so a summary still streaming settles instead of redrawing it.
 			stopSummaryStream();
@@ -62,7 +64,7 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 		// Only gate a genuine fresh startup: never on reload, and never on a relaunched child
 		// (GATE_DONE_ENV guard). Non-gated sessions start clean, without the splash.
 		const shouldGate = event.reason === "startup" && process.env[GATE_DONE_ENV] !== "1";
-		if (!shouldGate) { stopGradientAnimation(); return; }
+		if (!shouldGate) { stopGradientAnimation(); stopLogoAnimation(); return; }
 
 		// Install the splash header so it renders at the top during the gate (a non-overlay
 		// custom component replaces only the editor region below it), then clear the terminal
@@ -81,6 +83,7 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 		const resolution = await runStartupGate(pi, ctx);
 		stopTaglineReveal();
 		stopGradientAnimation();
+		stopLogoAnimation();
 		if (resolution === "quit") {
 			ctx.shutdown();
 			return;

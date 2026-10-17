@@ -1,6 +1,7 @@
 import type { BackgroundColor, DynamicTint, GradientAnimation } from "./color.ts";
 import type { ShortcutHint } from "./discovery.ts";
 import type { ChangesPresentation } from "./changes-summary.ts";
+import type { LogoStyle } from "./logo.ts";
 
 /** Process-lifetime shared state (not per-session). */
 export const state = {
@@ -27,6 +28,8 @@ export const state = {
 	dynamicTint: "accent" as DynamicTint,
 	/** Current render-time backdrop animation, seeded from preferences and updated immediately on apply. */
 	gradientAnimation: "off" as GradientAnimation,
+	/** Stored splash logo preference; the effective style is resolved for each render. */
+	logoStyle: "random" as LogoStyle,
 	/**
 	 * Set at the first agent turn. From then on the transcript outgrows the splash and scrolls it
 	 * off-viewport, where every animation tick would force a full-screen redraw — so the backdrop

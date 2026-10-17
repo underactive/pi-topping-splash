@@ -4,18 +4,21 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, type KeybindingDefinitions } from "@earendil-works/pi-tui";
+import { KeybindingsManager, setCapabilityOverrides, setKeybindings, TUI_KEYBINDINGS, type KeybindingDefinitions } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
+import { gradientAnimation, logoAnimation, stopGradientAnimation, stopLogoAnimation } from "../src/animate.ts";
+import { INSTALLER_LOGO_BRAND_FRAME } from "../src/installer-logo.ts";
+import { LOGO_INK } from "../src/logo.ts";
+import { installerLogoMetrics } from "../src/splash.ts";
 import { ensureQuietStartup, installHeader, withSettings } from "../src/header.ts";
 import { installChangesHeader, summaryStream } from "../src/changes-summary.ts";
 import type { ChangesPresentation } from "../src/changes-summary.ts";
-import { readPreferences, writePreferences } from "../src/preferences.ts";
+import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
 import { gateMenuRows } from "../src/gate.ts";
 import { stopTaglineReveal, TAGLINE_PLACEHOLDER, taglineReveal } from "../src/reveal.ts";
 import { changesRenderState, headerRenderState, state } from "../src/state.ts";
 import { sanitizeTuiText } from "../src/text.ts";
-import { tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
+import { setEnv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { createFakeCtx, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
 import { createFakePi } from "./helpers/fake-api.ts";
 import { createFakeTui, type FakeTuiHarness } from "./helpers/fake-tui.ts";
@@ -23,6 +26,7 @@ import type { FakePiBag } from "./helpers/fake-api.ts";
 import { resetModuleState } from "./helpers/reset.ts";
 import { makeTheme } from "./helpers/theme.ts";
 import { assertLinesExact } from "./helpers/width.ts";
+import { enableTimers } from "./helpers/timers.ts";
 
 /** App keybindings merged with TUI base, since KEYBINDINGS is not exported from the main package. */
 const APP_KEYBINDINGS_HEADER = {
@@ -35,12 +39,15 @@ const ALL_KEYBINDINGS_HEADER = { ...TUI_KEYBINDINGS, ...APP_KEYBINDINGS_HEADER }
 
 let env: TempAgentEnv;
 beforeEach(() => {
+	setCapabilityOverrides({ trueColor: true });
 	env = tempAgentDir();
 	resetModuleState();
 });
 afterEach(() => {
 	stopTaglineReveal();
 	stopGradientAnimation();
+	stopLogoAnimation();
+	setCapabilityOverrides({});
 	env.restore();
 });
 
@@ -74,13 +81,24 @@ describe("ensureQuietStartup (H-02, H-03)", () => {
 });
 
 describe("installHeader (H-04, H-05)", () => {
-	function install(options: { projectTrusted?: boolean; piOverrides?: Partial<FakePiBag> } = {}): { tui: FakeTuiHarness; ctx: FakeCtxHarness; component: Component } {
+	function install(options: { projectTrusted?: boolean; piOverrides?: Partial<FakePiBag>; themeMode?: "truecolor" | "256color"; preferences?: Partial<SplashPreferences> } = {}): { tui: FakeTuiHarness; ctx: FakeCtxHarness; component: Component } {
 		// A project context file so the splash has something to list under [context].
 		writeFileSync(join(env.cwd, "AGENTS.md"), "# project context");
+		if (options.preferences || !existsSync(join(env.agentDir, "pi-topping-splash.json"))) {
+			writePreferences({
+				menuGate: "on",
+				taglineReveal: "on",
+				backgroundColor: "rainbow",
+				gradientAnimation: "off",
+				logoStyle: "symbol",
+				changesSummary: "off",
+				...options.preferences,
+			});
+		}
 		const tui = createFakeTui({ rows: 40, columns: 120 });
 		const ctx = createFakeCtx({
 			cwd: env.cwd,
-			theme: makeTheme(),
+			theme: makeTheme({ mode: options.themeMode }),
 			tui: tui.tui,
 			model: makeModel("anthropic", "claude-opus-4"),
 			systemPrompt: "x".repeat(4000),
@@ -99,7 +117,7 @@ describe("installHeader (H-04, H-05)", () => {
 		installHeader(pi.pi, ctx.ctx, readPreferences());
 		assert.equal(ctx.setHeaderCalls.length, 1, "must install a header factory");
 		const factory = ctx.setHeaderCalls[0] as (tui: TUI, theme: Theme) => Component;
-		const component = factory(tui.tui, makeTheme());
+		const component = factory(tui.tui, makeTheme({ mode: options.themeMode }));
 		return { tui, ctx, component };
 	}
 
@@ -115,6 +133,7 @@ describe("installHeader (H-04, H-05)", () => {
 		headerRenderState.requestRender?.();
 		assert.equal(tui.renderRequests.length, before + 1);
 		assert.ok(component, "factory must build a component");
+		component.render(120);
 	});
 
 	it("taglineReveal:off never starts the reveal and settles the tagline on frame one (I-15)", () => {
@@ -197,6 +216,90 @@ describe("installHeader (H-04, H-05)", () => {
 		assert.equal(gradientAnimation.timer, null, "off stays static");
 	});
 
+	it("installer style seeds and animates; gradient repaint keeps the current logo frame (H-10)", (t) => {
+		enableTimers(t);
+		const restoreTerm = setEnv("TERM", "xterm-256color");
+		const restoreTermProgram = setEnv("TERM_PROGRAM", undefined);
+		try {
+			writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "wave", logoStyle: "logo", changesSummary: "off" });
+			const { component } = install();
+			assert.equal(state.logoStyle, "logo", "preference seeds shared state");
+			assert.notEqual(logoAnimation.timer, null, "installer ticker starts from preference");
+			const first = component.render(120);
+			assertLinesExact(first, 120, "installer first frame");
+			const playbackTimer = logoAnimation.timer;
+			const playbackTime = logoAnimation.timeMs;
+			component.render(120);
+			assert.equal(logoAnimation.timer, playbackTimer, "ordinary renders keep the same playback");
+			assert.equal(logoAnimation.timeMs, playbackTime, "ordinary renders do not restart the animation");
+			logoAnimation.timeMs = Number.MAX_SAFE_INTEGER;
+			const timer = logoAnimation.timer;
+			if (timer) {
+				clearInterval(timer);
+				logoAnimation.timer = null;
+			}
+			// Mark completion as the ticker does, then verify a subsequent render doesn't restart.
+			logoAnimation.completed = true;
+			component.render(120);
+			assert.equal(logoAnimation.timer, null, "completed playback stays stopped after another render");
+			assert.ok(first.some((line) => line.includes("38;2;77;154;191")), "first frame uses installer blue");
+			logoAnimation.frame = INSTALLER_LOGO_BRAND_FRAME;
+			logoAnimation.tick++;
+			const second = component.render(120);
+			assertLinesExact(second, 120, "installer changed frame");
+			assert.ok(second.some((line) => line.includes("38;2;240;144;130")), "finished mark uses installer coral");
+			const changed = second.flatMap((line, row) => line === first[row] ? [] : [row]);
+			assert.ok(changed.length > 0 && changed.length <= installerLogoMetrics().rows + 1, `logo tick touches only its slot rows: ${changed}`);
+			gradientAnimation.timeMs = 1250;
+			gradientAnimation.tick++;
+			const third = component.render(120);
+			assertLinesExact(third, 120, "logo and gradient tick");
+			assert.ok(third.some((line) => line.includes("38;2;240;144;130")), "backdrop repaint preserves current logo ink");
+		} finally {
+			restoreTermProgram();
+			restoreTerm();
+		}
+	});
+
+	it("a 256-color theme stops installer animation and paints the glyph fallback (H-10)", (t) => {
+		enableTimers(t);
+		const restoreTerm = setEnv("TERM", "xterm-256color");
+		const restoreTermProgram = setEnv("TERM_PROGRAM", undefined);
+		try {
+			writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "off", logoStyle: "logo", changesSummary: "off" });
+			const { component } = install({ themeMode: "256color" });
+			const lines = component.render(120);
+			assert.equal(logoAnimation.timer, null, "fallback stops the ticker");
+			assertLinesExact(lines, 120, "256-color logo fallback");
+			assert.ok(lines.some((line) => line.includes(`38;2;${LOGO_INK}`)), "glyph ink is used");
+			assert.equal(lines.some((line) => line.includes("38;2;240;144;130")), false, "installer palette is absent");
+		} finally {
+			restoreTermProgram();
+			restoreTerm();
+		}
+	});
+
+	it("a random installer selection starts its one-shot playback on the first render", (t) => {
+		enableTimers(t);
+		const restoreTerm = setEnv("TERM", "xterm-256color");
+		const restoreTermProgram = setEnv("TERM_PROGRAM", undefined);
+		const random = Math.random;
+		Math.random = () => 0.9;
+		try {
+			writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "off", logoStyle: "random", changesSummary: "off" });
+			const { component } = install();
+			assert.equal(state.logoStyle, "random", "random seeds shared state");
+			const lines = component.render(120);
+			assert.equal(logoAnimation.frame, 0, "first render paints the initial installer frame");
+			assert.notEqual(logoAnimation.timer, null, "first render starts the one-shot ticker");
+			assertLinesExact(lines, 120, "random installer header lines");
+		} finally {
+			Math.random = random;
+			restoreTermProgram();
+			restoreTerm();
+		}
+	});
+
 	it("a dynamic preference seeds the tint and stays static with animation off (H-06)", () => {
 		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "dynamic", dynamicTint: "success", gradientAnimation: "off", changesSummary: "off" });
 		const { component } = install();
@@ -258,7 +361,7 @@ describe("installHeader (H-04, H-05)", () => {
 	});
 
 	it("lines the section's heading up with the panel's other headings at every width", () => {
-		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", changesSummary: "on" });
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", logoStyle: "symbol", changesSummary: "on" });
 		const { tui, component } = install();
 		tui.resizeRows(60);
 		state.changes = changesPresentation();
@@ -266,7 +369,8 @@ describe("installHeader (H-04, H-05)", () => {
 			const lines = component.render(width);
 			assertLinesExact(lines, width, `section at width ${width}`);
 			const text = lines.map(sanitizeTuiText);
-			const heading = text.find((line) => line.includes("[local changes]"))!;
+			assert.ok(text.some((line) => line.includes("[extensions]")), `width ${width}: extension list must remain expanded`);
+			const heading = text.find((line) => line.includes("[local changes]"))!
 			const extensions = text.find((line) => line.includes("[extensions]"))!;
 			assert.equal(heading.indexOf("[local changes]"), extensions.indexOf("[extensions]"), `width ${width}`);
 			assert.equal(text.some((line) => /[┌┐└┘│]/.test(line)), false, `width ${width}: no box`);
@@ -274,7 +378,7 @@ describe("installHeader (H-04, H-05)", () => {
 	});
 
 	it("rebuilds the section when the changes are republished", () => {
-		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", changesSummary: "on" });
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "accent", gradientAnimation: "off", logoStyle: "symbol", changesSummary: "on" });
 		const { tui, component } = install();
 		tui.resizeRows(60);
 		state.changes = changesPresentation();
@@ -311,7 +415,7 @@ describe("installHeader (H-04, H-05)", () => {
 	});
 
 	it("reserves gate rows for the changes block and keeps the changes-only header separate", () => {
-		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", logoStyle: "symbol", changesSummary: "off" });
 		const { tui, ctx } = install();
 		state.changes = {
 			entries: [{ path: "file.ts", kind: "changed", untracked: false }],

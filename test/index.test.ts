@@ -7,7 +7,8 @@ import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
 import type { ExecResult } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import piStartupGreeter from "../index.ts";
-import { gradientAnimation, stopGradientAnimation } from "../src/animate.ts";
+import { gradientAnimation, logoAnimation, startLogoAnimation, stopGradientAnimation, stopLogoAnimation } from "../src/animate.ts";
+import { INSTALLER_LOGO_LAST_FRAME } from "../src/installer-logo.ts";
 import { EDITOR_RESERVED_ROWS, startSummaryStream, stopSummaryStream, summarizeChanges, summaryStream } from "../src/changes-summary.ts";
 import { LOCAL_CHANGES_COMMAND, LOCAL_CHANGES_ENTRY_TYPE } from "../src/local-changes.ts";
 import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
@@ -26,6 +27,7 @@ import { deferred } from "./helpers/deferred.ts";
 import { initRepo } from "./helpers/git.ts";
 import { until } from "./helpers/wait.ts";
 import { assertLinesExact } from "./helpers/width.ts";
+import { enableTimers } from "./helpers/timers.ts";
 
 bootstrapGlobalTheme();
 
@@ -41,6 +43,7 @@ beforeEach(() => {
 afterEach(() => {
 	stopTaglineReveal();
 	stopGradientAnimation();
+	stopLogoAnimation();
 	restoreGateEnv();
 	restoreArgv();
 	env.restore();
@@ -129,7 +132,7 @@ function pressApply(menu: { handleInput(data: string): void }): void {
  * Persist preference choices through the real settings command, into this test's temp agent dir.
  * Drives the menu component synchronously before awaiting the handler, since the fake ui.custom
  * only resolves once the component calls `done` — awaiting first would deadlock.
- * Menu rows in cursor order: menuGate (0), backgroundColor (1), gradientAnimation (2), taglineReveal (3).
+ * Menu rows in cursor order: menuGate (0), backgroundColor (1), gradientAnimation (2), logoStyle (3), taglineReveal (4), changesSummary (5), changesSummaryModel (6).
  */
 async function persist(target: Partial<SplashPreferences>): Promise<void> {
 	const wired = wire();
@@ -137,7 +140,7 @@ async function persist(target: Partial<SplashPreferences>): Promise<void> {
 	const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 	const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
 	if (target.menuGate !== undefined && target.menuGate !== current.menuGate) component.handleInput(KEY.space);
-	for (let index = 0; index < 3; index++) component.handleInput(KEY.down);
+	for (let index = 0; index < 4; index++) component.handleInput(KEY.down);
 	if (target.taglineReveal !== undefined && target.taglineReveal !== current.taglineReveal) component.handleInput(KEY.space);
 	pressApply(component);
 	await handlerPromise;
@@ -160,7 +163,7 @@ describe("registration (I-01)", () => {
 
 describe("session_start gating (I-02, I-03, I-10)", () => {
 	it("shows header and gate on a genuine TUI startup; Esc proceeds", async () => {
-		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", logoStyle: "symbol", changesSummary: "off" });
 		const wired = wire();
 		const emitted = startup(wired);
 		await until(() => wired.ctx.customComponents.length > 0);
@@ -173,7 +176,7 @@ describe("session_start gating (I-02, I-03, I-10)", () => {
 	});
 
 	it("Quit in the gate shuts pi down (I-04)", async () => {
-		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", logoStyle: "symbol", changesSummary: "off" });
 		const wired = wire();
 		const emitted = startup(wired);
 		await until(() => wired.ctx.customComponents.length > 0);
@@ -214,7 +217,7 @@ describe("session_start gating (I-02, I-03, I-10)", () => {
 	});
 
 	it("proceed tears the splash down for a clean session start", async () => {
-		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", logoStyle: "symbol", changesSummary: "off" });
 		const wired = wire();
 		const emitted = startup(wired);
 		await until(() => wired.ctx.customComponents.length > 0);
@@ -323,7 +326,7 @@ describe("commands (I-06, I-07)", () => {
 		const wired = wire();
 		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
-		for (let index = 0; index < 3; index++) component.handleInput(KEY.down);
+		for (let index = 0; index < 4; index++) component.handleInput(KEY.down);
 		component.handleInput(KEY.space);
 		pressApply(component);
 		await handlerPromise;
@@ -396,8 +399,8 @@ describe("startup changes settings (I-18)", () => {
 
 	const rendered = (component: Rendered, width = 80): string => component.render(width).map(sanitizeTuiText).join("\n");
 
-	/** Run the settings command, moving the cursor `rowsDown` rows; 5 lands on the Summary model row. */
-	function openSettings(wired: Wired, rowsDown = 5): { menu: Rendered; finished: Promise<void> } {
+	/** Run the settings command, moving the cursor `rowsDown` rows; 6 lands on the Summary model row. */
+	function openSettings(wired: Wired, rowsDown = 6): { menu: Rendered; finished: Promise<void> } {
 		const finished = Promise.resolve(wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never));
 		const menu = wired.ctx.customComponents[0] as Rendered;
 		for (let index = 0; index < rowsDown; index++) menu.handleInput(KEY.down);
@@ -475,11 +478,11 @@ describe("startup changes settings (I-18)", () => {
 		assert.ok(!wired.ctx.notifications.some((n) => n.type === "info"), "no success notification");
 	});
 
-	it("toggles the feature at cursor 4 and persists a summary model picked with Enter", async () => {
+	it("toggles the feature at cursor 5 and persists a summary model picked with Enter", async () => {
 		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
 		const wired = wire();
 		wired.ctx.bag.models.push(makeModel("provider", "fast"));
-		const { menu, finished } = openSettings(wired, 4);
+		const { menu, finished } = openSettings(wired, 5);
 		menu.handleInput(KEY.space);
 		menu.handleInput(KEY.down);
 		menu.handleInput(KEY.enter);
@@ -620,6 +623,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 			taglineReveal,
 			backgroundColor: "rainbow",
 			gradientAnimation: "off",
+			logoStyle: "symbol",
 			changesSummary: "on",
 			changesSummaryModel,
 		});
@@ -1325,7 +1329,7 @@ describe("background color setting (I-06 extension)", () => {
 });
 
 describe("gradient animation setting (I-17)", () => {
-	/** Menu rows in cursor order: menuGate (0), backgroundColor (1), gradientAnimation (2). */
+	/** Menu rows in cursor order: menuGate (0), backgroundColor (1), gradientAnimation (2), logoStyle (3). */
 	async function applyMenu(wired: Wired, inputs: string[]): Promise<void> {
 		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 		const component = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
@@ -1387,7 +1391,7 @@ describe("gradient animation setting (I-17)", () => {
 	});
 
 	it("the first agent turn stops the ticker; a later apply persists but cannot restart it", async () => {
-		writePreferences({ menuGate: "off", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow", changesSummary: "off" });
+		writePreferences({ menuGate: "off", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow", logoStyle: "symbol", changesSummary: "off" });
 		const wired = wire();
 		await startup(wired);
 		const factory = wired.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
@@ -1403,7 +1407,7 @@ describe("gradient animation setting (I-17)", () => {
 	});
 
 	it("startup with an animated preference runs the ticker; the gate's proceed teardown stops it", async () => {
-		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow", changesSummary: "off" });
+		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow", logoStyle: "symbol", changesSummary: "off" });
 		const wired = wire();
 		const emitted = startup(wired);
 		await until(() => wired.ctx.customComponents.length > 0);
@@ -1414,7 +1418,7 @@ describe("gradient animation setting (I-17)", () => {
 	});
 
 	it("session shutdown stops both splash animations before the first turn", async () => {
-		writePreferences({ menuGate: "off", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow", changesSummary: "off" });
+		writePreferences({ menuGate: "off", taglineReveal: "on", backgroundColor: "accent", gradientAnimation: "flow", logoStyle: "symbol", changesSummary: "off" });
 		const wired = wire();
 		await startup(wired);
 		assert.notEqual(gradientAnimation.timer, null, "gradient ticker running");
@@ -1423,5 +1427,149 @@ describe("gradient animation setting (I-17)", () => {
 		await wired.pi.emit("session_shutdown", { type: "session_shutdown" }, wired.ctx.ctx);
 		assert.equal(gradientAnimation.timer, null, "shutdown stopped the gradient ticker");
 		assert.equal(taglineReveal.timer, null, "shutdown stopped the tagline ticker");
+		assert.equal(logoAnimation.timer, null, "shutdown stopped the logo ticker");
+	});
+});
+
+describe("logo style setting (I-20)", () => {
+	async function applyLogoSetting(wired: Wired, direction: string): Promise<void> {
+		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
+		const menu = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+		for (let index = 0; index < 3; index++) menu.handleInput(KEY.down);
+		menu.handleInput(direction);
+		pressApply(menu);
+		await handlerPromise;
+	}
+
+	it("defaults missing and invalid logo styles to random", () => {
+		assert.equal(readPreferences().logoStyle, "random");
+		writeFileSync(join(env.agentDir, "pi-topping-splash.json"), JSON.stringify({ logoStyle: "animated" }), "utf8");
+		assert.equal(readPreferences().logoStyle, "random");
+		writeFileSync(join(env.agentDir, "pi-topping-splash.json"), JSON.stringify({ logoStyle: "logo" }), "utf8");
+		assert.equal(readPreferences().logoStyle, "logo");
+	});
+
+	it("adds the final Splash Banner cycle row and persists it with the other settings", async () => {
+		const wired = wire();
+		assert.equal(readPreferences().logoStyle, "random");
+		await applyLogoSetting(wired, KEY.right);
+		assert.equal(readPreferences().logoStyle, "symbol");
+		assert.equal(state.logoStyle, "symbol");
+		assert.equal(logoAnimation.timer, null, "a saved preference does not animate without a visible header");
+	});
+
+	it("previews a changed installer style on a visible splash, does not replay on unrelated apply, and stops on glyph", async (t) => {
+		enableTimers(t);
+		const restoreTerm = setEnv("TERM", "xterm-256color");
+		const restoreTermProgram = setEnv("TERM_PROGRAM", undefined);
+		try {
+			writePreferences({ menuGate: "off", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", logoStyle: "symbol", changesSummary: "off" });
+			const wired = wire();
+			await startup(wired);
+			const factory = wired.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
+			const header = factory(wired.tui.tui, makeTheme()) as { render(width: number): string[] };
+			assert.equal(state.logoStyle, "symbol");
+			await applyLogoSetting(wired, KEY.right);
+			assert.equal(state.logoStyle, "logo");
+			assert.notEqual(logoAnimation.timer, null, "changed installer choice previews immediately");
+			assert.equal(logoAnimation.frame, 0);
+			assert.ok(header.render(100).some((line) => line.includes("38;2;77;154;191")));
+			const timer = logoAnimation.timer;
+			logoAnimation.timeMs = 400;
+			const background = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
+			const menu = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+			menu.handleInput(KEY.down);
+			menu.handleInput(KEY.right);
+			pressApply(menu);
+			await background;
+			assert.equal(logoAnimation.timer, timer, "unrelated settings keep the running clock");
+			assert.equal(logoAnimation.timeMs, 400, "unrelated apply does not replay the one-shot");
+			await applyLogoSetting(wired, KEY.left);
+			assert.equal(state.logoStyle, "symbol");
+			assert.equal(logoAnimation.timer, null, "switching away stops the clock");
+			assert.equal(logoAnimation.frame, INSTALLER_LOGO_LAST_FRAME);
+		} finally {
+			restoreTermProgram();
+			restoreTerm();
+		}
+	});
+
+	it("a failed preference write leaves logo state and ticker untouched", async () => {
+		const wired = wire();
+		const blocker = join(env.agentDir, "not-a-dir");
+		writeFileSync(blocker, "occupied");
+		const restoreAgentDir = setEnv("PI_CODING_AGENT_DIR", blocker);
+		try {
+			const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
+			const menu = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+			for (let index = 0; index < 3; index++) menu.handleInput(KEY.down);
+			menu.handleInput(KEY.right);
+			pressApply(menu);
+			await handlerPromise;
+		} finally {
+			restoreAgentDir();
+		}
+		assert.equal(state.logoStyle, "random");
+		assert.equal(logoAnimation.timer, null);
+		assert.ok(wired.ctx.notifications.some((notification) => notification.type === "error"));
+	});
+
+	it("cancellation and a post-conversation apply do not start the ticker", async () => {
+		const wired = wire();
+		const canceled = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
+		const menu = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+		for (let index = 0; index < 3; index++) menu.handleInput(KEY.down);
+		menu.handleInput(KEY.right);
+		menu.handleInput(KEY.esc);
+		await canceled;
+		assert.equal(readPreferences().logoStyle, "random");
+		assert.equal(state.logoStyle, "random");
+		assert.equal(logoAnimation.timer, null);
+
+		const wiredAfterTurn = wire();
+		await startup(wiredAfterTurn);
+		const factory = wiredAfterTurn.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
+		factory(wiredAfterTurn.tui.tui, makeTheme());
+		state.conversationStarted = true;
+		await applyLogoSetting(wiredAfterTurn, KEY.left);
+		assert.equal(readPreferences().logoStyle, "logo", "preference still saves");
+		assert.equal(logoAnimation.timer, null, "off-screen splash is not started");
+	});
+
+	it("stops the logo clock on shutdown, first turn, gate bypass, and gate proceed", async () => {
+		const configure = () => writePreferences({ menuGate: "off", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "off", logoStyle: "logo", changesSummary: "off" });
+		configure();
+		const shutdown = wire();
+		await startup(shutdown);
+		assert.notEqual(logoAnimation.timer, null);
+		await shutdown.pi.emit("session_shutdown", { type: "session_shutdown" }, shutdown.ctx.ctx);
+		assert.equal(logoAnimation.timer, null);
+
+		resetModuleState();
+		configure();
+		const firstTurn = wire();
+		await startup(firstTurn);
+		assert.notEqual(logoAnimation.timer, null);
+		await firstTurn.pi.emit("before_agent_start", { type: "before_agent_start", systemPrompt: "x" }, firstTurn.ctx.ctx);
+		assert.equal(logoAnimation.timer, null);
+
+		resetModuleState();
+		startLogoAnimation();
+		restoreGateEnv();
+		restoreGateEnv = setEnv("PI_SPLASH_GATE_DONE", "1");
+		const bypass = wire();
+		await startup(bypass);
+		assert.equal(logoAnimation.timer, null, "non-gated path stops any stray logo clock");
+
+		restoreGateEnv();
+		resetModuleState();
+		writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "off", logoStyle: "logo", changesSummary: "off" });
+		const gated = wire();
+		const emitted = startup(gated);
+		await until(() => gated.ctx.customComponents.length > 0);
+		assert.notEqual(logoAnimation.timer, null);
+		(gated.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput(KEY.esc);
+		await emitted;
+		assert.equal(logoAnimation.timer, null, "gate proceed tears down the splash clock");
 	});
 });

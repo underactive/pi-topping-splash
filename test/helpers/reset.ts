@@ -1,7 +1,8 @@
 import { changesRenderState, headerRenderState, state } from "../../src/state.ts";
 import { abortChangesSummary, summaryStream } from "../../src/changes-summary.ts";
 import { abortLocalChanges } from "../../src/local-changes.ts";
-import { gradientAnimation, stopGradientAnimation } from "../../src/animate.ts";
+import { gradientAnimation, logoAnimation, stopGradientAnimation, stopLogoAnimation } from "../../src/animate.ts";
+import { INSTALLER_LOGO_LAST_FRAME } from "../../src/installer-logo.ts";
 import {
 	REVEAL_BAND_HALF,
 	REVEAL_HOLD_MS,
@@ -24,6 +25,12 @@ export function resetModuleState(): void {
 	summaryStream.tick = 0;
 	stopTaglineReveal();
 	stopGradientAnimation();
+	stopLogoAnimation();
+	logoAnimation.lastTickAt = 0;
+	logoAnimation.timeMs = 0;
+	logoAnimation.frame = INSTALLER_LOGO_LAST_FRAME;
+	logoAnimation.tick = 0;
+	logoAnimation.completed = false;
 	gradientAnimation.lastTickAt = 0;
 	gradientAnimation.timeMs = 0;
 	gradientAnimation.tick = 0;
@@ -50,5 +57,6 @@ export function resetModuleState(): void {
 	state.backgroundColor = "rainbow";
 	state.dynamicTint = "accent";
 	state.gradientAnimation = "off";
+	state.logoStyle = "random";
 	state.conversationStarted = false;
 }
