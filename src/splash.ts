@@ -4,7 +4,7 @@ import { backgroundSampler, DEFAULT_DYNAMIC_TINT, RESET, panelBg, sgrBg, sgrFg, 
 import type { BackgroundColor, DynamicTint, GradientAnimation, Rgb, SwatchSampler } from "./color.ts";
 import type { ShortcutHint } from "./discovery.ts";
 import { LOGO_INK, LOGO_LINES, LOGO_ROWS, LOGO_SHADOW, LOGO_SHADOW_OFFSET, LOGO_WIDTH } from "./logo.ts";
-import type { ConcreteLogoStyle, LogoStyle } from "./logo.ts";
+import type { ConcreteLogoStyle } from "./logo.ts";
 import { INSTALLER_LOGO_ANIMATION_BOUNDS, INSTALLER_LOGO_FRAMES, INSTALLER_LOGO_LAST_FRAME, INSTALLER_LOGO_PALETTE } from "./installer-logo.ts";
 import { formatPromptSize, joinParts, padCenter, padRight, pickFitting, sanitizeTuiText, truncateVisible, visibleLength, wrapCommaDelimited } from "./text.ts";
 import { renderTagline } from "./reveal.ts";
@@ -56,12 +56,11 @@ export function buildLabeledWrappedSection(theme: Theme, label: string, items: s
 export function buildShortcutSection(theme: Theme, hints: ShortcutHint[], width: number, count?: number): string[] {
 	if (hints.length === 0) return [];
 	const safe = hints.map((h) => ({ key: sanitizeTuiText(h.key), description: sanitizeTuiText(h.description) }));
-	// Build each hint as "key description" with key dimmed.
 	const hintStrings = safe.map((h) => `${theme.fg("dim", h.key)} ${theme.fg("text", h.description)}`);
 	const hintWidths = safe.map((h) => visibleLength(h.key) + 1 + visibleLength(h.description));
 	const wrapped = wrapCommaDelimited(hintStrings, width, hintWidths);
 	const label = count === undefined ? "[shortcuts]" : `[shortcuts] ${count}`;
-	return [theme.fg("warning", label), ...wrapped.map((line) => line)];
+	return [theme.fg("warning", label), ...wrapped];
 }
 
 /**
@@ -205,7 +204,7 @@ export function stampLogo(ink: Map<number, Ink>, width: number, height: number, 
 export const INSTALLER_LOGO_DISPLAY_SCALE = 2;
 
 /** Scale, reserved columns, and content rows for the installer mark, shadow excluded from the row count. */
-export function installerLogoMetrics(): { scale: number; width: number; rows: number; offsetX: number; offsetYSub: number } {
+export function installerLogoMetrics(): { scale: number; width: number; rows: number } {
 	const { width: maxWidth, height: maxHeight } = INSTALLER_LOGO_ANIMATION_BOUNDS;
 	const fitted = Math.max(1, Math.floor(Math.min(LOGO_WIDTH / maxWidth, (2 * LOGO_ROWS) / maxHeight)));
 	const scale = fitted * INSTALLER_LOGO_DISPLAY_SCALE;
@@ -213,20 +212,14 @@ export function installerLogoMetrics(): { scale: number; width: number; rows: nu
 	const contentSub = maxHeight * scale;
 	const width = contentW + LOGO_SHADOW_OFFSET;
 	const rows = Math.ceil(contentSub / 2);
-	return {
-		scale,
-		width,
-		rows,
-		offsetX: Math.floor((width - LOGO_SHADOW_OFFSET - contentW) / 2),
-		offsetYSub: Math.floor((2 * rows - contentSub) / 4) * 2,
-	};
+	return { scale, width, rows };
 }
 
 /** Stamps a source frame at the animation-wide scale, enlarged by `INSTALLER_LOGO_DISPLAY_SCALE`. */
 export function stampInstallerLogo(ink: Map<number, Ink>, width: number, height: number, originX: number, originY: number, frame: number): void {
 	const frameData = INSTALLER_LOGO_FRAMES[Math.max(0, Math.min(INSTALLER_LOGO_FRAMES.length - 1, frame))]!;
 	const { x: cropX, y: cropY, width: maxWidth, height: maxHeight } = INSTALLER_LOGO_ANIMATION_BOUNDS;
-	const { scale, offsetX, offsetYSub } = installerLogoMetrics();
+	const { scale } = installerLogoMetrics();
 	const subpixels = new Map<number, Rgb>();
 	const touched = new Set<number>();
 	const setPixel = (x: number, subY: number, color: Rgb): void => {
@@ -243,8 +236,8 @@ export function stampInstallerLogo(ink: Map<number, Ink>, width: number, height:
 				for (let sy = 0; sy < scale; sy++) {
 					for (let sx = 0; sx < scale; sx++) {
 						setPixel(
-							originX + offsetX + pixelX * scale + sx + dx,
-							2 * originY + offsetYSub + pixelY * scale + sy + dySub,
+							originX + pixelX * scale + sx + dx,
+							2 * originY + pixelY * scale + sy + dySub,
 							color,
 						);
 					}
@@ -418,8 +411,6 @@ export function buildHeaderParts(width: number, termRows: number, theme: Theme, 
 	const lines = appended.length > 0 ? [...selected.lines.slice(0, -1), ...appended, ""] : selected.lines;
 	const height = splashHeight(lines);
 	// Side by side, the logo and the panel are both centered on the finished splash, section included.
-	// The installer brand mark lifts `LOGO_LIFT_ROWS` above that center (clamped at the top edge) for
-	// optical balance against the taller info panel; the pi glyph stays exactly centered.
 	const logoLift = logoStyle === "logo" && sideBySide ? LOGO_LIFT_ROWS : 0;
 	const logoY = sideBySide ? Math.max(0, Math.floor((height - logoRows) / 2) - logoLift) : 0;
 	const panelY = sideBySide ? Math.floor((height - lines.length) / 2) : listsY;

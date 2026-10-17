@@ -3,7 +3,6 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import type { TUI } from "@earendil-works/pi-tui";
 import { DEFAULT_DYNAMIC_TINT } from "./color.ts";
 import type { BackgroundColor, GradientAnimation } from "./color.ts";
-import { pickRandomLogoStyle } from "./logo.ts";
 import type { ConcreteLogoStyle } from "./logo.ts";
 import { changesRenderState, headerRenderState, state } from "./state.ts";
 import { gradientAnimation, logoAnimation, startGradientAnimation, startLogoAnimation, stopLogoAnimation } from "./animate.ts";
@@ -51,7 +50,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 	state.dynamicTint = prefs.dynamicTint ?? DEFAULT_DYNAMIC_TINT;
 	state.gradientAnimation = prefs.gradientAnimation;
 	state.logoStyle = prefs.logoStyle ?? "random";
-	const randomLogoStyle: ConcreteLogoStyle = pickRandomLogoStyle();
+	const randomLogoStyle: ConcreteLogoStyle = Math.random() < 0.5 ? "symbol" : "logo";
 	ctx.ui.setHeader((tui: TUI, theme: Theme) => {
 		headerRenderState.requestRender = () => tui.requestRender();
 		changesRenderState.requestRender = () => tui.requestRender();
@@ -71,6 +70,10 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 		let cachedChangesVersion = -1;
 		let cachedStreamTick = -1;
 		let cachedSplashLines: string[] = [];
+		const applyRows = (rows: { row: number; line: string }[]) => {
+			cachedSplashLines = cachedSplashLines.slice();
+			for (const { row, line } of rows) if (row >= 0 && row < cachedSplashLines.length) cachedSplashLines[row] = line;
+		};
 		let cachedRepaintTagline: (() => { row: number; line: string }) | undefined = undefined;
 		let cachedRepaintBackdrop: ((timeMs: number) => string[]) | undefined = undefined;
 		let cachedRepaintSection: (() => { row: number; line: string }[] | null) | undefined = undefined;
@@ -82,7 +85,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 				const slot = installerLogoMetrics();
 				const logoStyle = resolved === "logo" && (width - SPLASH_MARGIN_X * 2 - slot.width - LOGO_GAP < PANEL_MIN_WIDTH || slot.rows + 2 > Math.floor(rows * MAX_SPLASH_ROW_SHARE)) ? "symbol" : resolved;
 				if (logoStyle === "symbol") stopLogoAnimation();
-				else if (logoStyle === "logo" && !logoAnimation.timer && !logoAnimation.completed && !state.conversationStarted) startLogoAnimation();
+				else if (!logoAnimation.timer && !logoAnimation.completed && !state.conversationStarted) startLogoAnimation();
 				const modelKey = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "";
 				const changesVersion = state.changes?.version ?? -1;
 				let structural = width !== cachedWidth || rows !== cachedRows || modelKey !== cachedModelKey
@@ -93,12 +96,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 					cachedStreamTick = summaryStream.tick;
 					const repainted = cachedRepaintSection?.();
 					if (repainted === null) structural = true;
-					else if (repainted && repainted.length > 0) {
-						cachedSplashLines = cachedSplashLines.slice();
-						for (const { row, line } of repainted) {
-							if (row >= 0 && row < cachedSplashLines.length) cachedSplashLines[row] = line;
-						}
-					}
+					else if (repainted && repainted.length > 0) applyRows(repainted);
 				}
 				if (structural) {
 					cachedWidth = width;
@@ -127,12 +125,7 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 					if (logoAnimation.tick !== cachedLogoTick) {
 						cachedLogoTick = logoAnimation.tick;
 						const repainted = cachedRepaintLogo?.(logoAnimation.frame);
-						if (repainted && repainted.length > 0) {
-							cachedSplashLines = cachedSplashLines.slice();
-							for (const { row, line } of repainted) {
-								if (row >= 0 && row < cachedSplashLines.length) cachedSplashLines[row] = line;
-							}
-						}
+						if (repainted && repainted.length > 0) applyRows(repainted);
 					}
 					if (gradientAnimation.tick !== cachedAnimTick) {
 						// Animation tick with nothing structural changed: repaint only the splash rows.
@@ -187,6 +180,4 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 	// With the reveal disabled the ticker never starts, so renderTagline settles on frame one.
 	if (prefs.taglineReveal === "on") startTaglineReveal();
 	if (prefs.gradientAnimation !== "off") startGradientAnimation();
-	// Render stops this ticker when the theme or terminal forces the glyph fallback.
-	if (state.logoStyle === "logo") startLogoAnimation();
 }

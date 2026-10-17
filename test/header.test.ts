@@ -224,8 +224,8 @@ describe("installHeader (H-04, H-05)", () => {
 			writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "wave", logoStyle: "logo", changesSummary: "off" });
 			const { component } = install();
 			assert.equal(state.logoStyle, "logo", "preference seeds shared state");
-			assert.notEqual(logoAnimation.timer, null, "installer ticker starts from preference");
 			const first = component.render(120);
+			assert.notEqual(logoAnimation.timer, null, "installer ticker starts from preference");
 			assertLinesExact(first, 120, "installer first frame");
 			const playbackTimer = logoAnimation.timer;
 			const playbackTime = logoAnimation.timeMs;

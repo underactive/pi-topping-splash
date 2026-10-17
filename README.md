@@ -122,7 +122,7 @@ churn bar and its line counts against `HEAD`, which fill in just after the listi
 summary sits a blank row below the last file row. Untracked files show `new` and binary files
 `bin`; narrow panels drop the bars, then the line counts. The section spends only the rows the gate
 or editor leaves free below the splash, growing the panel and the gradient around it downward while
-the lists above stay put and the logo stays centered beside the taller panel. When those rows cannot
+the lists above stay put and the pi glyph stays centered beside the taller panel (the installer logo sits 4 rows above center). When those rows cannot
 hold the listing, the section is one line instead: `[local changes] +3, ~4, -3 · ~ src/changes-summary.ts +12 ·
 Refactors…` (counts, most changed file, and summary preview, as space permits). Added, changed, and
 deleted paths appear before the model request finishes, and the summary streams in under the file

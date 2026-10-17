@@ -352,8 +352,8 @@ describe("installer logo compositor (S-15, S-16)", () => {
 		// Use a section big enough that the panel outgrows the installer slot, so the lift is visible
 		// and the top-edge clamp (`max(0, ...)`) does not hide it.
 		const section = () => Array.from({ length: 40 }, () => "x");
-		// Frame 0 paints at source row 0, so its topmost ink cell sits exactly at `logoY` (slot.offsetYSub
-		// is 0 for the animation bounds). The white hand-off frame would gap down to row 9 instead.
+		// Frame 0 paints at source row 0, so its topmost ink cell sits exactly at `logoY`. The white
+		// hand-off frame would gap down to row 9 instead.
 		const FIRST_FRAME = 0;
 		const paletteSgrs = Object.values(INSTALLER_LOGO_PALETTE).flatMap((color) => [`\x1b[38;2;${color}m`, `\x1b[48;2;${color}m`]);
 		const logoInkSgr = `\x1b[38;2;${LOGO_INK}m`;

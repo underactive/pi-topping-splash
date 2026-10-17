@@ -62,8 +62,6 @@ export const INSTALLER_LOGO_FRAMES: readonly LogoFrame[] = [
 	{ pixels: ["........", "........", "........", ".www....", ".w.w....", ".ww.w...", ".w..w...", "........", "........"], holdMs: 450 },
 ];
 
-/** The installer draws once; the final source frame is the white hand-off. */
-export const INSTALLER_LOGO_LOOP = false;
 export const INSTALLER_LOGO_DURATION_MS = INSTALLER_LOGO_FRAMES.reduce((sum, frame) => sum + frame.holdMs, 0);
 export const INSTALLER_LOGO_BRAND_FRAME = INSTALLER_LOGO_FRAMES.length - 2;
 /** The final installer source frame, including its white hand-off flash. */
@@ -98,17 +96,12 @@ function pixelBounds(frames: readonly LogoFrame[]): PixelBounds {
 /** The source-pixel union used to compute one shared scale for every frame. */
 export const INSTALLER_LOGO_ANIMATION_BOUNDS = pixelBounds(INSTALLER_LOGO_FRAMES);
 
-/** Select the frame held at `timeMs`, wrapping loops and clamping one-shots on the final frame. */
+/** Select the frame held at `timeMs`, clamping on the final frame. */
 export function installerFrameIndex(timeMs: number): number {
-	const duration = INSTALLER_LOGO_DURATION_MS;
-	if (!INSTALLER_LOGO_LOOP && timeMs >= duration) return INSTALLER_LOGO_LAST_FRAME;
-	let elapsed = INSTALLER_LOGO_LOOP
-		? ((timeMs % duration) + duration) % duration
-		: Math.max(0, timeMs);
+	let elapsed = Math.max(0, timeMs);
 	for (let index = 0; index < INSTALLER_LOGO_FRAMES.length; index++) {
-		const hold = INSTALLER_LOGO_FRAMES[index]!.holdMs;
-		if (elapsed < hold) return index;
-		elapsed -= hold;
+		elapsed -= INSTALLER_LOGO_FRAMES[index]!.holdMs;
+		if (elapsed < 0) return index;
 	}
 	return INSTALLER_LOGO_LAST_FRAME;
 }

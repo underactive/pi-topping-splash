@@ -1,5 +1,5 @@
 import { headerRenderState } from "./state.ts";
-import { INSTALLER_LOGO_DURATION_MS, INSTALLER_LOGO_LAST_FRAME, INSTALLER_LOGO_LOOP, installerFrameIndex } from "./installer-logo.ts";
+import { INSTALLER_LOGO_DURATION_MS, INSTALLER_LOGO_LAST_FRAME, installerFrameIndex } from "./installer-logo.ts";
 
 /**
  * Repaint cadence of the animated backdrop. Deliberately far coarser than the reveal's 20ms
@@ -75,7 +75,7 @@ export function startLogoAnimation(): void {
 			logoAnimation.tick++;
 			headerRenderState.requestRender?.();
 		}
-		if (!INSTALLER_LOGO_LOOP && logoAnimation.timeMs >= INSTALLER_LOGO_DURATION_MS) {
+		if (logoAnimation.timeMs >= INSTALLER_LOGO_DURATION_MS) {
 			logoAnimation.completed = true;
 			stopLogoAnimation();
 		}

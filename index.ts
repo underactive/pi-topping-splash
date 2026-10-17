@@ -18,6 +18,12 @@ function refreshPromptSize(systemPrompt: string): void {
 	headerRenderState.requestRender?.();
 }
 
+function stopSplashTickers(): void {
+	stopTaglineReveal();
+	stopGradientAnimation();
+	stopLogoAnimation();
+}
+
 /** Pi extension: installs the splash, optional startup gate, and on-by-default startup changes summary. It registers /topping-splash-settings and /local-changes. */
 export default function piStartupGreeter(pi: ExtensionAPI) {
 	pi.on("model_select", (_event, ctx) => {
@@ -33,17 +39,13 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		abortChangesSummary();
 		abortLocalChanges();
-		stopGradientAnimation();
-		stopLogoAnimation();
-		stopTaglineReveal();
+		stopSplashTickers();
 	});
 
 	pi.on("before_agent_start", (event) => {
 		if (!state.conversationStarted) {
 			state.conversationStarted = true;
-			stopGradientAnimation();
-			stopLogoAnimation();
-			stopTaglineReveal();
+			stopSplashTickers();
 			// The header scrolls away from here, so a summary still streaming settles instead of redrawing it.
 			stopSummaryStream();
 		}
@@ -64,7 +66,7 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 		// Only gate a genuine fresh startup: never on reload, and never on a relaunched child
 		// (GATE_DONE_ENV guard). Non-gated sessions start clean, without the splash.
 		const shouldGate = event.reason === "startup" && process.env[GATE_DONE_ENV] !== "1";
-		if (!shouldGate) { stopGradientAnimation(); stopLogoAnimation(); return; }
+		if (!shouldGate) { stopSplashTickers(); return; }
 
 		// Install the splash header so it renders at the top during the gate (a non-overlay
 		// custom component replaces only the editor region below it), then clear the terminal
@@ -81,9 +83,7 @@ export default function piStartupGreeter(pi: ExtensionAPI) {
 		if (prefs.menuGate === "off") return;
 
 		const resolution = await runStartupGate(pi, ctx);
-		stopTaglineReveal();
-		stopGradientAnimation();
-		stopLogoAnimation();
+		stopSplashTickers();
 		if (resolution === "quit") {
 			ctx.shutdown();
 			return;

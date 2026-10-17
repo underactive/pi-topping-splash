@@ -2,13 +2,7 @@ import { rgbFromHex } from "./color.ts";
 
 export type ConcreteLogoStyle = "symbol" | "logo";
 export type LogoStyle = ConcreteLogoStyle | "random";
-export const CONCRETE_LOGO_STYLE_OPTIONS: readonly ConcreteLogoStyle[] = ["symbol", "logo"];
 export const LOGO_STYLE_OPTIONS: readonly LogoStyle[] = ["random", "symbol", "logo"];
-
-/** Picks one of the concrete logo style options uniformly at random. */
-export function pickRandomLogoStyle(): ConcreteLogoStyle {
-	return CONCRETE_LOGO_STYLE_OPTIONS[Math.floor(Math.random() * CONCRETE_LOGO_STYLE_OPTIONS.length)]!;
-}
 
 export const LOGO = String.raw`
 

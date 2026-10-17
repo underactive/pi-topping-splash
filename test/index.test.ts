@@ -1574,6 +1574,7 @@ describe("logo style setting (I-20)", () => {
 		configure();
 		const shutdown = wire();
 		await startup(shutdown);
+		mountedHeader(shutdown).render(100);
 		assert.notEqual(logoAnimation.timer, null);
 		await shutdown.pi.emit("session_shutdown", { type: "session_shutdown" }, shutdown.ctx.ctx);
 		assert.equal(logoAnimation.timer, null);
@@ -1582,6 +1583,7 @@ describe("logo style setting (I-20)", () => {
 		configure();
 		const firstTurn = wire();
 		await startup(firstTurn);
+		mountedHeader(firstTurn).render(100);
 		assert.notEqual(logoAnimation.timer, null);
 		await firstTurn.pi.emit("before_agent_start", { type: "before_agent_start", systemPrompt: "x" }, firstTurn.ctx.ctx);
 		assert.equal(logoAnimation.timer, null);
@@ -1600,6 +1602,7 @@ describe("logo style setting (I-20)", () => {
 		const gated = wire();
 		const emitted = startup(gated);
 		await until(() => gated.ctx.customComponents.length > 0);
+		mountedHeader(gated).render(100);
 		assert.notEqual(logoAnimation.timer, null);
 		(gated.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput(KEY.esc);
 		await emitted;

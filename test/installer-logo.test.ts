@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
-import { LOGO_INK, LOGO_STYLE_OPTIONS } from "../src/logo.ts";
+import { LOGO_INK } from "../src/logo.ts";
 import {
 	INSTALLER_LOGO_ANIMATION_BOUNDS,
 	INSTALLER_LOGO_BRAND_FRAME,
 	INSTALLER_LOGO_DURATION_MS,
 	INSTALLER_LOGO_FRAMES,
 	INSTALLER_LOGO_LAST_FRAME,
-	INSTALLER_LOGO_LOOP,
 	INSTALLER_LOGO_PALETTE,
 	installerFrameIndex,
 	resolveLogoStyle,
@@ -21,7 +20,6 @@ describe("installer logo transcription (IL-01..IL-04)", () => {
 		assert.equal(INSTALLER_LOGO_DURATION_MS, 2630);
 		assert.deepEqual(INSTALLER_LOGO_FRAMES.map((frame) => frame.holdMs), [75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 250, 80, 80, 80, 100, 450, 120, 120, 450]);
 		assert.equal(createHash("sha256").update(JSON.stringify({ palette: INSTALLER_LOGO_PALETTE, frames: INSTALLER_LOGO_FRAMES })).digest("hex"), "f7769ccafedf7131c59e98cfb70445ab6816ec11c135c07976802735d8fe710d");
-		assert.equal(INSTALLER_LOGO_LOOP, false);
 		assert.equal(INSTALLER_LOGO_LAST_FRAME, INSTALLER_LOGO_FRAMES.length - 1);
 		assert.equal(INSTALLER_LOGO_LAST_FRAME, 20, "the final source frame is the white hand-off flash");
 		assert.equal(INSTALLER_LOGO_BRAND_FRAME, 19);
@@ -32,8 +30,6 @@ describe("installer logo transcription (IL-01..IL-04)", () => {
 		);
 		const frame = INSTALLER_LOGO_FRAMES[INSTALLER_LOGO_BRAND_FRAME]!;
 		assert.deepEqual(frame.pixels.slice(3, 7).map((row) => row.slice(1, 5)), ["ccc.", "b.c.", "bb.g", "b..g"]);
-		// Normalize the final yellow column to the pi-logo.js row notation (`y`).
-		assert.deepEqual(frame.pixels.slice(3, 7).map((row) => row.slice(1, 5).replaceAll("g", "y")), ["ccc.", "b.c.", "bb.y", "b..y"]);
 		assert.deepEqual(INSTALLER_LOGO_FRAMES[INSTALLER_LOGO_LAST_FRAME]!.pixels.slice(3, 7).map((row) => row.slice(1, 5)), ["www.", "w.w.", "ww.w", "w..w"]);
 	});
 
@@ -51,7 +47,6 @@ describe("installer logo transcription (IL-01..IL-04)", () => {
 		}
 		for (const color of Object.values(INSTALLER_LOGO_PALETTE)) assert.match(color, /^\d{1,3};\d{1,3};\d{1,3}$/);
 		assert.ok(LOGO_TICK_MS <= minHold, "ticker cadence does not exceed the shortest source hold");
-		assert.deepEqual(LOGO_STYLE_OPTIONS, ["random", "symbol", "logo"]);
 	});
 
 	it("selects each frame at its cumulative hold boundary and clamps to the final source frame", () => {
