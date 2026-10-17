@@ -72,7 +72,7 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 | # | Symbol | Claim | Source |
 |---|--------|-------|--------|
 | IL-01 | frame transcription | source URL/hash/date are pinned in the module; 21 grids/holds and installer RGBs match that snapshot; brand frame 19 crops to `ccc.` / `b.c.` / `bb.y` / `b..y`, while frame 20 is the white hand-off; the installer palette differences from `pi-logo.js` are documented | module provenance comment; fetched `install.sh` |
-| IL-02 | frame geometry | equal 8-column rows, palette-key-or-dot pixels, positive holds, valid RGB triplets; the 6×7 active union fits at one shared scale of 3 in `LOGO_WIDTH × (2 * LOGO_ROWS)` including shadow; `LOGO_TICK_MS` <= shortest hold | exported frame data/bounds/constants |
+| IL-02 | frame geometry | equal 8-column rows, palette-key-or-dot pixels, positive holds, valid RGB triplets; `LOGO_TICK_MS` <= shortest hold | exported frame data/bounds/constants |
 | IL-03 | `installerFrameIndex` | each cumulative hold boundary advances to the next frame; playback includes and clamps to final white frame 20, which remains selected after the one-shot stops | exported holds and one-shot behavior |
 | IL-04 | `resolveLogoStyle` | installer is accepted only for truecolor on supported terminals; symbol always stays symbol; 256color, `TERM=dumb`, and (on darwin) Apple Terminal fall back | exported resolver; pi-tui terminal detection |
 

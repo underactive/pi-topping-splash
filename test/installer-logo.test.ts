@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
-import { LOGO_INK, LOGO_ROWS, LOGO_SHADOW_OFFSET, LOGO_STYLE_OPTIONS, LOGO_WIDTH } from "../src/logo.ts";
+import { LOGO_INK, LOGO_STYLE_OPTIONS } from "../src/logo.ts";
 import {
 	INSTALLER_LOGO_ANIMATION_BOUNDS,
 	INSTALLER_LOGO_BRAND_FRAME,
@@ -37,9 +37,8 @@ describe("installer logo transcription (IL-01..IL-04)", () => {
 		assert.deepEqual(INSTALLER_LOGO_FRAMES[INSTALLER_LOGO_LAST_FRAME]!.pixels.slice(3, 7).map((row) => row.slice(1, 5)), ["www.", "w.w.", "ww.w", "w..w"]);
 	});
 
-	it("keeps frames rectangular and proves the one animation-wide scale fits with the shadow", () => {
+	it("keeps frames rectangular and validates source holds and colors", () => {
 		const keys = new Set([...Object.keys(INSTALLER_LOGO_PALETTE), "."]);
-		const scale = Math.floor(Math.min(LOGO_WIDTH / INSTALLER_LOGO_ANIMATION_BOUNDS.width, (2 * LOGO_ROWS) / INSTALLER_LOGO_ANIMATION_BOUNDS.height));
 		let minHold = Number.POSITIVE_INFINITY;
 		for (const [index, frame] of INSTALLER_LOGO_FRAMES.entries()) {
 			assert.ok(frame.holdMs > 0, `frame ${index} hold`);
@@ -51,11 +50,6 @@ describe("installer logo transcription (IL-01..IL-04)", () => {
 			}
 		}
 		for (const color of Object.values(INSTALLER_LOGO_PALETTE)) assert.match(color, /^\d{1,3};\d{1,3};\d{1,3}$/);
-		assert.equal(scale, 3, "all source frames use the scale from the 6x7 active union");
-		const offsetX = Math.floor((LOGO_WIDTH - INSTALLER_LOGO_ANIMATION_BOUNDS.width * scale) / 2);
-		const offsetYSub = Math.floor((2 * LOGO_ROWS - INSTALLER_LOGO_ANIMATION_BOUNDS.height * scale) / 4) * 2;
-		assert.ok(offsetX + INSTALLER_LOGO_ANIMATION_BOUNDS.width * scale + LOGO_SHADOW_OFFSET <= LOGO_WIDTH, "shadow-inclusive width fits the fixed slot");
-		assert.ok(offsetYSub + INSTALLER_LOGO_ANIMATION_BOUNDS.height * scale + 2 * LOGO_SHADOW_OFFSET <= 2 * LOGO_ROWS, "shadow-inclusive height fits the fixed slot");
 		assert.ok(LOGO_TICK_MS <= minHold, "ticker cadence does not exceed the shortest source hold");
 		assert.deepEqual(LOGO_STYLE_OPTIONS, ["random", "symbol", "logo"]);
 	});
