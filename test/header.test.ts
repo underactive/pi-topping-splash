@@ -279,6 +279,25 @@ describe("installHeader (H-04, H-05)", () => {
 		}
 	});
 
+	it("an 80x24 terminal falls back to the glyph when the installer slot does not fit", (t) => {
+		enableTimers(t);
+		const restoreTerm = setEnv("TERM", "xterm-256color");
+		const restoreTermProgram = setEnv("TERM_PROGRAM", undefined);
+		try {
+			writePreferences({ menuGate: "on", taglineReveal: "off", backgroundColor: "rainbow", gradientAnimation: "off", logoStyle: "logo", changesSummary: "off" });
+			const { tui, component } = install();
+			tui.resizeRows(24);
+			const lines = component.render(80);
+			assert.equal(logoAnimation.timer, null, "fallback stops the ticker");
+			assertLinesExact(lines, 80, "80x24 logo fallback");
+			assert.ok(lines.some((line) => line.includes(`38;2;${LOGO_INK}`)), "glyph ink is used");
+			assert.equal(lines.some((line) => line.includes("38;2;240;144;130")), false, "installer palette is absent");
+		} finally {
+			restoreTermProgram();
+			restoreTerm();
+		}
+	});
+
 	it("a random installer selection stays stable after invalidation", (t) => {
 		enableTimers(t);
 		const restoreTerm = setEnv("TERM", "xterm-256color");

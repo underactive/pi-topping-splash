@@ -10,7 +10,7 @@ import { gradientAnimation, logoAnimation, startGradientAnimation, startLogoAnim
 import { startTaglineReveal, taglineReveal } from "./reveal.ts";
 import type { SplashPreferences } from "./preferences.ts";
 import { getLoadedHeaderItems } from "./discovery.ts";
-import { buildHeaderParts } from "./splash.ts";
+import { buildHeaderParts, installerLogoMetrics, LOGO_GAP, MAX_SPLASH_ROW_SHARE, PANEL_MIN_WIDTH, SPLASH_MARGIN_X } from "./splash.ts";
 import { resolveLogoStyle } from "./installer-logo.ts";
 import { EDITOR_RESERVED_ROWS, layoutChangesSection, summaryStream } from "./changes-summary.ts";
 import { gateMenuRows } from "./gate.ts";
@@ -77,10 +77,12 @@ export function installHeader(pi: ExtensionAPI, ctx: ExtensionContext, prefs: Sp
 		let cachedRepaintLogo: ((frame: number) => { row: number; line: string }[]) | undefined = undefined;
 		const component = {
 			render: (width: number): string[] => {
-				const logoStyle = cachedLogoStyle ?? resolveLogoStyle(state.logoStyle === "random" ? randomLogoStyle : state.logoStyle, theme.getColorMode());
+				const rows = tui.terminal.rows;
+				const resolved = resolveLogoStyle(state.logoStyle === "random" ? randomLogoStyle : state.logoStyle, theme.getColorMode());
+				const slot = installerLogoMetrics();
+				const logoStyle = resolved === "logo" && (width - SPLASH_MARGIN_X * 2 - slot.width - LOGO_GAP < PANEL_MIN_WIDTH || slot.rows + 2 > Math.floor(rows * MAX_SPLASH_ROW_SHARE)) ? "symbol" : resolved;
 				if (logoStyle === "symbol") stopLogoAnimation();
 				else if (logoStyle === "logo" && !logoAnimation.timer && !logoAnimation.completed && !state.conversationStarted) startLogoAnimation();
-				const rows = tui.terminal.rows;
 				const modelKey = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "";
 				const changesVersion = state.changes?.version ?? -1;
 				let structural = width !== cachedWidth || rows !== cachedRows || modelKey !== cachedModelKey
