@@ -3,7 +3,7 @@ import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { BACKGROUND_COLOR_OPTIONS, DEFAULT_DYNAMIC_TINT, GRADIENT_ANIMATION_OPTIONS, isDynamicTint, type BackgroundColor, type GradientAnimation } from "./color.ts";
 import { LOGO_STYLE_OPTIONS } from "./logo.ts";
 import type { LogoStyle } from "./logo.ts";
-import { startGradientAnimation, startLogoAnimation, stopGradientAnimation, stopLogoAnimation } from "./animate.ts";
+import { startGradientAnimation, startLogoAnimation, stopGradientAnimation } from "./animate.ts";
 import { GATE_PANEL_MAX_WIDTH, renderPopupBox } from "./gate-ui.ts";
 import { TwoPaneModelThinking, availableModelRefs, modelRefLabel } from "./model-picker.ts";
 import type { ModelRef } from "./model-picker.ts";
@@ -170,11 +170,7 @@ export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
 			state.gradientAnimation = gradientAnimation;
 			const logoChanged = logoStyle !== state.logoStyle;
 			state.logoStyle = logoStyle;
-			if (logoStyle === "logo") {
-				if (logoChanged && !state.conversationStarted && headerRenderState.requestRender) startLogoAnimation();
-			} else {
-				stopLogoAnimation();
-			}
+			if (logoStyle === "logo" && logoChanged && !state.conversationStarted && headerRenderState.requestRender) startLogoAnimation();
 			// requestRender doubles as the "a splash header is wired" signal: without one there
 			// is nothing to animate, so the ticker stays off until the next startup seeds it.
 			// conversationStarted means the splash has scrolled (or is about to scroll) off-viewport,

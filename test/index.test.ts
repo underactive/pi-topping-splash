@@ -1494,6 +1494,39 @@ describe("logo style setting (I-20)", () => {
 		}
 	});
 
+	it("keeps random installer playback running when unrelated settings are applied", async (t) => {
+		enableTimers(t);
+		const restoreTerm = setEnv("TERM", "xterm-256color");
+		const restoreTermProgram = setEnv("TERM_PROGRAM", undefined);
+		const random = Math.random;
+		Math.random = () => 0.9;
+		try {
+			writePreferences({ menuGate: "off", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", logoStyle: "random", changesSummary: "off" });
+			const wired = wire();
+			await startup(wired);
+			const factory = wired.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
+			const header = factory(wired.tui.tui, makeTheme()) as { render(width: number): string[] };
+			header.render(100);
+			assert.equal(state.logoStyle, "random");
+			const timer = logoAnimation.timer;
+			assert.notEqual(timer, null, "random selection resolves to an installer logo");
+			logoAnimation.timeMs = 400;
+
+			const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
+			const menu = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+			menu.handleInput(KEY.down);
+			menu.handleInput(KEY.right);
+			pressApply(menu);
+			await handlerPromise;
+			assert.equal(logoAnimation.timer, timer, "unrelated settings preserve the active ticker");
+			assert.equal(logoAnimation.timeMs, 400, "unrelated apply does not restart playback");
+		} finally {
+			Math.random = random;
+			restoreTermProgram();
+			restoreTerm();
+		}
+	});
+
 	it("a failed preference write leaves logo state and ticker untouched", async () => {
 		const wired = wire();
 		const blocker = join(env.agentDir, "not-a-dir");
