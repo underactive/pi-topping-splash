@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Use the shared `splashLocalChanges` entry name from `@underactive/pi-topping-primitives` while keeping the local-changes payload validator in splash.
+
 ### Added
 
 - **Logo style** setting for the splash banner with `random`, `symbol`, and `logo` options. The `random` option (the default) randomly selects between `symbol` and `logo` on startup. The `logo` option plays the 21-frame animation

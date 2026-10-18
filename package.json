@@ -33,7 +33,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test --test-reporter=dot --test-reporter-destination=stdout test/*.test.ts"
+    "test": "node -C compiled --test --test-reporter=dot --test-reporter-destination=stdout test/*.test.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
