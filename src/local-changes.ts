@@ -23,7 +23,7 @@ import { fitCell } from "./text.ts";
 export const LOCAL_CHANGES_COMMAND = "local-changes";
 /** Maximum paths shown by the transcript entry before its overflow row. */
 export const LOCAL_CHANGES_FILE_ROWS_MAX = 20;
-const STATUS_KEY = "pi-topping-splash:local-changes";
+const STATUS_KEY = ENTRY_TYPES.splashLocalChanges;
 const ENTRY_KEYS = Object.keys({ path: true, kind: true, untracked: true, stat: true } satisfies Record<keyof ChangeEntry, true>);
 const STAT_KEYS = Object.keys({ added: true, deleted: true, binary: true } satisfies Record<keyof LineStat, true>);
 const CHANGE_KINDS = ["added", "changed", "deleted"] as const;
