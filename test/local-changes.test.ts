@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { setImmediate as waitTurn } from "node:timers/promises";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { CustomEntry, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { ENTRY_TYPES } from "@underactive/pi-topping-primitives/contracts";
 import { buildSessionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { UserMessage } from "@earendil-works/pi-ai";
 import piStartupGreeter from "../index.ts";
@@ -9,7 +10,6 @@ import { layoutChangesSection, startSummaryStream, stopSummaryStream, summaryStr
 import { panelBg, RESET, sgrBg } from "../src/color.ts";
 import {
 	LOCAL_CHANGES_COMMAND,
-	LOCAL_CHANGES_ENTRY_TYPE,
 	LOCAL_CHANGES_FILE_ROWS_MAX,
 	isLocalChangesEntryData,
 	renderLocalChangesEntry,
@@ -112,20 +112,20 @@ function fixtureData(summary = "A short model summary."): Extract<LocalChangesEn
 function getEntryData(harness: Harness): LocalChangesEntryData {
 	const appended = harness.pi.appendedEntries[0];
 	assert.ok(appended, "one custom entry must be appended");
-	assert.equal(appended.customType, LOCAL_CHANGES_ENTRY_TYPE);
+	assert.equal(appended.customType, ENTRY_TYPES.splashLocalChanges);
 	assert.ok(isLocalChangesEntryData(appended.data), "entry data must pass the validator");
 	return appended.data;
 }
 
 function renderRegisteredEntry(harness: Harness, data: unknown, width = 100): string[] | undefined {
-	const renderer = harness.pi.entryRenderers.get(LOCAL_CHANGES_ENTRY_TYPE);
+	const renderer = harness.pi.entryRenderers.get(ENTRY_TYPES.splashLocalChanges);
 	assert.ok(renderer, "the entry renderer must be registered");
 	const entry: CustomEntry<unknown> = {
 		type: "custom",
 		id: "entry-id",
 		parentId: null,
 		timestamp: new Date(0).toISOString(),
-		customType: LOCAL_CHANGES_ENTRY_TYPE,
+		customType: ENTRY_TYPES.splashLocalChanges,
 		data,
 	};
 	const component = renderer(entry, {} as never, harness.ctx.bag.theme);
@@ -147,7 +147,7 @@ describe("/local-changes contracts", () => {
 		assert.ok(command);
 		assert.match(command.description ?? "", /diff excerpts go to that model's provider/);
 		assert.match(command.description ?? "", /entry stays out of session context/);
-		assert.ok(harness.pi.entryRenderers.has(LOCAL_CHANGES_ENTRY_TYPE));
+		assert.ok(harness.pi.entryRenderers.has(ENTRY_TYPES.splashLocalChanges));
 	});
 
 	it("LC-02 appends a settled dirty-tree entry after the background summary", async () => {
@@ -375,7 +375,7 @@ describe("/local-changes contracts", () => {
 		const before: UserMessage = { role: "user", content: "USER-PROMPT-BEFORE", timestamp: Date.now() };
 		session.appendMessage(before);
 		session.appendMessage(makeAssistantMessage("ASSISTANT-CONTEXT-REPLY"));
-		const customId = session.appendCustomEntry(LOCAL_CHANGES_ENTRY_TYPE, data);
+		const customId = session.appendCustomEntry(ENTRY_TYPES.splashLocalChanges, data);
 		session.appendMessage({ role: "user", content: "USER-PROMPT-AFTER", timestamp: Date.now() });
 		const contextText = JSON.stringify(session.buildSessionContext().messages);
 		assert.ok(contextText.includes("USER-PROMPT-BEFORE"));
@@ -388,7 +388,7 @@ describe("/local-changes contracts", () => {
 
 		const compacted = SessionManager.inMemory(env.cwd);
 		compacted.appendMessage({ role: "user", content: "BEFORE-COMPACTION-PROMPT", timestamp: Date.now() });
-		const compactedId = compacted.appendCustomEntry(LOCAL_CHANGES_ENTRY_TYPE, data);
+		const compactedId = compacted.appendCustomEntry(ENTRY_TYPES.splashLocalChanges, data);
 		compacted.appendCompaction("COMPACTION-SUMMARY", compactedId, 0);
 		compacted.appendMessage({ role: "user", content: "AFTER-COMPACTION-PROMPT", timestamp: Date.now() });
 		const compactedText = JSON.stringify(compacted.buildSessionContext().messages);
@@ -403,7 +403,7 @@ describe("/local-changes contracts", () => {
 		const savedText = JSON.stringify(buildSessionContext(saved).messages);
 		assert.equal(savedText.includes("SUMMARY-SENTINEL"), false);
 		assert.equal(savedText.includes("changed.ts"), false);
-		const savedEntry = saved.find((entry): entry is CustomEntry<unknown> => entry.type === "custom" && entry.customType === LOCAL_CHANGES_ENTRY_TYPE);
+		const savedEntry = saved.find((entry): entry is CustomEntry<unknown> => entry.type === "custom" && entry.customType === ENTRY_TYPES.splashLocalChanges);
 		assert.ok(savedEntry);
 		assert.ok(isLocalChangesEntryData(savedEntry.data));
 		assert.deepEqual(renderLocalChangesEntry(makeTheme(), data, 120), renderLocalChangesEntry(makeTheme(), savedEntry.data, 120));

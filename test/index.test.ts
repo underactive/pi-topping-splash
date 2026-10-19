@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { ENTRY_TYPES } from "@underactive/pi-topping-primitives/contracts";
 import fs, { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
@@ -10,7 +11,7 @@ import piStartupGreeter from "../index.ts";
 import { gradientAnimation, logoAnimation, startLogoAnimation, stopGradientAnimation, stopLogoAnimation } from "../src/animate.ts";
 import { INSTALLER_LOGO_LAST_FRAME } from "../src/installer-logo.ts";
 import { EDITOR_RESERVED_ROWS, startSummaryStream, stopSummaryStream, summarizeChanges, summaryStream } from "../src/changes-summary.ts";
-import { LOCAL_CHANGES_COMMAND, LOCAL_CHANGES_ENTRY_TYPE } from "../src/local-changes.ts";
+import { LOCAL_CHANGES_COMMAND } from "../src/local-changes.ts";
 import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
 import { stopTaglineReveal, taglineReveal } from "../src/reveal.ts";
 import { headerRenderState, state } from "../src/state.ts";
@@ -156,7 +157,7 @@ describe("registration (I-01)", () => {
 		}
 		assert.ok(pi.commands.has("topping-splash-settings"));
 		assert.ok(pi.commands.has(LOCAL_CHANGES_COMMAND));
-		assert.ok(pi.entryRenderers.has(LOCAL_CHANGES_ENTRY_TYPE));
+		assert.ok(pi.entryRenderers.has(ENTRY_TYPES.splashLocalChanges));
 		assert.ok(!pi.commands.has("topping-splash"), "old command name is gone");
 	});
 });

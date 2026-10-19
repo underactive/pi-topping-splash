@@ -1,4 +1,5 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import { ENTRY_TYPES } from "@underactive/pi-topping-primitives/contracts";
 import type { Component } from "@earendil-works/pi-tui";
 import type { ChangeEntry, ChangeKind, LineStat } from "./changes.ts";
 import {
@@ -20,10 +21,9 @@ import {
 import { fitCell } from "./text.ts";
 
 export const LOCAL_CHANGES_COMMAND = "local-changes";
-export const LOCAL_CHANGES_ENTRY_TYPE = "pi-topping-splash:local-changes";
 /** Maximum paths shown by the transcript entry before its overflow row. */
 export const LOCAL_CHANGES_FILE_ROWS_MAX = 20;
-const STATUS_KEY = "pi-topping-splash:local-changes";
+const STATUS_KEY = ENTRY_TYPES.splashLocalChanges;
 const ENTRY_KEYS = Object.keys({ path: true, kind: true, untracked: true, stat: true } satisfies Record<keyof ChangeEntry, true>);
 const STAT_KEYS = Object.keys({ added: true, deleted: true, binary: true } satisfies Record<keyof LineStat, true>);
 const CHANGE_KINDS = ["added", "changed", "deleted"] as const;
@@ -114,7 +114,7 @@ export function abortLocalChanges(): void {
 }
 
 export function registerLocalChanges(pi: ExtensionAPI): void {
-	pi.registerEntryRenderer<unknown>(LOCAL_CHANGES_ENTRY_TYPE, (entry, _options, theme) => {
+	pi.registerEntryRenderer<unknown>(ENTRY_TYPES.splashLocalChanges, (entry, _options, theme) => {
 		if (!isLocalChangesEntryData(entry.data)) return undefined;
 		const data = entry.data;
 		let cachedWidth = -1;
@@ -177,7 +177,7 @@ export function registerLocalChanges(pi: ExtensionAPI): void {
 							summary: outcome.presentation.summary,
 						}
 						: { kind: outcome.kind };
-					pi.appendEntry<LocalChangesEntryData>(LOCAL_CHANGES_ENTRY_TYPE, data);
+					pi.appendEntry<LocalChangesEntryData>(ENTRY_TYPES.splashLocalChanges, data);
 				} catch (error) {
 					if (!controller.signal.aborted) ctx.ui.notify(`/local-changes failed: ${errorReason(error)}`, "error");
 				} finally {
