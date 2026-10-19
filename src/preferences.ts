@@ -1,7 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { createSettingsStore, sanitize } from "@underactive/pi-topping-primitives/settings";
 import { BACKGROUND_COLOR_OPTIONS, DEFAULT_DYNAMIC_TINT, GRADIENT_ANIMATION_OPTIONS, isDynamicTint, type BackgroundColor, type DynamicTint, type GradientAnimation } from "./color.ts";
 import { isModelRef } from "./model-picker.ts";
 import { LOGO_STYLE_OPTIONS } from "./logo.ts";
@@ -50,13 +49,8 @@ type RawPreferences = {
 /** Anything missing, unreadable or unrecognized falls back to the defaults: gate "off", reveal/changes-summary toggles "on", background "rainbow", dynamic tint "accent", animation "off", logo style "random".
  * For `dynamicTint`, precedence is a theme-color `backgroundColor`, then a valid stored `dynamicTint`, then "accent"; "rainbow", "dynamic", and invalid values are excluded.
  */
-export function readPreferences(): SplashPreferences {
-	let parsed: RawPreferences = null;
-	try {
-		parsed = JSON.parse(readFileSync(preferencesPath(), "utf8")) as RawPreferences;
-	} catch {
-		// Missing or corrupt file: fall through to the defaults.
-	}
+function sanitizePreferences(raw: unknown): SplashPreferences {
+	const parsed = (sanitize.isRecord(raw) ? raw : null) as RawPreferences;
 	const bg = parsed?.backgroundColor;
 	const backgroundColor = BACKGROUND_COLOR_OPTIONS.includes(bg as BackgroundColor) ? (bg as BackgroundColor) : "rainbow";
 	const dynamicTint = isDynamicTint(backgroundColor) ? backgroundColor
@@ -79,23 +73,17 @@ export function readPreferences(): SplashPreferences {
 	};
 }
 
+const preferencesStore = createSettingsStore<SplashPreferences>({
+	path: preferencesPath,
+	codec: { sanitize: sanitizePreferences },
+});
+
+export function readPreferences(): SplashPreferences {
+	return preferencesStore.read();
+}
+
 /** Returns false when the preferences could not be persisted, so the caller can report it. */
 export function writePreferences(prefs: SplashPreferences): boolean {
-	let tempPath: string | undefined;
-	try {
-		mkdirSync(getAgentDir(), { recursive: true });
-		const path = preferencesPath();
-		tempPath = `${path}.${randomUUID()}.tmp`;
-		writeFileSync(tempPath, `${JSON.stringify(prefs, null, 2)}\n`, "utf8");
-		renameSync(tempPath, path);
-		return true;
-	} catch {
-		if (tempPath) {
-			try {
-				unlinkSync(tempPath);
-			} catch {}
-		}
-		// Swallowed, not thrown: console output would corrupt the TUI.
-		return false;
-	}
+	// Swallowed, not thrown: console output would corrupt the TUI.
+	return preferencesStore.write(prefs).ok;
 }

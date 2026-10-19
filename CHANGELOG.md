@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Preferences are read and written by the shared `@underactive/pi-topping-primitives` 0.2.0 settings store. The file name and format are unchanged; the file is now created 0600, and on a fresh install the agent directory is created 0700. A failed write still returns `false` and leaves no temp file.
 - Use the shared `splashLocalChanges` entry name from `@underactive/pi-topping-primitives` while keeping the local-changes payload validator in splash.
 
 ### Added
