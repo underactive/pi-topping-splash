@@ -28,6 +28,8 @@ export interface FakeCtxHarness {
 	customComponents: Component[];
 	/** Options passed to each ui.custom call, parallel to `customComponents`. */
 	customOptions: unknown[];
+	/** Components whose `done` has not been called yet, so a picker over a still-open menu shows as two. */
+	mountedComponents: Component[];
 	shutdownCount: number;
 	streamCalls: { model: Model<any>; context: Context; options?: SimpleStreamOptions }[];
 }
@@ -75,6 +77,7 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 		setFooterCalls: [],
 		customComponents: [],
 		customOptions: [],
+		mountedComponents: [],
 		shutdownCount: 0,
 		streamCalls: bag.streamCalls,
 	} as unknown as FakeCtxHarness;
@@ -104,10 +107,19 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 			) => Component,
 			customOptions?: unknown,
 		): Promise<T> {
+			// Every call mounts another overlay without closing the ones before it, like pi does, so a
+			// menu's `onPick` can open a picker over the menu. `done` unmounts only its own component.
 			return new Promise<T>((resolve) => {
-				const component = factory(options.tui, bag.theme, {} as never, resolve);
+				let component: Component | undefined;
+				const done = (result: T): void => {
+					const index = component ? harness.mountedComponents.indexOf(component) : -1;
+					if (index !== -1) harness.mountedComponents.splice(index, 1);
+					resolve(result);
+				};
+				component = factory(options.tui, bag.theme, {} as never, done);
 				harness.customComponents.push(component);
 				harness.customOptions.push(customOptions);
+				harness.mountedComponents.push(component);
 			});
 		},
 		getAllThemes(): { name: string; path: string | undefined }[] {

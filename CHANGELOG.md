@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Preferences are read and written by the shared `@underactive/pi-topping-primitives` 0.2.0 settings store. The file name and format are unchanged; the file is now created 0600, and on a fresh install the agent directory is created 0700. A failed write still returns `false` and leaves no temp file.
 - Use the shared `splashLocalChanges` entry name from `@underactive/pi-topping-primitives` while keeping the local-changes payload validator in splash.
+- The `/topping-splash-settings` menu is now the shared `@underactive/pi-topping-primitives` 0.4.0 menu (`./menu`) instead of a vendored copy. What changes on screen:
+  - Enter or Space on **Summary model** opens the picker over the still-open menu and returns to it with the cursor on that row; the menu used to close and reopen around the picker.
+  - The menu is 90% of the terminal wide (it was fixed at 76 columns) and at most 85% high (it was 100%).
+  - Up and Down stop at the first and last rows instead of wrapping around, and PgUp/PgDn move one screenful.
+  - Shift+Tab also moves focus between the rows and the Apply/Cancel bar, and Left/Right on the bar stop at its ends instead of wrapping.
+  - The menu's keys can be remapped in pi's keybindings file under the `pi-topping.menu.*` ids (`up`, `down`, `pageUp`, `pageDown`, `left`, `right`, `toggle`, `apply`, `cancel`, `focusButtons`, `clear`, `editCommit`, `editCancel`, `editBackspace`).
+  - The **Summary model** row renders as `value ›` without the `[■]` checkbox.
+  - Escape and Ctrl+C return the menu's draft values with `applied: false`; the command still writes nothing on cancel.
 
 ### Added
 

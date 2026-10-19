@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
 import type { ExecResult } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { MenuComponent } from "@underactive/pi-topping-primitives/menu";
 import piStartupGreeter from "../index.ts";
 import { gradientAnimation, logoAnimation, startLogoAnimation, stopGradientAnimation, stopLogoAnimation } from "../src/animate.ts";
 import { INSTALLER_LOGO_LAST_FRAME } from "../src/installer-logo.ts";
@@ -401,34 +401,46 @@ describe("startup changes settings (I-18)", () => {
 	const rendered = (component: Rendered, width = 80): string => component.render(width).map(sanitizeTuiText).join("\n");
 
 	/** Run the settings command, moving the cursor `rowsDown` rows; 6 lands on the Summary model row. */
-	function openSettings(wired: Wired, rowsDown = 6): { menu: Rendered; finished: Promise<void> } {
+	function openSettings(wired: Wired, rowsDown = 6): { menu: MenuComponent; finished: Promise<void> } {
 		const finished = Promise.resolve(wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never));
-		const menu = wired.ctx.customComponents[0] as Rendered;
+		const menu = wired.ctx.customComponents[0];
+		assert.ok(menu instanceof MenuComponent, "the command mounts the shared primitives menu");
 		for (let index = 0; index < rowsDown; index++) menu.handleInput(KEY.down);
 		return { menu, finished };
 	}
 
-	/** The overlay `ui.custom` mounts once `count` are already open. */
-	async function overlayAfter(wired: Wired, count: number): Promise<Rendered> {
-		await until(() => wired.ctx.customComponents.length > count);
+	/** The picker `ui.custom` mounts over the menu, which stays open underneath it. */
+	async function pickerOver(wired: Wired): Promise<Rendered> {
+		await until(() => wired.ctx.customComponents.length > 1);
+		assert.equal(wired.ctx.mountedComponents.length, 2, "the menu stays mounted under the picker");
 		return wired.ctx.customComponents.at(-1) as Rendered;
+	}
+
+	/** The pick has settled: the picker is unmounted and the same menu takes keys again. */
+	async function pickerSettled(wired: Wired, menu: MenuComponent): Promise<void> {
+		await until(() => wired.ctx.mountedComponents.length === 1 && menu.snapshot().busy.length === 0);
+		assert.equal(wired.ctx.mountedComponents.length, 1, "only the menu is mounted");
+		assert.equal(wired.ctx.mountedComponents[0], menu, "the same menu, not a reopened one");
+		assert.deepEqual(menu.snapshot().busy, [], "the pick row is no longer busy");
 	}
 
 	function seedPreferences(changesSummaryModel: SplashPreferences["changesSummaryModel"]): void {
 		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "on", changesSummaryModel });
 	}
 
-	it("renders an Apply/Cancel action bar between two rules, above the hints", async () => {
+	it("renders an Apply/Cancel action bar between two rules, above the hints, filling the 90% overlay", async () => {
 		const wired = wire();
 		const { menu, finished } = openSettings(wired, 0);
-		const lines = menu.render(100).map(sanitizeTuiText);
+		assert.deepEqual(wired.ctx.customOptions[0], { overlay: true, overlayOptions: { width: "90%", maxHeight: "85%" } });
+		// The fake terminal is 100 columns, so pi hands the overlay 90 of them; the shared menu fills them all.
+		const lines = menu.render(90).map(sanitizeTuiText);
 		const bar = lines.findIndex((line) => line.includes("[ Apply ]"));
 		assert.ok(bar > 0, lines.join("\n"));
 		assert.match(lines[bar]!, /\[ Apply \]\s+‹ Cancel ›  ║$/, "buttons are right-aligned");
 		assert.match(lines[bar - 1]!, /^╟─+╢$/, "rule above the bar");
 		assert.match(lines[bar + 1]!, /^╟─+╢$/, "rule below the bar");
 		assert.ok(lines[bar + 2]!.includes("⇥ actions"), lines[bar + 2]);
-		assertLinesExact(lines, visibleWidth(lines[0]!), "settings menu rows share one width");
+		assertLinesExact(lines, 90, "settings menu rows fill the 90-column overlay");
 		menu.handleInput(KEY.esc);
 		await finished;
 	});
@@ -487,12 +499,12 @@ describe("startup changes settings (I-18)", () => {
 		menu.handleInput(KEY.space);
 		menu.handleInput(KEY.down);
 		menu.handleInput(KEY.enter);
-		const picker = await overlayAfter(wired, 1);
+		const picker = await pickerOver(wired);
 		for (const character of "provider/fast") picker.handleInput(character);
 		picker.handleInput(KEY.enter);
-		const reopened = await overlayAfter(wired, 2);
-		assert.ok(rendered(reopened).includes("provider/fast"));
-		pressApply(reopened);
+		await pickerSettled(wired, menu);
+		assert.ok(rendered(menu).includes("provider/fast"));
+		pressApply(menu);
 		await finished;
 		const prefs = readPreferences();
 		assert.equal(prefs.changesSummary, "on");
@@ -503,10 +515,11 @@ describe("startup changes settings (I-18)", () => {
 		const wired = wire();
 		const { menu, finished } = openSettings(wired);
 		menu.handleInput(KEY.space);
-		const picker = await overlayAfter(wired, 1);
+		const picker = await pickerOver(wired);
 		assert.ok(rendered(picker).includes("Summary Model"));
 		picker.handleInput(KEY.esc);
-		(await overlayAfter(wired, 2)).handleInput(KEY.esc);
+		await pickerSettled(wired, menu);
+		menu.handleInput(KEY.esc);
 		await finished;
 	});
 
@@ -514,14 +527,15 @@ describe("startup changes settings (I-18)", () => {
 		const wired = wire();
 		const { menu, finished } = openSettings(wired);
 		menu.handleInput(KEY.enter);
-		const picker = await overlayAfter(wired, 1);
+		const picker = await pickerOver(wired);
 		const text = rendered(picker, 90);
 		for (const expected of ["Summary Model", "Summarizes uncommitted changes", "Models", "Thinking", "anthropic/claude-opus-4", "Select", "Cancel", "type to filter"]) {
 			assert.ok(text.includes(expected), `${expected}\n${text}`);
 		}
 		for (const width of [20, 40, 60, 90]) assertLinesExact(picker.render(width), width, `picker at ${width}`);
 		picker.handleInput(KEY.esc);
-		(await overlayAfter(wired, 2)).handleInput(KEY.esc);
+		await pickerSettled(wired, menu);
+		menu.handleInput(KEY.esc);
 		await finished;
 	});
 
@@ -538,9 +552,10 @@ describe("startup changes settings (I-18)", () => {
 			const wired = wire({ model: late, models: [early, late] });
 			const { menu, finished } = openSettings(wired);
 			menu.handleInput(KEY.enter);
-			const picker = await overlayAfter(wired, 1);
+			const picker = await pickerOver(wired);
 			picker.handleInput(KEY.enter);
-			pressApply(await overlayAfter(wired, 2));
+			await pickerSettled(wired, menu);
+			pressApply(menu);
 			await finished;
 			assert.deepEqual(readPreferences().changesSummaryModel, testCase.expected, testCase.label);
 		}
@@ -551,11 +566,11 @@ describe("startup changes settings (I-18)", () => {
 		const wired = wire();
 		const { menu, finished } = openSettings(wired);
 		menu.handleInput(KEY.enter);
-		const picker = await overlayAfter(wired, 1);
+		const picker = await pickerOver(wired);
 		picker.handleInput(KEY.esc);
-		const reopened = await overlayAfter(wired, 2);
-		assert.ok(rendered(reopened).includes("provider/fast"), "prior value still shown");
-		reopened.handleInput(KEY.esc);
+		await pickerSettled(wired, menu);
+		assert.ok(rendered(menu).includes("provider/fast"), "prior value still shown");
+		menu.handleInput(KEY.esc);
 		await finished;
 		assert.deepEqual(readPreferences().changesSummaryModel, { provider: "provider", id: "fast" });
 	});
@@ -581,10 +596,10 @@ describe("startup changes settings (I-18)", () => {
 		const { menu, finished } = openSettings(wired);
 		menu.handleInput(KEY.backspace);
 		menu.handleInput(KEY.enter);
-		(await overlayAfter(wired, 1)).handleInput(KEY.esc);
-		const reopened = await overlayAfter(wired, 2);
-		assert.ok(rendered(reopened).includes("session model"));
-		pressApply(reopened);
+		(await pickerOver(wired)).handleInput(KEY.esc);
+		await pickerSettled(wired, menu);
+		assert.ok(rendered(menu).includes("session model"));
+		pressApply(menu);
 		await finished;
 		assert.equal(readPreferences().changesSummaryModel, undefined, "the pinned ref must not outlive the clear");
 	});
@@ -607,11 +622,12 @@ describe("startup changes settings (I-18)", () => {
 		const wired = wire({ model: null, models: [] });
 		const { menu, finished } = openSettings(wired);
 		menu.handleInput(KEY.enter);
-		const reopened = await overlayAfter(wired, 1);
+		await until(() => wired.ctx.notifications.some((n) => n.type === "warning"));
+		await pickerSettled(wired, menu);
 		assert.ok(wired.ctx.notifications.some((n) => n.type === "warning" && n.message.includes("No models")));
-		assert.ok(rendered(reopened).includes("Pi Topping Splash: Settings"), "back on the menu, no picker mounted");
-		assert.equal(wired.ctx.customComponents.length, 2);
-		reopened.handleInput(KEY.esc);
+		assert.ok(rendered(menu).includes("Pi Topping Splash: Settings"), "still on the menu, no picker mounted");
+		assert.equal(wired.ctx.customComponents.length, 1, "the menu is the only component ever mounted");
+		menu.handleInput(KEY.esc);
 		await finished;
 	});
 });
