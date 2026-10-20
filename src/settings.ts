@@ -6,7 +6,7 @@ import { LOGO_STYLE_OPTIONS } from "./logo.ts";
 import type { LogoStyle } from "./logo.ts";
 import { startGradientAnimation, startLogoAnimation, stopGradientAnimation, stopLogoAnimation } from "./animate.ts";
 import { GATE_PANEL_MAX_WIDTH, renderPopupBox } from "./gate-ui.ts";
-import { TwoPaneModelThinking, availableModelRefs, modelRefLabel } from "./model-picker.ts";
+import { createSplashModelPicker, availableModelRefs, modelRefLabel, renderFooter, renderSplashModelPicker } from "./model-picker.ts";
 import type { ModelRef } from "./model-picker.ts";
 import { headerRenderState, state } from "./state.ts";
 import { readPreferences, writePreferences } from "./preferences.ts";
@@ -48,7 +48,7 @@ export async function pickSummaryModel(ctx: ExtensionContext, current?: ModelRef
 	const preselected = current ?? (ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined);
 	return ctx.ui.custom<ModelRef | undefined>(
 		(tui, theme, _keybindings, done) => {
-			const picker = new TwoPaneModelThinking(theme, ctx, refs, "off", preselected);
+			const picker = createSplashModelPicker(theme, ctx, refs, "off", preselected);
 			return {
 				render: (width: number) => {
 					// `renderPopupBox` pads its interior to exactly `width - 4`, which is what the picker emits.
@@ -56,8 +56,8 @@ export async function pickSummaryModel(ctx: ExtensionContext, current?: ModelRef
 					return renderPopupBox(theme, Math.max(width, 1), "Summary Model", [
 						...wrapTextWithAnsi(theme.fg("muted", SUMMARY_MODEL_DESCRIPTION), bodyWidth),
 						"",
-						...picker.render(bodyWidth),
-						...picker.renderFooter(bodyWidth, PICKER_HINTS),
+						...renderSplashModelPicker(picker, bodyWidth),
+						...renderFooter(theme, picker, bodyWidth, PICKER_HINTS),
 					]);
 				},
 				handleInput: (data: string): void => {

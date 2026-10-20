@@ -7,8 +7,8 @@ import { sanitizeTuiText } from "./text.ts";
 import { relaunchPi } from "./relaunch.ts";
 import { showSplashSettings } from "./settings.ts";
 import { showSystemPrompt } from "./system-prompt-view.ts";
-import { TwoPaneModelThinking, availableModelRefs, modelRefLabel } from "./model-picker.ts";
-import type { ModelRef, ThinkingLevel } from "./model-picker.ts";
+import { createSplashModelPicker, availableModelRefs, modelRefLabel, renderFooter, renderSplashModelPicker } from "./model-picker.ts";
+import type { ModelRef, ThinkingLevel, TwoPaneModelThinking } from "./model-picker.ts";
 import { GATE_LIST_HEIGHT, GATE_PANEL_MAX_WIDTH, RESUME_PANEL_WIDTH, SHORT_TERMINAL_ROWS, listWindow, renderPopupBox } from "./gate-ui.ts";
 
 /** A theme entry as returned by `ctx.ui.getAllThemes()`. */
@@ -267,7 +267,7 @@ export class StartupGate {
 			refs = [];
 		}
 		const current = this.ctx.model ? { provider: this.ctx.model.provider, id: this.ctx.model.id } : undefined;
-		this.modelPicker = new TwoPaneModelThinking(this.theme, this.ctx, refs, this.pi.getThinkingLevel(), current);
+		this.modelPicker = createSplashModelPicker(this.theme, this.ctx, refs, this.pi.getThinkingLevel(), current);
 		this.setView("model");
 	}
 
@@ -469,7 +469,7 @@ export class StartupGate {
 		// `renderPopupBox` pads its interior to exactly `width - 4`, which is what the picker emits.
 		const bodyWidth = Math.max(1, width - 4);
 		const hints = "type to filter · ↑↓ move · tab/←→ switch pane · enter select · esc back";
-		return [...picker.render(bodyWidth), ...picker.renderFooter(bodyWidth, hints)];
+		return [...renderSplashModelPicker(picker, bodyWidth), ...renderFooter(this.theme, picker, bodyWidth, hints)];
 	}
 
 	private buildThemeBody(): string[] {

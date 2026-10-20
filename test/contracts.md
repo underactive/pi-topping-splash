@@ -78,12 +78,14 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 
 ## gate-ui.ts
 
+G-01/G-03/G-04 moved to `@underactive/pi-topping-primitives/models`; their pure tests live in `models-filter.test.ts`.
+
 | # | Symbol | Claim | Source |
 |---|--------|-------|--------|
-| G-01 | `isPrintableInput` | true iff `data` is non-empty, contains no control chars (C0, C1 U+0080-9F, incl. `\x1b` — so all escape sequences rejected) and no DEL (`\x7f`) | doc comment |
+| G-01 | shared picker printable input | accepts non-empty typed/pasted text without C0, C1 or DEL; kitty CSI-u printable input is decoded before validation, other control sequences are rejected | approved models migration; package `models-filter.test.ts` |
 | G-02 | `listWindow` | returns `[start,end)` with: `0 <= start`, `end <= total`, `end-start === min(total,height)`, and `start <= selected < end` whenever `0 <= selected < total` | doc comment ("keeps selected visible within height rows") |
-| G-03 | `fuzzyRanked` | empty query → original order (same array contents, same order); literal-substring matches (case?) stably partitioned to front; non-matching items dropped (it filters — "fuzzy **matches** ranked"); delegates tokenization to pi-tui `fuzzyFilter` (whitespace/slash split) | doc comment + README ("anth opus", literal substring first) |
-| G-04 | `fuzzyRanked` | UNSPECIFIED: case sensitivity of the literal-substring partition — probe with same-case first; mixed-case behavior recorded as finding if surprising | — |
+| G-03 | `fuzzyRanked` | empty query → original order (same array contents, same order); case-insensitive literal-substring matches stably partitioned to front; non-matching items dropped (it filters — "fuzzy **matches** ranked"); delegates tokenization to pi-tui `fuzzyFilter` (whitespace/slash split) | doc comment + README ("anth opus", literal substring first) |
+| G-04 | shared `fuzzyRanked` | literal-substring partition is case-insensitive | package `models-filter.test.ts` |
 | G-05 | `renderPopupBox` | every line exactly `width` visible columns; `bodyLines.length + 4` rows (top border, blank, body…, blank, bottom border); title embedded in top border (`╭─ title ───╮` rounded corners); body lines truncated to interior width; right border aligned | doc comment |
 | G-06 | constants | `GATE_PANEL_MAX_WIDTH === 90`, `RESUME_PANEL_WIDTH === "100%"`, `GATE_LIST_HEIGHT === 10`, `SHORT_TERMINAL_ROWS === 24` | exported literals (anchors for other modules' behavior; changing them should be a conscious act) |
 
@@ -180,19 +182,21 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 
 ## model-picker.ts
 
+Vocabulary and pure thinking helpers (M-01/M-02/M-03/M-05/M-06) now live in `@underactive/pi-topping-primitives/models`, with tests in `models-refs.test.ts` and `models-thinking.test.ts`. Splash retains the factory policy, cached `availableModelRefs`, row budget, and rule-sandwich footer. The constructor reserves `GATE_LIST_HEIGHT + 2` total body rows; `renderSplashModelPicker` adds one when a filter is present. Shared equality arithmetic reserves scroll capacity when item count equals the available list budget, so eleven matches still show ten model rows and a scrollbar; at ten or fewer matches no scrollbar is emitted. The total-body budget is a cap, not a promise to fill every reserved row.
+
 | # | Symbol | Claim | Source |
 |---|--------|-------|--------|
-| M-01 | constants | `THINKING_LEVELS === ["off","minimal","low","medium","high","xhigh","max"]`; `COMMON_THINKING_LEVELS === ["off","low","medium","high"]` | exported literals; amended 2026-07-28 (slop-audit finding 5: the `THINKING_LEVEL_SET` clause was a tautology — the set is built from `THINKING_LEVELS` one line above in source; membership is still exercised behaviorally via `isThinkingLevel` in M-02) |
+| M-01 | shared constants | frozen `THINKING_LEVELS === ["off","minimal","low","medium","high","xhigh","max"]`; `COMMON_THINKING_LEVELS === ["off","low","medium","high"]` | package `models-refs.test.ts` |
 | M-02 | `isThinkingLevel` | true exactly for the seven levels; false for anything else (junk, "", case variants) | signature + M-01 |
-| M-03 | `modelRefLabel` | UNSPECIFIED exact format; must contain both provider and id (it's "the label the picker displays" and models are provider/id pairs) | availableModelRefs doc |
-| M-04 | `availableModelRefs` | every registry model as provider/id pair, sorted by display label | doc comment |
-| M-05 | `thinkingOptionsForModel` | normalizes offered levels into `THINKING_LEVELS` order regardless of arrival order; `undefined`/empty registry knowledge → `COMMON_THINKING_LEVELS` | doc comments (incl. COMMON doc "Offered when the registry does not advertise") |
-| M-06 | `defaultThinkingForModel` | current level when offered; else `medium`; ("or a sensible middle" — `medium` per README "preselecting the session's current level, or medium when the model does not offer it"); if `medium` itself not offered → UNSPECIFIED (assert: result ∈ options) | README + doc |
-| M-07 | `TwoPaneModelThinking.handleInput` | Tab cycles Models → Thinking → buttons (→ Models); `←`/`→` switch panes; typing always narrows the model filter (and re-targets... typing "always narrows the **model** filter" — even from other panes); Backspace edits filter; Esc → returns "back" directly (does not clear filter first); Enter on Select/selection → "confirm"; Cancel button → "back" | README model-selection bullets + class doc |
+| M-03 | shared `modelRefLabel` | canonical `provider/id` label | package `models-refs.test.ts` round-trip test |
+| M-04 | `availableModelRefs` | cached registry catalogue returns fresh provider/id pairs, deduplicated and sorted by display label | approved models migration; package `models-catalogue.test.ts`; host sort smoke |
+| M-05 | shared `thinkingOptionsForModel` / factory `levelOptions` | supported levels in canonical order; shared helper defaults to no fallback, but Splash injects `COMMON_THINKING_LEVELS` for undefined/empty/unknown levels | approved models migration; package thinking/catalogue tests; host fallback smoke |
+| M-06 | shared `defaultThinkingForModel(key, overrides, current, levels)` | offered override, offered current, medium, first canonical offered level, then medium on empty; Splash passes empty overrides and the session current level | approved models migration; package `models-thinking.test.ts` |
+| M-07 | `TwoPaneModelThinking.handleInput` | Tab cycles Models → Thinking → buttons (→ Models); `←`/`→` switch panes; typing always narrows the model filter (and re-targets... typing "always narrows the **model** filter" — even from other panes); Backspace edits filter; Esc → returns "back" directly (does not clear filter first); Enter on Select/selection → "confirm"; Cancel button → "back"; empty Select is inert; kitty printable input works from any pane | README model-selection bullets; approved models migration |
 | M-08 | key encodings | esc=`"\x1b"`, tab=`"\t"`, enter=`"\r"`, backspace=`"\x7f"`, arrows=`"\x1b[A"/"\x1b[B"/"\x1b[C"/"\x1b[D"`, pageUp=`"\x1b[5~"`, pageDown=`"\x1b[6~"` | collaborator pi-tui `matchesKey` |
 | M-09 | `getSelected` | valid `{ref, thinking}` after "confirm": ref matches the highlighted model, thinking the highlighted level | doc ("Only valid after handleInput returns confirm") — pre-confirm behavior UNSPECIFIED, not tested |
-| M-10 | `render(bodyWidth)` | rows **exactly** `bodyWidth` columns: left pane + 1-column divider + right pane | doc comment |
-| M-11 | `renderFooter` | rule, right-aligned Select/Cancel buttons, rule, keyboard hints; rows `<= bodyWidth` (alignment promise: right-aligned ⇒ exact-width rule lines plausible but UNSPECIFIED; assert `<=` and rule rows `===`) | doc comment |
+| M-10 | `render(bodyWidth)` | rows **exactly** `bodyWidth` columns: asymmetric panes with a 1-column divider, one-column insets and smart model truncation; selection survives filtering; local `renderSplashModelPicker` reserves header/filter/scroll chrome to retain `GATE_LIST_HEIGHT` model rows | approved models migration; host width sweeps and overflow test |
+| M-11 | local `renderFooter(theme, picker, bodyWidth, hints)` | rule, shared right-aligned Select/Cancel buttons, rule, wrapped keyboard hints; rows `<= bodyWidth`, rule rows `=== bodyWidth` | approved models migration; host footer width tests |
 | M-12 | fuzzy filter | typing filters models: whitespace/slash tokens, literal substring matches ranked first (delegates G-03) | README |
 
 ## header.ts
@@ -355,7 +359,7 @@ Gap-pass amendments (observed-tagged tests, body-derived after the contract free
 sanitizes ANSI; the `fuzzyRanked` substring partition is case-insensitive; a throwing
 `getAllThemes` is survivable. Observed-only literals (not asserted): `formatPromptSize`
 non-finite → `"unknown"`; empty `sessionPreview` → `"(empty session)"`;
-`defaultThinkingForModel([], …)` → `"medium"`; `pickFitting([], …)` throws.
+`pickFitting([], …)` throws. The shared `defaultThinkingForModel(key, {}, current, [])` → `"medium"` fallback is now package-tested.
 
 ## Timer decision
 

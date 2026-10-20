@@ -2,17 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
 	availableModelRefs,
-	COMMON_THINKING_LEVELS,
-	defaultThinkingForModel,
-	isThinkingLevel,
+	createSplashModelPicker,
 	modelRefLabel,
-	THINKING_LEVELS,
-	thinkingOptionsForModel,
-	TwoPaneModelThinking,
+	renderFooter,
+	renderSplashModelPicker,
+	type TwoPaneModelThinking,
 	type ModelRef,
 	type ThinkingLevel,
 } from "../src/model-picker.ts";
 import { sanitizeTuiText } from "../src/text.ts";
+import { GATE_LIST_HEIGHT } from "../src/gate-ui.ts";
 import { createFakeCtx, makeModel } from "./helpers/fake-ctx.ts";
 import { createFakeTui } from "./helpers/fake-tui.ts";
 import { KEY } from "./helpers/keys.ts";
@@ -21,25 +20,7 @@ import { assertLinesExact } from "./helpers/width.ts";
 
 bootstrapGlobalTheme();
 
-describe("thinking-level vocabulary (M-01, M-02)", () => {
-	it("matches the documented level lists", () => {
-		assert.deepEqual([...THINKING_LEVELS], ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-		assert.deepEqual([...COMMON_THINKING_LEVELS], ["off", "low", "medium", "high"]);
-	});
-	it("isThinkingLevel accepts exactly the seven levels", () => {
-		for (const level of THINKING_LEVELS) assert.equal(isThinkingLevel(level), true, level);
-		for (const junk of ["", "OFF", "med", "maximum", "none", "42"]) {
-			assert.equal(isThinkingLevel(junk), false, junk);
-		}
-	});
-});
-
-describe("pure helpers (M-03..M-06)", () => {
-	it("modelRefLabel names both provider and id", () => {
-		const label = modelRefLabel({ provider: "anthropic", id: "claude-opus-4" });
-		assert.ok(label.includes("anthropic"));
-		assert.ok(label.includes("claude-opus-4"));
-	});
+describe("availableModelRefs (M-04)", () => {
 	it("availableModelRefs sorts by display label", () => {
 		const tui = createFakeTui();
 		const ctx = createFakeCtx({
@@ -53,19 +34,6 @@ describe("pure helpers (M-03..M-06)", () => {
 		assert.deepEqual(labels, [...labels].sort((a, b) => a.localeCompare(b)));
 		assert.equal(refs.length, 3);
 	});
-	it("thinkingOptionsForModel normalizes into THINKING_LEVELS order", () => {
-		assert.deepEqual(thinkingOptionsForModel(["high", "off"] as ThinkingLevel[]), ["off", "high"]);
-		assert.deepEqual(thinkingOptionsForModel(["max", "low", "xhigh"] as ThinkingLevel[]), ["low", "xhigh", "max"]);
-	});
-	it("falls back to the common levels when the registry knows none", () => {
-		assert.deepEqual(thinkingOptionsForModel(undefined), [...COMMON_THINKING_LEVELS]);
-	});
-	it("defaultThinkingForModel prefers current, then medium", () => {
-		assert.equal(defaultThinkingForModel(["off", "low", "medium", "high"], "low"), "low");
-		assert.equal(defaultThinkingForModel(["off", "medium"], "high"), "medium");
-		const fallback = defaultThinkingForModel(["off", "low"], "high");
-		assert.ok(["off", "low"].includes(fallback), `UNSPECIFIED beyond medium; must stay in options: ${fallback}`);
-	});
 });
 
 describe("TwoPaneModelThinking (M-07..M-12)", () => {
@@ -78,8 +46,52 @@ describe("TwoPaneModelThinking (M-07..M-12)", () => {
 		const tui = createFakeTui();
 		// Registry deliberately knows none of the refs → right pane uses the common fallback.
 		const ctx = createFakeCtx({ cwd: "/tmp", theme: makeTheme(), tui: tui.tui, models: [] });
-		return new TwoPaneModelThinking(makeTheme(), ctx.ctx, REFS, currentThinking);
+		return createSplashModelPicker(makeTheme(), ctx.ctx, REFS, currentThinking);
 	}
+
+	it("keeps GATE_LIST_HEIGHT model rows before and after filtering overflow", () => {
+		const tui = createFakeTui();
+		const ctx = createFakeCtx({ cwd: "/tmp", theme: makeTheme(), tui: tui.tui, models: [] });
+		for (const count of [9, 10, 11, 12, 15]) {
+			const refs = Array.from({ length: count }, (_, i) => ({ provider: "p", id: `model-${i}` }));
+			const picker = createSplashModelPicker(makeTheme(), ctx.ctx, refs, "medium");
+			for (const filter of ["", "model"]) {
+				if (filter) picker.handleInput(filter);
+				for (const width of [40, 80, 160]) {
+					const rows = renderSplashModelPicker(picker, width);
+					const label = `count=${count} filter=${filter} width=${width}`;
+					assertLinesExact(rows, width, label);
+					const modelRows = rows.filter((row) => sanitizeTuiText(row).split("│")[0]?.includes("p/model-"));
+					assert.equal(modelRows.length, Math.min(count, GATE_LIST_HEIGHT), label);
+					const hasScroll = rows.some((row) => /\(\d+\/\d+\)/.test(sanitizeTuiText(row).split("│")[0] ?? ""));
+					assert.equal(hasScroll, count > GATE_LIST_HEIGHT, label);
+					assert.equal(rows.length, Math.min(count, GATE_LIST_HEIGHT) + 1 + (count > GATE_LIST_HEIGHT ? 1 : 0) + (filter ? 1 : 0), label);
+				}
+			}
+		}
+	});
+
+	it("keeps the last of eleven models visible through navigation and filtering", () => {
+		const tui = createFakeTui();
+		const ctx = createFakeCtx({ cwd: "/tmp", theme: makeTheme(), tui: tui.tui, models: [] });
+		const refs = Array.from({ length: 11 }, (_, i) => ({ provider: "p", id: `model-${i}` }));
+		const picker = createSplashModelPicker(makeTheme(), ctx.ctx, refs, "medium", refs[10]);
+		const assertVisible = (index: number) => {
+			assert.deepEqual(picker.getSelected().ref, refs[index]);
+			const rows = renderSplashModelPicker(picker, 80);
+			assertLinesExact(rows, 80, `selected model-${index}`);
+			assert.ok(rows.some((row) => sanitizeTuiText(row).includes(`→ p/model-${index}`)));
+		};
+		assertVisible(10);
+		picker.handleInput(KEY.up);
+		assertVisible(9);
+		picker.handleInput(KEY.down);
+		assertVisible(10);
+		picker.handleInput("model");
+		assertVisible(10);
+		for (let i = 0; i < "model".length; i++) picker.handleInput(KEY.backspace);
+		assertVisible(10);
+	});
 
 	it("confirms via the Select button with the default selection", () => {
 		const picker = makePicker("medium");
@@ -129,7 +141,7 @@ describe("TwoPaneModelThinking (M-07..M-12)", () => {
 
 	it("typing narrows the model filter; backspace edits it (M-12)", () => {
 		const picker = makePicker();
-		const joined = (p: TwoPaneModelThinking) => p.render(80).map((l) => sanitizeTuiText(l)).join("\n");
+		const joined = (p: TwoPaneModelThinking) => renderSplashModelPicker(p, 80).map((l) => sanitizeTuiText(l)).join("\n");
 		assert.ok(joined(picker).includes("claude-opus-4"));
 		for (const ch of "gpt") picker.handleInput(ch);
 		assert.equal(joined(picker).includes("claude-opus-4"), false, "filter must hide non-matches");
@@ -151,7 +163,7 @@ describe("TwoPaneModelThinking (M-07..M-12)", () => {
 	it("render emits rows exactly bodyWidth wide (M-10)", () => {
 		const picker = makePicker();
 		for (let bodyWidth = 4; bodyWidth <= 200; bodyWidth++) {
-			assertLinesExact(picker.render(bodyWidth), bodyWidth, `render(${bodyWidth})`);
+			assertLinesExact(renderSplashModelPicker(picker, bodyWidth), bodyWidth, `render(${bodyWidth})`);
 		}
 	});
 
@@ -159,14 +171,14 @@ describe("TwoPaneModelThinking (M-07..M-12)", () => {
 		const picker = makePicker();
 		for (const ch of "gpt") picker.handleInput(ch);
 		for (let bodyWidth = 4; bodyWidth <= 120; bodyWidth += 3) {
-			assertLinesExact(picker.render(bodyWidth), bodyWidth, `filtered render(${bodyWidth})`);
+			assertLinesExact(renderSplashModelPicker(picker, bodyWidth), bodyWidth, `filtered render(${bodyWidth})`);
 		}
 	});
 
 	it("renderFooter stays within bodyWidth with exact-width rules (M-11)", () => {
 		const picker = makePicker();
 		for (const bodyWidth of [30, 40, 80, 160]) {
-			const lines = picker.renderFooter(bodyWidth, "tab move · enter select");
+			const lines = renderFooter(makeTheme(), picker, bodyWidth, "tab move · enter select");
 			for (const [i, line] of lines.entries()) {
 				const width = sanitizeTuiText(line).length;
 				assert.ok(width <= bodyWidth, `footer line ${i} width ${width} > ${bodyWidth}`);
@@ -178,7 +190,7 @@ describe("TwoPaneModelThinking (M-07..M-12)", () => {
 	it("footer button row does not overflow very narrow bodies (F-6)", () => {
 		// The Select/Cancel row and hints are clamped to bodyWidth (W invariant).
 		const picker = makePicker();
-		const lines = picker.renderFooter(20, "hints");
+		const lines = renderFooter(makeTheme(), picker, 20, "hints");
 		for (const [i, line] of lines.entries()) {
 			const width = sanitizeTuiText(line).length;
 			assert.ok(width <= 20, `footer line ${i} width ${width} > 20`);

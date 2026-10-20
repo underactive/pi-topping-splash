@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { fuzzyFilter, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { SizeValue } from "@earendil-works/pi-tui";
 
 export const GATE_PANEL_MAX_WIDTH = 90;
@@ -13,46 +13,12 @@ export const GATE_LIST_HEIGHT = 10;
 /** Terminals this short drop the spacer above the menu so the splash + gate still fit. */
 export const SHORT_TERMINAL_ROWS = 24;
 
-/**
- * True when `data` is plain typed/pasted text safe to append to a filter query: non-empty,
- * no control characters (C0, C1 U+0080-9F — which covers escape sequences — and DEL).
- */
-export function isPrintableInput(data: string): boolean {
-	if (data.length === 0) return false;
-	for (const ch of data) {
-		const cp = ch.codePointAt(0)!;
-		if (cp < 0x20 || cp === 0x7f || (cp >= 0x80 && cp <= 0x9f)) return false;
-	}
-	return true;
-}
-
 /** Compute a scroll window [start, end) that keeps `selected` visible within `height` rows. */
 export function listWindow(total: number, height: number, selected: number): { start: number; end: number } {
 	if (total <= height) return { start: 0, end: total };
 	let start = selected - Math.floor(height / 2);
 	start = Math.max(0, Math.min(start, total - height));
 	return { start, end: start + height };
-}
-
-/**
- * Fuzzy matches ranked best-first, with literal-substring matches stably partitioned to the front.
- * `fuzzyFilter` splits the query on whitespace and slashes, so "anthropic opus" and partial ids
- * both work; an empty query is returned in its original order. Because `fuzzyMatch` scores a greedy
- * first-occurrence path a scattered match can outrank a literal one (e.g. "opus" scoring
- * "anthropic/claude-sonnet" above "anthropic/claude-opus"), hence the partition.
- */
-export function fuzzyRanked<T>(items: T[], query: string, key: (item: T) => string): T[] {
-	const matches = fuzzyFilter(items, query, key);
-	const tokens = query.trim().toLowerCase().split(/[\s/]+/).filter(Boolean);
-	if (tokens.length === 0) return matches;
-	const isSubstringMatch = (item: T) => {
-		const haystack = key(item).toLowerCase();
-		return tokens.every((token) => haystack.includes(token));
-	};
-	const sub: T[] = [];
-	const rest: T[] = [];
-	for (const m of matches) (isSubstringMatch(m) ? sub : rest).push(m);
-	return [...sub, ...rest];
 }
 
 /**

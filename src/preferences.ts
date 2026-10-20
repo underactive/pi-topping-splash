@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { createSettingsStore, sanitize } from "@underactive/pi-topping-primitives/settings";
 import { BACKGROUND_COLOR_OPTIONS, DEFAULT_DYNAMIC_TINT, GRADIENT_ANIMATION_OPTIONS, isDynamicTint, type BackgroundColor, type DynamicTint, type GradientAnimation } from "./color.ts";
-import { isModelRef } from "./model-picker.ts";
+import { isModelRef } from "@underactive/pi-topping-primitives/models";
 import { LOGO_STYLE_OPTIONS } from "./logo.ts";
 import type { LogoStyle } from "./logo.ts";
 import type { ModelRef } from "./model-picker.ts";
