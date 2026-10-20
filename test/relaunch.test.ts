@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { buildRelaunchArgs, GATE_DONE_ENV, relaunchPi } from "../src/relaunch.ts";
+import { buildRelaunchArgs, GATE_DONE_ENV, relaunchInvocation, relaunchPi } from "../src/relaunch.ts";
 import { setArgv } from "./helpers/env.ts";
 import { createFakeCtx } from "./helpers/fake-ctx.ts";
 import { createFakeTui } from "./helpers/fake-tui.ts";
@@ -108,5 +108,32 @@ describe("relaunchPi guard (X-05)", () => {
 		assert.equal(ctx.notifications[0]?.type, "error");
 		assert.equal(tui.stopCount, 0, "TUI must not be stopped when the relaunch is refused");
 		assert.equal(ctx.shutdownCount, 0, "pi must not be shut down when the relaunch is refused");
+	});
+});
+
+describe("relaunchInvocation (X-07)", () => {
+	// Pure: the resolver gets injected facts, so nothing here reaches spawn.
+	it("runs the entry script under the running runtime, as spawnSync(execPath, [entry, ...args]) did", () => {
+		restoreArgv = setArgv(["--verbose"]);
+		assert.deepEqual(
+			relaunchInvocation({ session: "/x.jsonl" }, { argv1: "/opt/pi/cli.js", execPath: "/usr/bin/node", exists: () => true }),
+			{ command: "/usr/bin/node", args: ["/opt/pi/cli.js", "--verbose", "--session", "/x.jsonl"] },
+		);
+	});
+
+	it("runs a compiled pi's own executable, never a virtual script path", () => {
+		restoreArgv = setArgv(["--verbose"]);
+		assert.deepEqual(
+			relaunchInvocation({}, { argv1: "/$bunfs/root/pi", execPath: "/opt/pi/bin/pi", exists: () => true }),
+			{ command: "/opt/pi/bin/pi", args: ["--verbose"] },
+		);
+	});
+
+	it("refuses when only pi on PATH is left: a generic runtime with no usable entry", () => {
+		restoreArgv = setArgv(["--verbose"]);
+		for (const execPath of ["/usr/bin/node", "/usr/bin/nodejs", "/usr/local/bin/bun"]) {
+			assert.equal(relaunchInvocation({}, { argv1: "", execPath, exists: () => true }), undefined, execPath);
+			assert.equal(relaunchInvocation({}, { argv1: "/missing.js", execPath, exists: () => false }), undefined, execPath);
+		}
 	});
 });

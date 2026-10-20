@@ -1,6 +1,11 @@
 import { spawnSync } from "node:child_process";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
+import {
+	type PiInvocation,
+	type PiProcessFacts,
+	resolvePiInvocation,
+} from "@underactive/pi-topping-primitives/process";
 import type { ThinkingLevel } from "./src/model-picker.ts";
 import { sanitizeTuiText } from "./src/text.ts";
 
@@ -53,15 +58,27 @@ export function buildRelaunchArgs(overrides: RelaunchOverrides): string[] {
 }
 
 /**
+ * The command that starts this pi again with the rebuilt args, or `undefined` when there is
+ * nothing safe to run. It is the running entry script under the running runtime, or a compiled
+ * pi's own executable. When neither is usable the only option left is whatever `pi` is first on
+ * PATH, which may not be the pi hosting this session, so the relaunch is refused rather than
+ * guessed. `facts` replaces the process facts the resolver reads (for tests).
+ */
+export function relaunchInvocation(overrides: RelaunchOverrides, facts?: PiProcessFacts): PiInvocation | undefined {
+	const resolved = resolvePiInvocation(buildRelaunchArgs(overrides), facts);
+	if (resolved.via === "path") return undefined;
+	return { command: resolved.command, args: resolved.args };
+}
+
+/**
  * Relaunch pi in-place: stop the TUI to release the terminal, run a fresh pi process with the
  * rebuilt args (inheriting stdio so the child fully owns the terminal), then shut down this
  * parent only after the child exits cleanly. The `GATE_DONE_ENV` guard stops the child from
  * re-showing the gate, so it lands directly in the session.
  */
 export function relaunchPi(tui: TUI, ctx: ExtensionContext, overrides: RelaunchOverrides): void {
-	const args = buildRelaunchArgs(overrides);
-	const entry = process.argv[1];
-	if (!entry) {
+	const invocation = relaunchInvocation(overrides);
+	if (!invocation) {
 		ctx.ui.notify("Cannot relaunch: pi entry point not found", "error");
 		return;
 	}
@@ -70,7 +87,7 @@ export function relaunchPi(tui: TUI, ctx: ExtensionContext, overrides: RelaunchO
 	// top of a clean terminal with no splash left behind in history.
 	process.stdout.write("\x1b[2J\x1b[H\x1b[3J");
 	const env = { ...process.env, [GATE_DONE_ENV]: "1" };
-	const result = spawnSync(process.execPath, [entry, ...args], { stdio: "inherit", env });
+	const result = spawnSync(invocation.command, invocation.args, { stdio: "inherit", env });
 	if (result.error || result.status !== 0 || result.signal) {
 		const reason = result.error?.message ?? (result.signal ? `terminated by ${result.signal}` : `exited with code ${result.status ?? "unknown"}`);
 		ctx.ui.notify(`Cannot relaunch pi: ${sanitizeTuiText(reason)}`, "error");
