@@ -1,7 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { colorToRgb } from "@earendil-works/pi-tui";
+import { shimmerCell as sharedShimmerCell } from "@underactive/pi-topping-primitives/color";
 import { headerRenderState } from "./state.ts";
-import { sgrFg } from "./color.ts";
 import { sanitizeTuiText, visibleLength } from "./text.ts";
 
 /** Placeholder naming the tagline's two fields, wiped away by the reveal. */
@@ -18,6 +18,7 @@ export const REVEAL_TICK_MS = REVEAL_MS_PER_CHAR;
 export const REVEAL_BAND_HALF = 5;
 /** Peak blend toward the highlight; short of 1 so the crest keeps a trace of the base ink. */
 export const REVEAL_PEAK_ALPHA = 0.9;
+const REVEAL_SHIMMER = Object.freeze({ bandHalf: REVEAL_BAND_HALF, peakAlpha: REVEAL_PEAK_ALPHA });
 
 /**
  * One-shot reveal of the info panel's tagline. `pos` is the wipe's leading edge in cells, advanced
@@ -94,11 +95,7 @@ export function shimmerPalette(theme: Theme): ShimmerPalette | null {
 
 /** One cell of the shimmer: a raised-cosine crest fading to the base ink outside the band. */
 export function shimmerCell(ch: string, dist: number, palette: ShimmerPalette): string {
-	const t = dist <= REVEAL_BAND_HALF ? 0.5 * (1 + Math.cos((Math.PI * dist) / REVEAL_BAND_HALF)) : 0;
-	const alpha = t * REVEAL_PEAK_ALPHA;
-	const blend = (channel: 0 | 1 | 2) =>
-		Math.round(palette.highlight[channel] * alpha + palette.base[channel] * (1 - alpha));
-	return t > 0.2 ? `\x1b[1m${sgrFg(`${blend(0)};${blend(1)};${blend(2)}`)}${ch}\x1b[22m` : `${sgrFg(`${blend(0)};${blend(1)};${blend(2)}`)}${ch}`;
+	return sharedShimmerCell(ch, dist, palette, REVEAL_SHIMMER);
 }
 
 /**

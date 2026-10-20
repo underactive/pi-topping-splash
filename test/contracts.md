@@ -20,23 +20,25 @@ Timer strategy (decided by smoke test, step 3): _recorded after the smoke test �
 
 ## text.ts
 
+T-04/T-05/T-08/T-09/T-10/T-11/T-14/T-15 moved to `@underactive/pi-topping-primitives/text`; their tests live in `tests/text-layout.test.ts`, and `text.test.ts` pins the re-exports.
+
 | # | Symbol | Claim | Source |
 |---|--------|-------|--------|
 | T-01 | `formatPromptSize` | ~4 bytes/token; `<1000` tokens → `~N tokens` (integer); `>=1000` → `~N.Nk tokens` (one decimal) | doc comment |
 | T-02 | `formatPromptSize` | UNSPECIFIED: non-finite input (NaN/±Infinity) — the doc comment covers only finite byte counts. Assert no-throw + determinism only; observed literal recorded in the gap pass | — |
 | T-03 | `visibleLength` | terminal-column width via pi-tui `visibleWidth` (the renderer's own ruler): escapes (SGR, OSC with BEL or ST terminator) count 0, wide chars count 2 | doc comment; amended 2026-07-28 (slop-audit finding 2: delegated to the collaborator ruler; was code-unit counting that stripped only SGR + BEL-terminated OSC-8) |
-| T-04 | `padRight`/`padCenter` | pad to `width` visible columns; text wider than `width` is not truncated → `visibleLength(result) === max(width, visibleLength(text))`; padRight left-aligns (starts with text); padCenter centers (left pad <= right pad diff <= 1) | signature + name; safety property |
-| T-05 | `wrapCommaDelimited` | every line `<= width` (when every item fits); trailing comma on line breaks; `[]` for empty items; joining lines back (trim, split on ",") reconstructs the item sequence in order | doc comment |
+| T-04 | `padRight`/`padCenter` | pad to `width` visible columns; text wider than `width` is not truncated → `visibleLength(result) === max(width, visibleLength(text))`; padRight left-aligns (starts with text); padCenter centers (left pad <= right pad diff <= 1) | moved to `@underactive/pi-topping-primitives/text` 0.6.0, `tests/text-layout.test.ts`; signature + name; safety property |
+| T-05 | `wrapCommaDelimited` | every line `<= width` (when every item fits); trailing comma on line breaks; `[]` for empty items; joining lines back (trim, split on ",") reconstructs the item sequence in order | moved to `@underactive/pi-topping-primitives/text` 0.6.0, `tests/text-layout.test.ts`; doc comment |
 | T-06 | `sanitizeTuiText` | strips `\x1b[...m` and OSC (`\x1b]...` with BEL **or** ST terminator) entirely; plain text unchanged | doc comment; amended 2026-07-28 (ST terminator added while closing slop-audit finding 3) |
 | T-07 | `uniqueSorted` | result is sorted, duplicate-free, and a subset of (and covers) the input values | name + signature (safety property) |
-| T-08 | `truncateVisible` | `visibleLength(result) === min(maxWidth, visibleLength(text))` for single-width text; a wide char straddling the cut is dropped (result may fall one column short); escapes never count and are never split; for escape-free text, result is a prefix of the input | doc comment; amended 2026-07-28 (delegated to pi-tui `sliceByColumn` — strict mode; `truncateToWidth` was rejected because it appends `\x1b[0m`, which T-09 forbids) |
-| T-09 | `fitCell` | fits `width` visible columns; when truncation occurs, marks with `ELLIPSIS` ("..."), closes any open color span with a **foreground-only** reset (`\x1b[39m` per SGR spec — collaborator knowledge), so surrounding bg survives; `visibleLength(fitCell(text,width)) <= width` | doc comment |
-| T-10 | `joinParts` | joins truthy parts with `" · "` default separator; falsy (undefined/null/false/"") entries dropped, no dangling separator | doc comment + signature default |
-| T-11 | `pickFitting` | first candidate with `visibleLength <= width`; if none fit, the **last** candidate truncated to fit | doc comment |
+| T-08 | `truncateVisible` | `visibleLength(result) === min(maxWidth, visibleLength(text))` for single-width text; a wide char straddling the cut is dropped (result may fall one column short); escapes never count and are never split; for escape-free text, result is a prefix of the input | moved to `@underactive/pi-topping-primitives/text` 0.6.0, `tests/text-layout.test.ts`; doc comment; amended 2026-07-28 (delegated to pi-tui `sliceByColumn` — strict mode; `truncateToWidth` was rejected because it appends `\x1b[0m`, which T-09 forbids) |
+| T-09 | `fitCell` | fits `width` visible columns; when truncation occurs, marks with `ELLIPSIS` ("..."), closes any open color span with a **foreground-only** reset (`\x1b[39m` per SGR spec — collaborator knowledge), so surrounding bg survives; `visibleLength(fitCell(text,width)) <= width` | moved to `@underactive/pi-topping-primitives/text` 0.6.0, `tests/text-layout.test.ts`; doc comment |
+| T-10 | `joinParts` | joins truthy parts with `" · "` default separator; falsy (undefined/null/false/"") entries dropped, no dangling separator | moved to `@underactive/pi-topping-primitives/text` 0.6.0, `tests/text-layout.test.ts`; doc comment + signature default |
+| T-11 | `pickFitting` | first candidate with `visibleLength <= width`; if none fit, the **last** candidate truncated to fit | moved to `@underactive/pi-topping-primitives/text` 0.6.0, `tests/text-layout.test.ts`; doc comment |
 | T-12 | `normalizeSkillName` | UNSPECIFIED: what normalization? (test only: deterministic, no-throw, non-empty for a plain name) | — |
 | T-13 | `formatPromptSize` | UNSPECIFIED: rounding mode at boundaries (e.g. exactly 999.5 tokens, 4000 bytes → 1.0k?); asserted only via shape regex + monotonicity, plus the doc's own example `~10.5k tokens` shape | doc gives examples, not rounding rules; amended 2026-07-28 (slop-audit F-12: the promised sweep did not exist — a non-multiple-of-4 byte sweep asserting shape + monotonicity was added) |
-| T-14 | `wrapCommaDelimited` | UNSPECIFIED: single item longer than `width` (cannot fit) — assert only: item not lost, no throw | — |
-| T-15 | `fitCell` | `width < ELLIPSIS.length`: no throw, `visibleLength <= max(width,0)`, no full reset leaked — the ellipsis is dropped when it cannot fit | was UNSPECIFIED; asserted 2026-08-13 once F-2 was fixed |
+| T-14 | `wrapCommaDelimited` | UNSPECIFIED: single item longer than `width` (cannot fit) — assert only: item not lost, no throw | moved to `@underactive/pi-topping-primitives/text` 0.6.0, `tests/text-layout.test.ts` |
+| T-15 | `fitCell` | `width < ELLIPSIS.length`: no throw, `visibleLength <= max(width,0)`, no full reset leaked — the ellipsis is dropped when it cannot fit | moved to `@underactive/pi-topping-primitives/text` 0.6.0, `tests/text-layout.test.ts`; was UNSPECIFIED; asserted 2026-08-13 once F-2 was fixed |
 
 ## color.ts
 
