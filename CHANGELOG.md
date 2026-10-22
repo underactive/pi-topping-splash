@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The menu's keys can be remapped in pi's keybindings file under the `pi-topping.menu.*` ids (`up`, `down`, `pageUp`, `pageDown`, `left`, `right`, `toggle`, `apply`, `cancel`, `focusButtons`, `clear`, `editCommit`, `editCancel`, `editBackspace`).
   - The **Summary model** row renders as `value ›` without the `[■]` checkbox.
   - Escape and Ctrl+C return the menu's draft values with `applied: false`; the command still writes nothing on cancel.
+- Development and CI now typecheck and test against Pi 1.4.0; the
+  `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.3.0.
+  No source changes were required: Pi 1.4.0 removes no imported public API. Its fix for
+  concurrent extension dialogs and inline `custom()` components applies to the gate's stacked
+  overlays (settings and the Summary model picker over the gate); that fix is in pi's host, so
+  the unit tests, which use a fake context, do not exercise it. The remaining 1.4.0 changes
+  (provider attribution headers, summary `reserveTokens`, codemode workers) are not used here.
 
 ### Added
 
