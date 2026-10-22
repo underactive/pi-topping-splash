@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-21
+
 ### Changed
 
 - Depend on `@underactive/pi-topping-primitives` `^0.10.0` (was `^0.8.0`). Nothing it imports changed in between: 0.9.0 added `./env` and `./abort`, which it does not use, and 0.10.0 removed only the `pi-topping-compact` entry names from `./contracts`, which it never referenced. Every topping now asks for the same range, so an install of several shares one copy of the library. No visible change.
