@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Depend on `@underactive/pi-topping-primitives` `^0.11.0` (was `^0.10.0`). No imports changed; only primitives 0.11.0 glyphs were added, with no visible behavior change.
+
 ## [0.6.0] - 2026-10-21
 
 ### Changed
