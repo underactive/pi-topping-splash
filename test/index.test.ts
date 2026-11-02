@@ -98,13 +98,13 @@ function scriptedGit(root: string, status: string | null): FakePiBag["execHandle
 	return (_command, args) => {
 		if (args.includes("rev-parse")) {
 			return status === null
-				? { stdout: "", stderr: "not a repository", code: 128, killed: false }
-				: { stdout: `${root}\n`, stderr: "", code: 0, killed: false };
+				? { stdout: "", stderr: "not a repository", code: 128, killed: false, truncated: false }
+				: { stdout: `${root}\n`, stderr: "", code: 0, killed: false, truncated: false };
 		}
-		if (args.includes("status")) return { stdout: status ?? "", stderr: "", code: 0, killed: false };
-		if (args.includes("--numstat")) return { stdout: "1\t1\tchanged.ts\0", stderr: "", code: 0, killed: false };
-		if (args.includes("changed.ts")) return { stdout: "@@\n+changed\n", stderr: "", code: 0, killed: false };
-		return { stdout: "", stderr: "", code: 0, killed: false };
+		if (args.includes("status")) return { stdout: status ?? "", stderr: "", code: 0, killed: false, truncated: false };
+		if (args.includes("--numstat")) return { stdout: "1\t1\tchanged.ts\0", stderr: "", code: 0, killed: false, truncated: false };
+		if (args.includes("changed.ts")) return { stdout: "@@\n+changed\n", stderr: "", code: 0, killed: false, truncated: false };
+		return { stdout: "", stderr: "", code: 0, killed: false, truncated: false };
 	};
 }
 
@@ -753,7 +753,7 @@ describe("startup changes integration (AC2-AC8)", () => {
 		assert.ok(before.join("\n").includes("~ changed.ts"), before.join("\n"));
 		assert.equal(before.join("\n").includes("▇"), false, "no bars before git has counted");
 		const version = state.changes?.version ?? 0;
-		numstat.resolve({ stdout: "3\t1\tchanged.ts\u00000\t2\tdeleted.ts\0", stderr: "", code: 0, killed: false });
+		numstat.resolve({ stdout: "3\t1\tchanged.ts\u00000\t2\tdeleted.ts\0", stderr: "", code: 0, killed: false, truncated: false });
 		await until(() => (state.changes?.version ?? 0) > version);
 		const after = header.render(100).map(sanitizeTuiText);
 		assert.match(after.join("\n"), /~ changed\.ts .*▇.* \+3 -1 /);

@@ -52,12 +52,12 @@ interface Harness {
 function makeGitHandler(status: string | null, numstat = "1\t1\tchanged.ts\0"): FakePiBag["execHandler"] {
 	return (_command, args) => {
 		if (args.includes("rev-parse")) return status === null
-			? { stdout: "", stderr: "not a repository", code: 128, killed: false }
-			: { stdout: `${env.cwd}\n`, stderr: "", code: 0, killed: false };
-		if (args.includes("status")) return { stdout: status ?? "", stderr: "", code: 0, killed: false };
-		if (args.includes("--numstat")) return { stdout: numstat, stderr: "", code: 0, killed: false };
-		if (args.includes("changed.ts")) return { stdout: "@@\n+changed\n", stderr: "", code: 0, killed: false };
-		return { stdout: "", stderr: "", code: 0, killed: false };
+			? { stdout: "", stderr: "not a repository", code: 128, killed: false, truncated: false }
+			: { stdout: `${env.cwd}\n`, stderr: "", code: 0, killed: false, truncated: false };
+		if (args.includes("status")) return { stdout: status ?? "", stderr: "", code: 0, killed: false, truncated: false };
+		if (args.includes("--numstat")) return { stdout: numstat, stderr: "", code: 0, killed: false, truncated: false };
+		if (args.includes("changed.ts")) return { stdout: "@@\n+changed\n", stderr: "", code: 0, killed: false, truncated: false };
+		return { stdout: "", stderr: "", code: 0, killed: false, truncated: false };
 	};
 }
 
@@ -340,7 +340,7 @@ describe("/local-changes contracts", () => {
 		await callLocalChanges(duplicate);
 		assert.equal(duplicate.ctx.notifications.at(-1)?.type, "info");
 		assert.equal(duplicate.pi.execCalls.length, 1);
-		pending.resolve({ stdout: "", stderr: "not a repository", code: 128, killed: false });
+		pending.resolve({ stdout: "", stderr: "not a repository", code: 128, killed: false, truncated: false });
 		await until(() => duplicate.pi.appendedEntries.length === 1);
 
 		const afterShutdown = deferred<Awaited<ReturnType<FakePiBag["execHandler"]>>>();
@@ -349,7 +349,7 @@ describe("/local-changes contracts", () => {
 		await until(() => shuttingDown.pi.execCalls.length === 1);
 		await shuttingDown.pi.emit("session_shutdown", { type: "session_shutdown" }, shuttingDown.ctx.ctx);
 		assert.equal(shuttingDown.ctx.statusCalls.at(-1)?.text, undefined);
-		afterShutdown.resolve({ stdout: `${env.cwd}\n`, stderr: "", code: 0, killed: false });
+		afterShutdown.resolve({ stdout: `${env.cwd}\n`, stderr: "", code: 0, killed: false, truncated: false });
 		await waitTurn();
 		assert.deepEqual(shuttingDown.pi.appendedEntries, []);
 	});

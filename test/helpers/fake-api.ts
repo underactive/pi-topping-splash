@@ -33,7 +33,7 @@ export function createFakePi(initial: Partial<FakePiBag> = {}): FakePiHarness {
 		commandsInfo: initial.commandsInfo ?? [],
 		toolsInfo: initial.toolsInfo ?? [],
 		execCalls: initial.execCalls ?? [],
-		execHandler: initial.execHandler ?? (() => ({ stdout: "", stderr: "", code: 0, killed: false })),
+		execHandler: initial.execHandler ?? (() => ({ stdout: "", stderr: "", code: 0, killed: false, truncated: false })),
 	};
 	const registeredFlags: { name: string; options: unknown }[] = [];
 	const commands = new Map<

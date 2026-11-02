@@ -108,8 +108,8 @@ describe("git collection", () => {
 			writeFileSync(join(root, "changed.txt"), "new\n");
 			const pi = createFakePi({
 				execHandler: (_command, args) => {
-					if (args.includes("rev-parse")) return { stdout: `${root}\n`, stderr: "", code: 0, killed: false };
-					return { stdout: "?? changed.txt\0", stderr: "", code: 0, killed: false };
+					if (args.includes("rev-parse")) return { stdout: `${root}\n`, stderr: "", code: 0, killed: false, truncated: false };
+					return { stdout: "?? changed.txt\0", stderr: "", code: 0, killed: false, truncated: false };
 				},
 			});
 			const snapshot = await collectChanges(pi.pi, subdir);
@@ -118,14 +118,14 @@ describe("git collection", () => {
 
 			const clean = createFakePi({
 				execHandler: (_command, args) => args.includes("rev-parse")
-					? { stdout: `${root}\n`, stderr: "", code: 0, killed: false }
-					: { stdout: "", stderr: "", code: 0, killed: false },
+					? { stdout: `${root}\n`, stderr: "", code: 0, killed: false, truncated: false }
+					: { stdout: "", stderr: "", code: 0, killed: false, truncated: false },
 			});
 			assert.deepEqual(await collectChanges(clean.pi, root), { root, entries: [] });
 
-			const failed = createFakePi({ execHandler: () => ({ stdout: "", stderr: "", code: 128, killed: false }) });
+			const failed = createFakePi({ execHandler: () => ({ stdout: "", stderr: "", code: 128, killed: false, truncated: false }) });
 			assert.equal(await collectChanges(failed.pi, root), undefined);
-			const killed = createFakePi({ execHandler: () => ({ stdout: "", stderr: "", code: 0, killed: true }) });
+			const killed = createFakePi({ execHandler: () => ({ stdout: "", stderr: "", code: 0, killed: true, truncated: false }) });
 			assert.equal(await collectChanges(killed.pi, root), undefined);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -138,9 +138,9 @@ function realGit(): ReturnType<typeof createFakePi> {
 	return createFakePi({
 		execHandler: (_command, args, options) => {
 			try {
-				return { stdout: git(options?.cwd ?? process.cwd(), ...args), stderr: "", code: 0, killed: false };
+				return { stdout: git(options?.cwd ?? process.cwd(), ...args), stderr: "", code: 0, killed: false, truncated: false };
 			} catch {
-				return { stdout: "", stderr: "", code: 128, killed: false };
+				return { stdout: "", stderr: "", code: 128, killed: false, truncated: false };
 			}
 		},
 	});
@@ -188,7 +188,7 @@ describe("line counts", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
-		const killed = createFakePi({ execHandler: () => ({ stdout: "1\t0\ta.ts\0", stderr: "", code: 0, killed: true }) });
+		const killed = createFakePi({ execHandler: () => ({ stdout: "1\t0\ta.ts\0", stderr: "", code: 0, killed: true, truncated: false }) });
 		assert.equal(await collectLineStats(killed.pi, "/repo"), undefined);
 		const aborted = createFakePi({});
 		const controller = new AbortController();
@@ -244,10 +244,10 @@ describe("sensitive paths and bounded details", () => {
 			const pi = createFakePi({
 				execHandler: (_command, args) => {
 					if (args.includes("--numstat")) return {
-						stdout: `5\t5\tchanged.txt\0-\t-\tbinary.bin\u0000500\t0\ttoo-large.txt\0`, stderr: "", code: 0, killed: false,
+						stdout: `5\t5\tchanged.txt\0-\t-\tbinary.bin\u0000500\t0\ttoo-large.txt\0`, stderr: "", code: 0, killed: false, truncated: false,
 					};
-				if (args.includes("changed.txt")) return { stdout: `diff\n${"x".repeat(PER_FILE_DETAIL_BYTES + 100)}\nOVERSIZED_RECOGNIZABLE_SUFFIX`, stderr: "", code: 0, killed: false };
-				return { stdout: "", stderr: "", code: 0, killed: false };
+				if (args.includes("changed.txt")) return { stdout: `diff\n${"x".repeat(PER_FILE_DETAIL_BYTES + 100)}\nOVERSIZED_RECOGNIZABLE_SUFFIX`, stderr: "", code: 0, killed: false, truncated: false };
+				return { stdout: "", stderr: "", code: 0, killed: false, truncated: false };
 				},
 			});
 			const details = await collectChangeDetails(pi.pi, snapshot);
@@ -267,8 +267,8 @@ describe("sensitive paths and bounded details", () => {
 			const manyFiles = Array.from({ length: MAX_DIFF_FILES }, (_, index) => `1\t1\tfile-${index}.txt`).join("\0") + "\0";
 			const totalLimitPi = createFakePi({
 				execHandler: (_command, args) => args.includes("--numstat")
-					? { stdout: manyFiles, stderr: "", code: 0, killed: false }
-					: { stdout: "x".repeat(PER_FILE_DETAIL_BYTES), stderr: "", code: 0, killed: false },
+					? { stdout: manyFiles, stderr: "", code: 0, killed: false, truncated: false }
+					: { stdout: "x".repeat(PER_FILE_DETAIL_BYTES), stderr: "", code: 0, killed: false, truncated: false },
 			});
 			const totalLimitedDetails = await collectChangeDetails(totalLimitPi.pi, { root, entries: [] });
 			assert.equal(Buffer.byteLength(totalLimitedDetails), DETAIL_BUDGET_BYTES, "multiple excerpts are clipped at the total byte limit");

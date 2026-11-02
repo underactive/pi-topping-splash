@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Development and CI now typecheck and test against Pi 1.5.0; the
+  `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.4.0.
+  No source changes were required. Pi 1.5.0 makes `ExecResult.truncated` a required field, so
+  only the test suite's fake `pi.exec()` results changed. Git collection already discards any
+  result that pi killed or that exited nonzero, and Pi 1.5.0 reports output over its buffer
+  cap as both, so an oversized `git status` still falls back instead of listing a partial
+  tree. Pi 1.5.0's startup notice, trust, and package-loading changes are in pi's host, so the
+  unit tests, which use a fake context, do not exercise them.
+
 - Depend on `@underactive/pi-topping-primitives` `^0.12.1` (was `^0.11.0`).
 
 - Depend on `@underactive/pi-topping-primitives` `^0.11.0` (was `^0.10.0`). No imports changed; only primitives 0.11.0 glyphs were added, with no visible behavior change.

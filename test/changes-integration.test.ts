@@ -64,11 +64,11 @@ function makeHarness(options: {
 	});
 	const pi = createFakePi({
 		execHandler: (_command, args) => {
-			if (args.includes("rev-parse")) return { stdout: `${env.cwd}\n`, stderr: "", code: 0, killed: false };
-			if (args.includes("status")) return { stdout: " M changed.ts\0?? new.ts\0D  deleted.ts\0", stderr: "", code: 0, killed: false };
-			if (args.includes("--numstat")) return { stdout: "1\t1\tchanged.ts\0", stderr: "", code: 0, killed: false };
-			if (args.includes("changed.ts")) return { stdout: "@@\n+changed\n", stderr: "", code: 0, killed: false };
-			return { stdout: "", stderr: "", code: 0, killed: false };
+			if (args.includes("rev-parse")) return { stdout: `${env.cwd}\n`, stderr: "", code: 0, killed: false, truncated: false };
+			if (args.includes("status")) return { stdout: " M changed.ts\0?? new.ts\0D  deleted.ts\0", stderr: "", code: 0, killed: false, truncated: false };
+			if (args.includes("--numstat")) return { stdout: "1\t1\tchanged.ts\0", stderr: "", code: 0, killed: false, truncated: false };
+			if (args.includes("changed.ts")) return { stdout: "@@\n+changed\n", stderr: "", code: 0, killed: false, truncated: false };
+			return { stdout: "", stderr: "", code: 0, killed: false, truncated: false };
 		},
 	});
 	piStartupGreeter(pi.pi);
