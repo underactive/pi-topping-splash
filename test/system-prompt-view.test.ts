@@ -234,6 +234,7 @@ describe("showSystemPrompt (SP-01, SP-02)", () => {
 		view.handleInput?.(KEY.down);
 		view.render(60);
 		assert.equal(reads, 1, "rendering and scrolling never re-read the prompt");
+		// No blocked option is intentional for the read-only view (SP-02).
 		assert.deepEqual(ctx.customOptions[0], {
 			overlay: true,
 			overlayOptions: { width: SYSTEM_PROMPT_PANEL_WIDTH, maxHeight: "100%", margin: { top: 1, bottom: 1, left: 2, right: 2 } },

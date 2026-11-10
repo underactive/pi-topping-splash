@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The startup gate and Summary model picker report blocked questions via OSC 7501 on Pi 1.5.0+
+  and 1.5.1+ respectively. The shared settings menu has no blocked option, and the read-only
+  system prompt view relies on the gate's status. Tests pin the options; live Pi 1.5.2 capture
+  confirmed the gate and nested and standalone picker transitions. Reload cleanup was not tested live.
+
+### Changed
+
+- Development and CI now typecheck and test against Pi 1.5.2; the
+  `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.5.0.
+  The dependency bump itself required no source changes. Reload overlay cleanup, the
+  session-directory prompt, and real providers have not been tested live.
+
 ## [0.6.1] - 2026-11-02
 
 ### Changed

@@ -509,6 +509,16 @@ describe("runStartupGate (GA-14)", () => {
 		assert.equal(await promise, "quit");
 		assert.equal(ctx.setFooterCalls.at(-1), undefined, "footer restored after the gate");
 	});
+	it("reports a blocked question while mounted inline", async () => {
+		const tui = createFakeTui();
+		const ctx = createFakeCtx({ cwd: env.cwd, theme: makeTheme(), tui: tui.tui, models: [] });
+		const pi = createFakePi();
+		const promise = runStartupGate(pi.pi, ctx.ctx);
+		await until(() => ctx.customComponents.length > 0);
+		assert.deepEqual(ctx.customOptions[0], { blocked: { kind: "question", message: "Startup gate" } });
+		(ctx.customComponents[0] as StartupGate).handleInput(KEY.esc);
+		assert.equal(await promise, "proceed");
+	});
 	it("Esc resolves proceed", async () => {
 		const tui = createFakeTui();
 		const ctx = createFakeCtx({ cwd: env.cwd, theme: makeTheme(), tui: tui.tui, models: [] });

@@ -99,6 +99,7 @@ export async function showSystemPrompt(ctx: ExtensionContext): Promise<void> {
 	} catch { /* display-only, like the splash's prompt-size line */ }
 	await ctx.ui.custom<void>(
 		(tui, theme, _keybindings, done) => new SystemPromptView(tui, theme, prompt, () => done()),
+		// No blocked status: this read-only view opens only from the gate, whose status already covers it.
 		{ overlay: true, overlayOptions: { width: SYSTEM_PROMPT_PANEL_WIDTH, maxHeight: "100%", margin: MARGIN } },
 	);
 }

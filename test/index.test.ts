@@ -10,6 +10,7 @@ import { MenuComponent } from "@underactive/pi-topping-primitives/menu";
 import piStartupGreeter from "../index.ts";
 import { gradientAnimation, logoAnimation, startLogoAnimation, stopGradientAnimation, stopLogoAnimation } from "../src/animate.ts";
 import { INSTALLER_LOGO_LAST_FRAME } from "../src/installer-logo.ts";
+import { GATE_PANEL_MAX_WIDTH } from "../src/gate-ui.ts";
 import { EDITOR_RESERVED_ROWS, startSummaryStream, stopSummaryStream, summarizeChanges, summaryStream } from "../src/changes-summary.ts";
 import { LOCAL_CHANGES_COMMAND } from "../src/local-changes.ts";
 import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
@@ -431,6 +432,7 @@ describe("startup changes settings (I-18)", () => {
 	it("renders an Apply/Cancel action bar between two rules, above the hints, filling the 90% overlay", async () => {
 		const wired = wire();
 		const { menu, finished } = openSettings(wired, 0);
+		// No blocked option is intentional: primitives showMenu has no passthrough.
 		assert.deepEqual(wired.ctx.customOptions[0], { overlay: true, overlayOptions: { width: "90%", maxHeight: "85%" } });
 		// The fake terminal is 100 columns, so pi hands the overlay 90 of them; the shared menu fills them all.
 		const lines = menu.render(90).map(sanitizeTuiText);
@@ -516,6 +518,12 @@ describe("startup changes settings (I-18)", () => {
 		const { menu, finished } = openSettings(wired);
 		menu.handleInput(KEY.space);
 		const picker = await pickerOver(wired);
+		assert.deepEqual(wired.ctx.customOptions[0], { overlay: true, overlayOptions: { width: "90%", maxHeight: "85%" } });
+		assert.deepEqual(wired.ctx.customOptions[1], {
+			overlay: true,
+			overlayOptions: { width: GATE_PANEL_MAX_WIDTH, maxHeight: "100%" },
+			blocked: { kind: "question", message: "Summary Model" },
+		});
 		assert.ok(rendered(picker).includes("Summary Model"));
 		picker.handleInput(KEY.esc);
 		await pickerSettled(wired, menu);

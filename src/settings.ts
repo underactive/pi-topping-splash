@@ -24,13 +24,15 @@ interface SplashSettingsValues {
 
 /** What the Summary model row shows, and resets to on Backspace, while no model is pinned. */
 const SESSION_MODEL_LABEL = "session model";
+const SUMMARY_MODEL_TITLE = "Summary Model";
 const SUMMARY_MODEL_DESCRIPTION = "Summarizes uncommitted changes at startup. Always called with thinking off, so the thinking level is ignored; pick a cheap, fast model.";
 const PICKER_HINTS = "type to filter · ↑↓ move · tab/←→ switch pane · enter select · esc back";
 
 /**
  * Open the two-pane model picker the startup gate uses; undefined means Escape/cancel. Its
  * thinking pane is part of the shared component, but the summary never uses a thinking level,
- * so only the model is returned.
+ * so only the model is returned. Pi 1.5.1+ reports blocked until the picker settles; closing it
+ * restores the status underneath (the gate's, or idle).
  */
 export async function pickSummaryModel(ctx: ExtensionContext, current?: ModelRef): Promise<ModelRef | undefined> {
 	if (ctx.mode !== "tui") return undefined;
@@ -53,7 +55,7 @@ export async function pickSummaryModel(ctx: ExtensionContext, current?: ModelRef
 				render: (width: number) => {
 					// `renderPopupBox` pads its interior to exactly `width - 4`, which is what the picker emits.
 					const bodyWidth = Math.max(1, width - 4);
-					return renderPopupBox(theme, Math.max(width, 1), "Summary Model", [
+					return renderPopupBox(theme, Math.max(width, 1), SUMMARY_MODEL_TITLE, [
 						...wrapTextWithAnsi(theme.fg("muted", SUMMARY_MODEL_DESCRIPTION), bodyWidth),
 						"",
 						...renderSplashModelPicker(picker, bodyWidth),
@@ -69,7 +71,7 @@ export async function pickSummaryModel(ctx: ExtensionContext, current?: ModelRef
 				invalidate: () => picker.invalidate(),
 			};
 		},
-		{ overlay: true, overlayOptions: { width: GATE_PANEL_MAX_WIDTH, maxHeight: "100%" } },
+		{ overlay: true, overlayOptions: { width: GATE_PANEL_MAX_WIDTH, maxHeight: "100%" }, blocked: { kind: "question", message: SUMMARY_MODEL_TITLE } },
 	);
 }
 
@@ -83,6 +85,7 @@ export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
 	const prefs = readPreferences();
 	// The pinned ref behind the Summary model row's label; the row itself only holds the label.
 	let summaryModel = prefs.changesSummaryModel;
+	// Primitives showMenu has no blocked option, so the menu reports no status of its own; the gate's status remains underneath.
 	const result = await showMenu<SplashSettingsValues>(ctx, {
 		title: "Pi Topping Splash: Settings",
 		sections: [

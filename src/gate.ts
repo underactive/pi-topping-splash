@@ -544,7 +544,7 @@ export function formatSessionDate(value: Date | undefined): string {
 /**
  * Show the blocking startup gate and await the user's choice. Returns the non-relaunch
  * resolution ("proceed" or "quit"); relaunch actions never resolve because the process is
- * replaced/shut down inside the component.
+ * replaced/shut down inside the component. The gate reports Pi as blocked on a question until it resolves.
  */
 export async function runStartupGate(pi: ExtensionAPI, ctx: ExtensionContext): Promise<GateResolution> {
 	// Hide the built-in footer while the gate menu is up: swap in a zero-line component,
@@ -552,8 +552,12 @@ export async function runStartupGate(pi: ExtensionAPI, ctx: ExtensionContext): P
 	// resolve the promise, but they replace the process, so no restore is needed there.
 	ctx.ui.setFooter(() => ({ render: () => [], invalidate() {} }));
 	try {
-		return await ctx.ui.custom<GateResolution>((tui, theme, _keybindings, done) =>
-			new StartupGate(tui, theme, ctx, pi, done),
+		return await ctx.ui.custom<GateResolution>(
+			(tui, theme, _keybindings, done) => new StartupGate(tui, theme, ctx, pi, done),
+			// Pi 1.5.0+ reports OSC 7501 `blocked` while this inline gate is the top dialog. The drill-in
+			// popups are plain tui.showOverlay handles and add no status; the Summary model picker reports
+			// its own while open, and closing it restores this one. done(), reload and tui.stop() end it.
+			{ blocked: { kind: "question", message: "Startup gate" } },
 		);
 	} finally {
 		ctx.ui.setFooter(undefined);
