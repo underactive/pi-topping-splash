@@ -32,7 +32,7 @@ const PICKER_HINTS = "type to filter · ↑↓ move · tab/←→ switch pane ·
  * Open the two-pane model picker the startup gate uses; undefined means Escape/cancel. Its
  * thinking pane is part of the shared component, but the summary never uses a thinking level,
  * so only the model is returned. Pi 1.5.1+ reports blocked until the picker settles; closing it
- * restores the status underneath (the gate's, or idle).
+ * restores the settings menu's status underneath.
  */
 export async function pickSummaryModel(ctx: ExtensionContext, current?: ModelRef): Promise<ModelRef | undefined> {
 	if (ctx.mode !== "tui") return undefined;
@@ -85,7 +85,7 @@ export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
 	const prefs = readPreferences();
 	// The pinned ref behind the Summary model row's label; the row itself only holds the label.
 	let summaryModel = prefs.changesSummaryModel;
-	// Primitives showMenu has no blocked option, so the menu reports no status of its own; the gate's status remains underneath.
+	// Primitives showMenu reports the menu title as blocked on Pi 1.5.1+; closing the menu restores the status underneath (the gate's, or idle).
 	const result = await showMenu<SplashSettingsValues>(ctx, {
 		title: "Pi Topping Splash: Settings",
 		sections: [

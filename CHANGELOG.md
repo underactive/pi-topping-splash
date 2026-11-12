@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- The startup gate and Summary model picker report blocked questions via OSC 7501 on Pi 1.5.0+
-  and 1.5.1+ respectively. The shared settings menu has no blocked option, and the read-only
-  system prompt view relies on the gate's status. Tests pin the options; live Pi 1.5.2 capture
-  confirmed the gate and nested and standalone picker transitions. Reload cleanup was not tested live.
+- The startup gate, the settings menu and the Summary model picker report blocked questions via
+  OSC 7501, the gate on Pi 1.5.0+ and the two overlays on 1.5.1+. Each reports its own name, and
+  closing one restores the status beneath it; the read-only system prompt view relies on the gate's
+  status. Tests pin the options; live Pi 1.5.2 capture confirmed the transitions with settings
+  opened from the gate and standalone, with and without the picker. Reload cleanup was not tested live.
 
 ### Changed
 
@@ -20,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.5.0.
   The dependency bump itself required no source changes. Reload overlay cleanup, the
   session-directory prompt, and real providers have not been tested live.
+- Depend on `@underactive/pi-topping-primitives` `^0.13.0` (was `^0.12.1`). Its `showMenu`
+  gives the settings menu its blocked status (see Added). It also ships primitives 0.12.2's menu
+  padding, which was never published on its own: wrapped rows stop two cells short of the right
+  border. With splash's labels the menu is unchanged at 44 columns and wider. A narrower menu can
+  wrap a label one word earlier, and a Summary model name too long for one row wraps two cells
+  earlier. No code changes were needed.
 
 ## [0.6.1] - 2026-11-02
 

@@ -399,6 +399,13 @@ describe("startup changes settings (I-18)", () => {
 	type Input = { handleInput(data: string): void };
 	type Rendered = Input & { render(width: number): string[] };
 
+	/** The `ui.custom` options primitives `showMenu` passes for the settings menu; 0.13.0 added `blocked`. */
+	const SETTINGS_MENU_OPTIONS = {
+		overlay: true,
+		blocked: { kind: "question", message: "Pi Topping Splash: Settings" },
+		overlayOptions: { width: "90%", maxHeight: "85%" },
+	};
+
 	const rendered = (component: Rendered, width = 80): string => component.render(width).map(sanitizeTuiText).join("\n");
 
 	/** Run the settings command, moving the cursor `rowsDown` rows; 6 lands on the Summary model row. */
@@ -432,8 +439,7 @@ describe("startup changes settings (I-18)", () => {
 	it("renders an Apply/Cancel action bar between two rules, above the hints, filling the 90% overlay", async () => {
 		const wired = wire();
 		const { menu, finished } = openSettings(wired, 0);
-		// No blocked option is intentional: primitives showMenu has no passthrough.
-		assert.deepEqual(wired.ctx.customOptions[0], { overlay: true, overlayOptions: { width: "90%", maxHeight: "85%" } });
+		assert.deepEqual(wired.ctx.customOptions[0], SETTINGS_MENU_OPTIONS);
 		// The fake terminal is 100 columns, so pi hands the overlay 90 of them; the shared menu fills them all.
 		const lines = menu.render(90).map(sanitizeTuiText);
 		const bar = lines.findIndex((line) => line.includes("[ Apply ]"));
@@ -518,7 +524,7 @@ describe("startup changes settings (I-18)", () => {
 		const { menu, finished } = openSettings(wired);
 		menu.handleInput(KEY.space);
 		const picker = await pickerOver(wired);
-		assert.deepEqual(wired.ctx.customOptions[0], { overlay: true, overlayOptions: { width: "90%", maxHeight: "85%" } });
+		assert.deepEqual(wired.ctx.customOptions[0], SETTINGS_MENU_OPTIONS);
 		assert.deepEqual(wired.ctx.customOptions[1], {
 			overlay: true,
 			overlayOptions: { width: GATE_PANEL_MAX_WIDTH, maxHeight: "100%" },

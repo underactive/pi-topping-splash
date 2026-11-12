@@ -18,11 +18,11 @@ Restart Pi (or run `/reload`) to pick it up.
 Requires Node.js 22.19.0 or newer. The current release is developed and tested against Pi
 1.5.2; Pi package peer dependency ranges remain unrestricted.
 
-While the startup gate or **Summary model** picker waits for a choice, Pi reports itself blocked
-on a question via OSC 7501 to supporting terminals and dashboards. The gate requires Pi 1.5.0 or
-newer for this status, and the picker requires 1.5.1 or newer; older hosts ignore it. The settings
-menu and read-only system prompt view report no status of their own. tmux and screen do not forward
-these reports.
+While the startup gate, the settings menu, or the **Summary model** picker waits for a choice, Pi
+reports itself blocked on a question via OSC 7501 to supporting terminals and dashboards, under the
+name of the dialog on top. The gate requires Pi 1.5.0 or newer for this status, and the settings menu
+and picker require 1.5.1 or newer; older hosts ignore it. The read-only system prompt view reports no
+status of its own. tmux and screen do not forward these reports.
 
 ## Settings
 

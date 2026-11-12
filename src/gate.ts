@@ -555,8 +555,9 @@ export async function runStartupGate(pi: ExtensionAPI, ctx: ExtensionContext): P
 		return await ctx.ui.custom<GateResolution>(
 			(tui, theme, _keybindings, done) => new StartupGate(tui, theme, ctx, pi, done),
 			// Pi 1.5.0+ reports OSC 7501 `blocked` while this inline gate is the top dialog. The drill-in
-			// popups are plain tui.showOverlay handles and add no status; the Summary model picker reports
-			// its own while open, and closing it restores this one. done(), reload and tui.stop() end it.
+			// popups are plain tui.showOverlay handles and add no status; Settings and its Summary model
+			// picker report their own while open, and closing each restores the one beneath it. done(),
+			// reload and tui.stop() end it.
 			{ blocked: { kind: "question", message: "Startup gate" } },
 		);
 	} finally {
