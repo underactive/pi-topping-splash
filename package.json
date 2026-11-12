@@ -29,6 +29,7 @@
     "src/**/*.ts",
     "media/",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The published package now includes `CHANGELOG.md`, so Pi 1.5.0 and later can show this extension's release notes under "Extension Updates" after it updates. Notices start with the release after the first one that includes the changelog; the first install only records the version.
 - The startup gate, the settings menu and the Summary model picker report blocked questions via
   OSC 7501, the gate on Pi 1.5.0+ and the two overlays on 1.5.1+. Each reports its own name, and
   closing one restores the status beneath it; the read-only system prompt view relies on the gate's
