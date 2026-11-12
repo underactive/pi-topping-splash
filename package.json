@@ -55,6 +55,6 @@
     "image": "https://raw.githubusercontent.com/underactive/pi-topping-splash/main/media/pi-splash-demo.png"
   },
   "dependencies": {
-    "@underactive/pi-topping-primitives": "^0.13.0"
+    "@underactive/pi-topping-primitives": "0.13.0"
   }
 }

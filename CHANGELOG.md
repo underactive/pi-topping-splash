@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.5.0.
   The dependency bump itself required no source changes. Reload overlay cleanup, the
   session-directory prompt, and real providers have not been tested live.
-- Depend on `@underactive/pi-topping-primitives` `^0.13.0` (was `^0.12.1`). Its `showMenu`
+- Depend on `@underactive/pi-topping-primitives` exactly `0.13.0` (was `^0.12.1`). Its `showMenu`
   gives the settings menu its blocked status (see Added). It also ships primitives 0.12.2's menu
   padding, which was never published on its own: wrapped rows stop two cells short of the right
   border. With splash's labels the menu is unchanged at 44 columns and wider. A narrower menu can
