@@ -9,7 +9,9 @@ import { GATE_PANEL_MAX_WIDTH, renderPopupBox } from "./gate-ui.ts";
 import { createSplashModelPicker, availableModelRefs, modelRefLabel, renderFooter, renderSplashModelPicker } from "./model-picker.ts";
 import type { ModelRef } from "./model-picker.ts";
 import { headerRenderState, state } from "./state.ts";
-import { readPreferences, writePreferences } from "./preferences.ts";
+import { readPreferences, writePreferences, type SplashPreferences } from "./preferences.ts";
+import { dialogFits, readTerminalSize, SETTINGS_DIALOG_SIZE } from "./ui/dialog-fit.ts";
+import { openSettingsDialog, type AppliedSettings } from "./ui/settings-dialog.ts";
 
 interface SplashSettingsValues {
 	[key: string]: boolean | string;
@@ -75,14 +77,22 @@ export async function pickSummaryModel(ctx: ExtensionContext, current?: ModelRef
 	);
 }
 
-/** Open the shared splash settings TUI and persist changes on apply. */
-export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
-	if (ctx.mode !== "tui") {
-		ctx.ui.notify("/topping-splash-settings requires TUI mode", "error");
-		return;
-	}
+/** The settings as the `showMenu` fallback returns them, in the extension's own types. */
+function fromMenuValues(values: SplashSettingsValues, summaryModel: ModelRef | undefined): AppliedSettings {
+	return {
+		menuGate: values.menuGate,
+		taglineReveal: values.taglineReveal,
+		backgroundColor: values.backgroundColor,
+		gradientAnimation: values.gradientAnimation,
+		logoStyle: values.logoStyle,
+		changesSummary: values.changesSummary,
+		// A row cleared back to the session model drops the pinned ref its label was showing.
+		changesSummaryModel: values.changesSummaryModel === SESSION_MODEL_LABEL ? undefined : summaryModel,
+	};
+}
 
-	const prefs = readPreferences();
+/** The `showMenu` settings dialog: the fallback for a terminal too small for the generated one. */
+async function showSettingsMenu(ctx: ExtensionContext, prefs: SplashPreferences): Promise<AppliedSettings | null> {
 	// The pinned ref behind the Summary model row's label; the row itself only holds the label.
 	let summaryModel = prefs.changesSummaryModel;
 	// Primitives showMenu reports the menu title as blocked on Pi 1.5.1+; closing the menu restores the status underneath (the gate's, or idle).
@@ -130,25 +140,37 @@ export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
 			return modelRefLabel(picked);
 		},
 	});
-	if (!result.applied) return;
+	return result.applied ? fromMenuValues(result.values, summaryModel) : null;
+}
 
-	const backgroundColor = result.values.backgroundColor;
-	const gradientAnimation = result.values.gradientAnimation;
-	const logoStyle = result.values.logoStyle;
+/** Open the splash settings TUI and persist changes on apply. */
+export async function showSplashSettings(ctx: ExtensionContext): Promise<void> {
+	if (ctx.mode !== "tui") {
+		ctx.ui.notify("/topping-splash-settings requires TUI mode", "error");
+		return;
+	}
+
+	const prefs = readPreferences();
+	// The generated dialog has a fixed size. A terminal too small for it keeps the menu, which fits any size.
+	const fromDialog = dialogFits(await readTerminalSize(ctx), SETTINGS_DIALOG_SIZE) ? await openSettingsDialog(ctx, prefs) : undefined;
+	// Undefined also when the dialog failed. It has said so and saved nothing, and the menu keeps the settings reachable.
+	const applied = fromDialog === undefined ? await showSettingsMenu(ctx, prefs) : fromDialog;
+	if (!applied) return;
+
+	const { backgroundColor, gradientAnimation, logoStyle } = applied;
 	const dynamicTint = isDynamicTint(backgroundColor) ? backgroundColor : prefs.dynamicTint ?? DEFAULT_DYNAMIC_TINT;
 	// Gate/reveal and startup-summary keys are read at startup; background, animation, and logo
 	// style also apply immediately below, to a splash that may already be visible. Applying a theme color
 	// also records it as the tint for the dynamic backdrop.
 	if (writePreferences({
-		menuGate: result.values.menuGate ? "on" : "off",
-		taglineReveal: result.values.taglineReveal ? "on" : "off",
+		menuGate: applied.menuGate ? "on" : "off",
+		taglineReveal: applied.taglineReveal ? "on" : "off",
 		backgroundColor,
 		dynamicTint,
 		gradientAnimation,
 		logoStyle,
-		changesSummary: result.values.changesSummary ? "on" : "off",
-		// A row cleared back to the session model drops the pinned ref its label was showing.
-		changesSummaryModel: result.values.changesSummaryModel === SESSION_MODEL_LABEL ? undefined : summaryModel,
+		changesSummary: applied.changesSummary ? "on" : "off",
+		changesSummaryModel: applied.changesSummaryModel,
 	})) {
 		ctx.ui.notify("Pi Topping Splash settings saved", "info");
 		state.backgroundColor = backgroundColor;

@@ -111,12 +111,16 @@ export function createFakeCtx(options: FakeCtxOptions): FakeCtxHarness {
 			// menu's `onPick` can open a picker over the menu. `done` unmounts only its own component.
 			return new Promise<T>((resolve) => {
 				let component: Component | undefined;
+				let closed = false;
 				const done = (result: T): void => {
+					closed = true;
 					const index = component ? harness.mountedComponents.indexOf(component) : -1;
 					if (index !== -1) harness.mountedComponents.splice(index, 1);
 					resolve(result);
 				};
 				component = factory(options.tui, bag.theme, {} as never, done);
+				// pi drops a component whose factory already finished the dialog (the terminal-size probe does), so it is never shown.
+				if (closed) return;
 				harness.customComponents.push(component);
 				harness.customOptions.push(customOptions);
 				harness.mountedComponents.push(component);

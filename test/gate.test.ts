@@ -14,6 +14,7 @@ import { state } from "../src/state.ts";
 import { SystemPromptView } from "../src/system-prompt-view.ts";
 import { stopTaglineReveal } from "../src/reveal.ts";
 import { sanitizeTuiText } from "../src/text.ts";
+import { SETTINGS_DIALOG_SIZE } from "../src/ui/dialog-fit.ts";
 import { setArgv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { createFakeCtx, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
 import { createFakePi, type FakePiHarness } from "./helpers/fake-api.ts";
@@ -185,9 +186,11 @@ describe("menu (GA-04..GA-08)", () => {
 		n.gate.handleInput("n");
 		assert.deepEqual(n.results, ["proceed"]);
 	});
-	it("Settings opens the shared settings menu without resolving the gate", () => {
-		const harness = makeGate();
+	it("Settings opens the shared settings menu without resolving the gate", async () => {
+		// A terminal too small for the generated settings dialog, so the gate gets the showMenu fallback.
+		const harness = makeGate({ rows: SETTINGS_DIALOG_SIZE.rows - 1 });
 		harness.gate.handleInput("s");
+		await until(() => harness.ctx.customComponents.length > 0);
 		assert.equal(harness.ctx.customComponents.length, 1, "settings menu mounted via ui.custom");
 		assert.deepEqual(harness.results, [], "gate stays unresolved");
 		(harness.ctx.customComponents[0] as { handleInput(data: string): void }).handleInput(KEY.esc);
@@ -270,10 +273,12 @@ describe("View system prompt entry (GA-04)", () => {
 		assert.equal(harness.tui.overlays.length, 0);
 	});
 
-	it("p opens the view and s opens Settings, in legacy and Kitty encodings", () => {
+	it("p opens the view and s opens Settings, in legacy and Kitty encodings", async () => {
 		for (const [key, opensPrompt] of [["p", true], ["\x1b[112u", true], ["s", false], ["\x1b[115u", false]] as const) {
-			const harness = makeGate();
+			// Settings reads the terminal size first; one too small for the generated dialog gets the showMenu fallback.
+			const harness = makeGate({ rows: SETTINGS_DIALOG_SIZE.rows - 1 });
 			harness.gate.handleInput(key);
+			await until(() => harness.ctx.customComponents.length > 0);
 			assert.equal(harness.ctx.customComponents.length, 1, `${JSON.stringify(key)} mounts one overlay`);
 			assert.equal(harness.ctx.customComponents[0] instanceof SystemPromptView, opensPrompt, `${JSON.stringify(key)}`);
 			assert.deepEqual(harness.results, [], "the gate stays unresolved");

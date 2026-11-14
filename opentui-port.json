@@ -1,0 +1,10 @@
+{
+  "source": "../opentui-dialogs/src",
+  "out": "src/ui/generated",
+  "files": ["ui.tsx", "splash/data.ts", "splash/model-picker.tsx", "splash/settings-dialog.tsx"],
+  "theme": "./theme",
+  "dataModules": ["splash/data"],
+  "entries": [],
+  "parity": "../opentui-dialogs/parity",
+  "cases": ["splash-settings", "splash-model-picker"]
+}

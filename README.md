@@ -27,9 +27,19 @@ status of its own. tmux and screen do not forward these reports.
 ## Settings
 
 Run `/topping-splash-settings` (TUI mode only) or pick **Settings** in the startup gate menu
-to open a settings menu in three sections: the startup gate toggle, the splash banner's background
+to change three sections of settings: the startup gate toggle, the splash banner's background
 color, gradient animation, and logo style, and the info panel's reveal animation and startup changes
-summary:
+summary.
+
+On a terminal at least 84 columns wide and 28 rows tall they open as a dialog: the sections on the
+left, the highlighted section's settings on the right, a description of the highlighted setting
+below, and an **Apply** / **Cancel** bar. ↑/↓ move, Tab goes to the next pane (sections, settings,
+buttons) and Shift+Tab to the previous one, → or Enter opens a section, Space toggles, ←/→ cycle,
+Ctrl+S applies, and Esc goes back one pane; from the section list it cancels, and with unsaved
+changes a second Esc discards them. Enter on **Summary model** opens a model picker in the
+dialog's place, with a model list and a thinking pane (type `/` to filter; summaries always run with
+thinking off, so the level is ignored), and ⌫ resets it to the session model. The dialog is drawn at a fixed
+size, so a smaller terminal, or a dialog that fails to run, opens the original menu instead:
 
 ```text
 ╔═[ Pi Topping Splash: Settings ]══════════════════════════════════════════╗
@@ -53,7 +63,7 @@ summary:
 ╚═══════════════════════════════════════════════════════════════════[ 1/7 ]╝
 ```
 
-Move with ↑/↓, toggle with Space, and cycle with ←/→. Tab jumps to the action bar at the bottom,
+In the menu, move with ↑/↓, toggle with Space, and cycle with ←/→. Tab jumps to the action bar at the bottom,
 where ←/→ choose **Apply** (save and close) or **Cancel** and Enter fires the highlighted button;
 Esc also cancels. Enter on a toggle or cycle row does nothing; it only opens the **Summary model**
 picker.

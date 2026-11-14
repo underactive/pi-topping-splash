@@ -16,8 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status. Tests pin the options; live Pi 1.5.2 capture confirmed the transitions with settings
   opened from the gate and standalone, with and without the picker. Reload cleanup was not tested live.
 
+- `/topping-splash-settings` opens a redesigned settings dialog on a terminal at least 84 columns wide and 28 rows tall: a section list beside the selected section's settings, the focused setting's description below, and an Apply / Cancel bar, with the Summary model picker, model list and thinking pane, taking its place while it is open. The dialog is designed in the `opentui-dialogs` mockups and converted to `src/ui/generated/` by `pi-topping-opentui` (`npm run port:ui`; `npm run port:check` and `npm run parity:ui` verify it against the mockups' recorded frames). It reports the same blocked question as the menu while open. The settings the dialog and the menu write are the same.
+- New dependency `@underactive/pi-topping-opentui` `^0.14.1`, the small React renderer that draws the converted dialog through Pi's TUI; `@underactive/pi-topping-opentui-tools` `^0.14.1` and `@types/react` are development-only.
+
 ### Changed
 
+- The original settings menu is now the fallback: it opens on a terminal smaller than the dialog, when Pi is older than 1.3.0 (the dialog's size check needs it), and when the dialog fails to run, in which case the failure is reported first. Reading the terminal size makes the command open one tick later than before. The startup gate's own views and the Summary model picker the menu opens are unchanged.
 - Development and CI now typecheck and test against Pi 1.5.2; the
   `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.5.0.
   The dependency bump itself required no source changes. Reload overlay cleanup, the

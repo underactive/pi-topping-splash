@@ -18,6 +18,7 @@ import { stopTaglineReveal, taglineReveal } from "../src/reveal.ts";
 import { headerRenderState, state } from "../src/state.ts";
 import { buildHeaderParts } from "../src/splash.ts";
 import { sanitizeTuiText } from "../src/text.ts";
+import { SETTINGS_DIALOG_SIZE } from "../src/ui/dialog-fit.ts";
 import { setArgv, setEnv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { createFakeCtx, FAKE_SESSION_ID, makeAssistantMessage, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
 import { createFakePi, type FakePiBag, type FakePiHarness } from "./helpers/fake-api.ts";
@@ -93,6 +94,22 @@ function wire(options: WireOptions = {}): Wired {
 	return { pi, ctx, tui };
 }
 
+/**
+ * Run the settings command on a terminal too small for the generated dialog, so it opens the
+ * `showMenu` fallback, and wait until that menu is mounted. The terminal gets its rows back
+ * before this returns, so nothing after it sees the small size.
+ */
+async function runSettings(wired: Wired): Promise<{ handlerPromise: Promise<void>; component: { handleInput(data: string): void } }> {
+	const rows = wired.tui.tui.terminal.rows;
+	const mounted = wired.ctx.customComponents.length;
+	wired.tui.resizeRows(SETTINGS_DIALOG_SIZE.rows - 1);
+	const handlerPromise = Promise.resolve(wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never));
+	await until(() => wired.ctx.customComponents.length > mounted);
+	wired.tui.resizeRows(rows);
+	assert.equal(wired.ctx.customComponents.length, mounted + 1, "the fallback menu is the one component shown");
+	return { handlerPromise, component: wired.ctx.customComponents.at(-1) as { handleInput(data: string): void } };
+}
+
 const DIRTY_STATUS = "?? added.ts\0 M changed.ts\0 D deleted.ts\0";
 
 function scriptedGit(root: string, status: string | null): FakePiBag["execHandler"] {
@@ -139,8 +156,7 @@ function pressApply(menu: { handleInput(data: string): void }): void {
 async function persist(target: Partial<SplashPreferences>): Promise<void> {
 	const wired = wire();
 	const current = readPreferences();
-	const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-	const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+	const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 	if (target.menuGate !== undefined && target.menuGate !== current.menuGate) component.handleInput(KEY.space);
 	for (let index = 0; index < 4; index++) component.handleInput(KEY.down);
 	if (target.taglineReveal !== undefined && target.taglineReveal !== current.taglineReveal) component.handleInput(KEY.space);
@@ -310,8 +326,7 @@ describe("commands (I-06, I-07)", () => {
 	it("applying the toggle persists the flipped value and notifies success", async () => {
 		const wired = wire();
 		assert.equal(readPreferences().menuGate, "off", "starts at the default");
-		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 		component.handleInput(KEY.space);
 		pressApply(component);
 		await handlerPromise;
@@ -326,8 +341,7 @@ describe("commands (I-06, I-07)", () => {
 
 	it("toggling the tagline animation persists taglineReveal and leaves menuGate alone", async () => {
 		const wired = wire();
-		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 		for (let index = 0; index < 4; index++) component.handleInput(KEY.down);
 		component.handleInput(KEY.space);
 		pressApply(component);
@@ -339,8 +353,7 @@ describe("commands (I-06, I-07)", () => {
 
 	it("escape cancels without writing or notifying success", async () => {
 		const wired = wire();
-		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 		component.handleInput(KEY.space);
 		component.handleInput(KEY.esc);
 		await handlerPromise;
@@ -373,8 +386,7 @@ describe("commands (I-06, I-07)", () => {
 		writeFileSync(blocker, "occupied");
 		const restoreAgentDir = setEnv("PI_CODING_AGENT_DIR", blocker);
 		try {
-			const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-			const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+			const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 			component.handleInput(KEY.space);
 			pressApply(component);
 			await handlerPromise;
@@ -409,8 +421,8 @@ describe("startup changes settings (I-18)", () => {
 	const rendered = (component: Rendered, width = 80): string => component.render(width).map(sanitizeTuiText).join("\n");
 
 	/** Run the settings command, moving the cursor `rowsDown` rows; 6 lands on the Summary model row. */
-	function openSettings(wired: Wired, rowsDown = 6): { menu: MenuComponent; finished: Promise<void> } {
-		const finished = Promise.resolve(wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never));
+	async function openSettings(wired: Wired, rowsDown = 6): Promise<{ menu: MenuComponent; finished: Promise<void> }> {
+		const { handlerPromise: finished } = await runSettings(wired);
 		const menu = wired.ctx.customComponents[0];
 		assert.ok(menu instanceof MenuComponent, "the command mounts the shared primitives menu");
 		for (let index = 0; index < rowsDown; index++) menu.handleInput(KEY.down);
@@ -438,7 +450,7 @@ describe("startup changes settings (I-18)", () => {
 
 	it("renders an Apply/Cancel action bar between two rules, above the hints, filling the 90% overlay", async () => {
 		const wired = wire();
-		const { menu, finished } = openSettings(wired, 0);
+		const { menu, finished } = await openSettings(wired, 0);
 		assert.deepEqual(wired.ctx.customOptions[0], SETTINGS_MENU_OPTIONS);
 		// The fake terminal is 100 columns, so pi hands the overlay 90 of them; the shared menu fills them all.
 		const lines = menu.render(90).map(sanitizeTuiText);
@@ -456,7 +468,7 @@ describe("startup changes settings (I-18)", () => {
 	it("Enter on a toggle or cycle row does nothing; only the action bar applies", async () => {
 		const wired = wire();
 		let settled = false;
-		const { menu, finished } = openSettings(wired, 0);
+		const { menu, finished } = await openSettings(wired, 0);
 		void finished.then(() => {
 			settled = true;
 		});
@@ -475,7 +487,7 @@ describe("startup changes settings (I-18)", () => {
 
 	it("Tab hands the arrow keys to the action bar and back to the rows", async () => {
 		const wired = wire();
-		const { menu, finished } = openSettings(wired, 1);
+		const { menu, finished } = await openSettings(wired, 1);
 		menu.handleInput(KEY.tab);
 		menu.handleInput(KEY.right);
 		menu.handleInput(KEY.left);
@@ -488,7 +500,7 @@ describe("startup changes settings (I-18)", () => {
 
 	it("the Cancel button closes without writing or notifying success", async () => {
 		const wired = wire();
-		const { menu, finished } = openSettings(wired, 0);
+		const { menu, finished } = await openSettings(wired, 0);
 		menu.handleInput(KEY.space);
 		menu.handleInput(KEY.tab);
 		menu.handleInput(KEY.right);
@@ -503,7 +515,7 @@ describe("startup changes settings (I-18)", () => {
 		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
 		const wired = wire();
 		wired.ctx.bag.models.push(makeModel("provider", "fast"));
-		const { menu, finished } = openSettings(wired, 5);
+		const { menu, finished } = await openSettings(wired, 5);
 		menu.handleInput(KEY.space);
 		menu.handleInput(KEY.down);
 		menu.handleInput(KEY.enter);
@@ -521,7 +533,7 @@ describe("startup changes settings (I-18)", () => {
 
 	it("Space on the Summary model row still opens the picker", async () => {
 		const wired = wire();
-		const { menu, finished } = openSettings(wired);
+		const { menu, finished } = await openSettings(wired);
 		menu.handleInput(KEY.space);
 		const picker = await pickerOver(wired);
 		assert.deepEqual(wired.ctx.customOptions[0], SETTINGS_MENU_OPTIONS);
@@ -539,7 +551,7 @@ describe("startup changes settings (I-18)", () => {
 
 	it("opens the gate's two-pane model picker in a titled popup that fits every width", async () => {
 		const wired = wire();
-		const { menu, finished } = openSettings(wired);
+		const { menu, finished } = await openSettings(wired);
 		menu.handleInput(KEY.enter);
 		const picker = await pickerOver(wired);
 		const text = rendered(picker, 90);
@@ -564,7 +576,7 @@ describe("startup changes settings (I-18)", () => {
 			if (index > 0) resetModuleState();
 			seedPreferences(testCase.pinned);
 			const wired = wire({ model: late, models: [early, late] });
-			const { menu, finished } = openSettings(wired);
+			const { menu, finished } = await openSettings(wired);
 			menu.handleInput(KEY.enter);
 			const picker = await pickerOver(wired);
 			picker.handleInput(KEY.enter);
@@ -578,7 +590,7 @@ describe("startup changes settings (I-18)", () => {
 	it("picker Escape keeps the prior value and menu Escape writes nothing", async () => {
 		seedPreferences({ provider: "provider", id: "fast" });
 		const wired = wire();
-		const { menu, finished } = openSettings(wired);
+		const { menu, finished } = await openSettings(wired);
 		menu.handleInput(KEY.enter);
 		const picker = await pickerOver(wired);
 		picker.handleInput(KEY.esc);
@@ -594,7 +606,7 @@ describe("startup changes settings (I-18)", () => {
 			if (index > 0) resetModuleState();
 			seedPreferences({ provider: "provider", id: "fast" });
 			const wired = wire({ models: [makeModel("provider", "fast")] });
-			const { menu, finished } = openSettings(wired);
+			const { menu, finished } = await openSettings(wired);
 			assert.ok(rendered(menu).includes("provider/fast"));
 			menu.handleInput(clearKey);
 			assert.ok(rendered(menu).includes("session model"), "row reads as deliberately unset");
@@ -607,7 +619,7 @@ describe("startup changes settings (I-18)", () => {
 	it("a cleared Summary model stays cleared when the picker is then cancelled", async () => {
 		seedPreferences({ provider: "provider", id: "fast" });
 		const wired = wire({ models: [makeModel("provider", "fast")] });
-		const { menu, finished } = openSettings(wired);
+		const { menu, finished } = await openSettings(wired);
 		menu.handleInput(KEY.backspace);
 		menu.handleInput(KEY.enter);
 		(await pickerOver(wired)).handleInput(KEY.esc);
@@ -620,7 +632,7 @@ describe("startup changes settings (I-18)", () => {
 
 	it("Backspace and Delete leave rows without a clear value alone", async () => {
 		const wired = wire();
-		const { menu, finished } = openSettings(wired, 0);
+		const { menu, finished } = await openSettings(wired, 0);
 		menu.handleInput(KEY.backspace);
 		menu.handleInput(KEY.down);
 		menu.handleInput(KEY.down);
@@ -634,7 +646,7 @@ describe("startup changes settings (I-18)", () => {
 
 	it("warns instead of opening a picker with no models to offer", async () => {
 		const wired = wire({ model: null, models: [] });
-		const { menu, finished } = openSettings(wired);
+		const { menu, finished } = await openSettings(wired);
 		menu.handleInput(KEY.enter);
 		await until(() => wired.ctx.notifications.some((n) => n.type === "warning"));
 		await pickerSettled(wired, menu);
@@ -1211,8 +1223,7 @@ describe("background color setting (I-06 extension)", () => {
 	it("defaults to rainbow and cycles right through the theme colors", async () => {
 		const wired = wire();
 		assert.equal(readPreferences().backgroundColor, "rainbow", "starts at the default");
-		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 		component.handleInput(KEY.down);
 		component.handleInput(KEY.right);
 		pressApply(component);
@@ -1222,8 +1233,7 @@ describe("background color setting (I-06 extension)", () => {
 
 	it("left from rainbow wraps to dynamic and keeps the default tint", async () => {
 		const wired = wire();
-		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 		component.handleInput(KEY.down);
 		component.handleInput(KEY.left);
 		pressApply(component);
@@ -1235,8 +1245,7 @@ describe("background color setting (I-06 extension)", () => {
 
 	it("records an applied theme color and preserves it while selecting dynamic", async () => {
 		const first = wire();
-		const firstPromise = first.pi.commands.get("topping-splash-settings")!.handler("", first.ctx.ctx as never);
-		const firstMenu = first.ctx.customComponents[0] as { handleInput(data: string): void };
+		const { handlerPromise: firstPromise, component: firstMenu } = await runSettings(first);
 		firstMenu.handleInput(KEY.down);
 		for (let index = 0; index < 5; index++) firstMenu.handleInput(KEY.right);
 		pressApply(firstMenu);
@@ -1246,8 +1255,7 @@ describe("background color setting (I-06 extension)", () => {
 
 		resetModuleState();
 		const second = wire();
-		const secondPromise = second.pi.commands.get("topping-splash-settings")!.handler("", second.ctx.ctx as never);
-		const secondMenu = second.ctx.customComponents[0] as { handleInput(data: string): void };
+		const { handlerPromise: secondPromise, component: secondMenu } = await runSettings(second);
 		secondMenu.handleInput(KEY.down);
 		for (let index = 0; index < 3; index++) secondMenu.handleInput(KEY.right);
 		pressApply(secondMenu);
@@ -1273,8 +1281,7 @@ describe("background color setting (I-06 extension)", () => {
 
 	it("persists all three preferences atomically and leaves untouched toggles as-is", async () => {
 		const wired = wire();
-		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 		component.handleInput(KEY.down);
 		component.handleInput(KEY.right);
 		component.handleInput(KEY.right);
@@ -1298,8 +1305,7 @@ describe("background color setting (I-06 extension)", () => {
 
 	it("cancellation leaves the stored background and the visible splash unchanged", async () => {
 		const wired0 = wire();
-		const applyPromise = wired0.pi.commands.get("topping-splash-settings")!.handler("", wired0.ctx.ctx as never);
-		const applyComponent = wired0.ctx.customComponents[0] as { handleInput(data: string): void };
+		const { handlerPromise: applyPromise, component: applyComponent } = await runSettings(wired0);
 		applyComponent.handleInput(KEY.down);
 		applyComponent.handleInput(KEY.right);
 		applyComponent.handleInput(KEY.right);
@@ -1311,8 +1317,7 @@ describe("background color setting (I-06 extension)", () => {
 		assert.equal(readPreferences().backgroundColor, "success");
 		resetModuleState();
 		const wired = wire();
-		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 		component.handleInput(KEY.down);
 		component.handleInput(KEY.right);
 		component.handleInput(KEY.esc);
@@ -1327,8 +1332,7 @@ describe("background color setting (I-06 extension)", () => {
 		writeFileSync(blocker, "occupied");
 		const restoreAgentDir = setEnv("PI_CODING_AGENT_DIR", blocker);
 		try {
-			const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-			const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+			const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 			component.handleInput(KEY.down);
 			component.handleInput(KEY.right);
 			pressApply(component);
@@ -1348,8 +1352,7 @@ describe("background color setting (I-06 extension)", () => {
 		assert.equal(typeof headerRenderState.requestRender, "function");
 
 		const before = wired.tui.renderRequests.length;
-		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-		const component = wired.ctx.customComponents[0] as { handleInput(data: string): void };
+		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 		component.handleInput(KEY.down);
 		component.handleInput(KEY.right);
 		pressApply(component);
@@ -1362,8 +1365,7 @@ describe("background color setting (I-06 extension)", () => {
 describe("gradient animation setting (I-17)", () => {
 	/** Menu rows in cursor order: menuGate (0), backgroundColor (1), gradientAnimation (2), logoStyle (3). */
 	async function applyMenu(wired: Wired, inputs: string[]): Promise<void> {
-		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-		const component = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
 		for (const key of inputs) component.handleInput(key);
 		pressApply(component);
 		await handlerPromise;
@@ -1464,8 +1466,7 @@ describe("gradient animation setting (I-17)", () => {
 
 describe("logo style setting (I-20)", () => {
 	async function applyLogoSetting(wired: Wired, direction: string): Promise<void> {
-		const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-		const menu = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+		const { handlerPromise: handlerPromise, component: menu } = await runSettings(wired);
 		for (let index = 0; index < 3; index++) menu.handleInput(KEY.down);
 		menu.handleInput(direction);
 		pressApply(menu);
@@ -1507,8 +1508,7 @@ describe("logo style setting (I-20)", () => {
 			assert.ok(header.render(100).some((line) => line.includes("38;2;77;154;191")));
 			const timer = logoAnimation.timer;
 			logoAnimation.timeMs = 400;
-			const background = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-			const menu = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+			const { handlerPromise: background, component: menu } = await runSettings(wired);
 			menu.handleInput(KEY.down);
 			menu.handleInput(KEY.right);
 			pressApply(menu);
@@ -1543,8 +1543,7 @@ describe("logo style setting (I-20)", () => {
 			assert.notEqual(timer, null, "random selection resolves to an installer logo");
 			logoAnimation.timeMs = 400;
 
-			const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-			const menu = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+			const { handlerPromise: handlerPromise, component: menu } = await runSettings(wired);
 			menu.handleInput(KEY.down);
 			menu.handleInput(KEY.right);
 			pressApply(menu);
@@ -1564,8 +1563,7 @@ describe("logo style setting (I-20)", () => {
 		writeFileSync(blocker, "occupied");
 		const restoreAgentDir = setEnv("PI_CODING_AGENT_DIR", blocker);
 		try {
-			const handlerPromise = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-			const menu = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+			const { handlerPromise: handlerPromise, component: menu } = await runSettings(wired);
 			for (let index = 0; index < 3; index++) menu.handleInput(KEY.down);
 			menu.handleInput(KEY.right);
 			pressApply(menu);
@@ -1580,8 +1578,7 @@ describe("logo style setting (I-20)", () => {
 
 	it("cancellation and a post-conversation apply do not start the ticker", async () => {
 		const wired = wire();
-		const canceled = wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
-		const menu = wired.ctx.customComponents.at(-1) as { handleInput(data: string): void };
+		const { handlerPromise: canceled, component: menu } = await runSettings(wired);
 		for (let index = 0; index < 3; index++) menu.handleInput(KEY.down);
 		menu.handleInput(KEY.right);
 		menu.handleInput(KEY.esc);
