@@ -13,11 +13,11 @@ import type { BackgroundColor, GradientAnimation } from "../color.ts";
 import type { LogoStyle } from "../logo.ts";
 import { availableModelRefs, modelRefLabel, type ModelRef } from "../model-picker.ts";
 import type { SplashPreferences } from "../preferences.ts";
-import { DIALOG_MAX_HEIGHT, SETTINGS_DIALOG_SIZE } from "./dialog-fit.ts";
+import { DIALOG_MAX_HEIGHT, SETTINGS_DIALOG_WIDTH } from "./dialog-size.ts";
 import type { Level as DialogLevel, Model as DialogModel, SplashPrefs as DialogPrefs } from "./generated/splash/data.ts";
 import { SplashSettings, type SplashSettingsResult } from "./generated/splash/settings-dialog.ts";
 
-/** Reported to pi as the question the session is blocked on, as the `showMenu` dialog does. */
+/** Reported to pi as the question the session is blocked on while the dialog is open. */
 export const SETTINGS_DIALOG_TITLE = "Pi Topping Splash: Settings";
 
 /** What the user chose, in the extension's own types. */
@@ -135,10 +135,10 @@ function readModelRefs(ctx: ExtensionContext): ModelRef[] {
 
 /**
  * Show the generated settings dialog. Resolves with what the user applied, or `null` when they
- * cancelled. Resolves with `undefined` when the dialog failed; the failure has been reported to
- * the user by then, so the command handler never sees it thrown.
+ * cancelled. Also `null` when the dialog failed: the failure has been reported to the user by
+ * then, so the command handler never sees it thrown, and nothing was applied.
  */
-export async function openSettingsDialog(ctx: ExtensionContext, prefs: SplashPreferences): Promise<AppliedSettings | null | undefined> {
+export async function openSettingsDialog(ctx: ExtensionContext, prefs: SplashPreferences): Promise<AppliedSettings | null> {
 	try {
 		const refs = readModelRefs(ctx);
 		const pinned = prefs.changesSummaryModel;
@@ -152,7 +152,7 @@ export async function openSettingsDialog(ctx: ExtensionContext, prefs: SplashPre
 			(done) => createElement(SplashSettings, { ...props, onDone: done }),
 			{
 				title: SETTINGS_DIALOG_TITLE,
-				width: SETTINGS_DIALOG_SIZE.columns,
+				width: SETTINGS_DIALOG_WIDTH,
 				maxHeight: DIALOG_MAX_HEIGHT,
 				fallback: { applied: false, values: props.initial, changes: 0 },
 			},
@@ -160,6 +160,6 @@ export async function openSettingsDialog(ctx: ExtensionContext, prefs: SplashPre
 		return result.applied ? fromDialogPrefs(result.values, refs, pinned) : null;
 	} catch (error) {
 		ctx.ui.notify(`Pi Topping Splash settings dialog failed: ${error instanceof Error ? error.message : String(error)}`, "error");
-		return undefined;
+		return null;
 	}
 }

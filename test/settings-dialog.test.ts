@@ -5,20 +5,21 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it, type TestContext } from "node:test";
 import { mountOpenTui } from "@underactive/pi-topping-opentui/host";
 import { MOCKUP_PALETTE } from "@underactive/pi-topping-opentui/theme";
-import { MenuComponent } from "@underactive/pi-topping-primitives/menu";
 import { createElement, type ReactNode } from "react";
 import { BACKGROUND_COLOR_OPTIONS, GRADIENT_ANIMATION_OPTIONS } from "../src/color.ts";
 import { LOGO_STYLE_OPTIONS } from "../src/logo.ts";
 import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
 import { showSplashSettings } from "../src/settings.ts";
 import { state } from "../src/state.ts";
-import { dialogFits, DIALOG_MAX_HEIGHT, MIN_SIZE_PROBE_HOST_VERSION, readTerminalSize, SETTINGS_DIALOG_SIZE, type TerminalSize } from "../src/ui/dialog-fit.ts";
+import { DIALOG_MAX_HEIGHT, SETTINGS_DIALOG_WIDTH } from "../src/ui/dialog-size.ts";
 import { BACKGROUND_COLORS, GRADIENT_ANIMATIONS, LOGO_STYLES, PREFS_DEFAULTS } from "../src/ui/generated/splash/data.ts";
 import { SplashSettings } from "../src/ui/generated/splash/settings-dialog.ts";
 import { fromDialogPrefs, SETTINGS_DIALOG_TITLE, toDialogModels, toDialogPrefs } from "../src/ui/settings-dialog.ts";
 import { setArgv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { createFakeCtx, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
 import { createFakeTui } from "./helpers/fake-tui.ts";
+import { press, screen, settle, stripAnsi, turn, type Shown, type Terminal } from "./helpers/dialog.ts";
+import { KEY } from "./helpers/keys.ts";
 import { resetModuleState } from "./helpers/reset.ts";
 import { bootstrapGlobalTheme, makeTheme } from "./helpers/theme.ts";
 import { until } from "./helpers/wait.ts";
@@ -37,47 +38,6 @@ afterEach(() => {
 	env.restore();
 });
 
-/** The bytes pi-tui hands a component for each key. */
-const KEY = {
-	up: "\x1b[A",
-	down: "\x1b[B",
-	right: "\x1b[C",
-	left: "\x1b[D",
-	enter: "\r",
-	esc: "\x1b",
-	space: " ",
-	tab: "\t",
-	backspace: "\x7f",
-	ctrlS: "\x13",
-} as const;
-
-interface Shown {
-	render(width: number): string[];
-	handleInput?(data: string): void;
-}
-
-const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
-const stripAnsi = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, "");
-const screen = (component: Shown, width = SETTINGS_DIALOG_SIZE.columns): string => component.render(width).map(stripAnsi).join("\n");
-
-/** A key handler only sets state and React commits a moment later: wait until the frame holds still. */
-async function settle(component: Shown): Promise<void> {
-	let previous = component.render(SETTINGS_DIALOG_SIZE.columns).join("\n");
-	for (let quiet = 0; quiet < 2;) {
-		await turn();
-		const current = component.render(SETTINGS_DIALOG_SIZE.columns).join("\n");
-		quiet = current === previous ? quiet + 1 : 0;
-		previous = current;
-	}
-}
-
-async function press(component: Shown, ...keys: string[]): Promise<void> {
-	for (const key of keys) {
-		component.handleInput?.(key);
-		await settle(component);
-	}
-}
-
 const CLAUDE = makeModel("anthropic", "claude-opus-4");
 const GPT = makeModel("openai", "gpt-4o");
 
@@ -87,9 +47,9 @@ interface Session {
 	done: Promise<void>;
 }
 
-const ROOMY: TerminalSize = { columns: 120, rows: 40 };
+const ROOMY: Terminal = { columns: 120, rows: 40 };
 
-function makeCtx(terminal: TerminalSize = ROOMY): FakeCtxHarness {
+function makeCtx(terminal: Terminal = ROOMY): FakeCtxHarness {
 	const tui = createFakeTui({ rows: terminal.rows, columns: terminal.columns });
 	return createFakeCtx({ cwd: env.cwd, theme: makeTheme(), tui: tui.tui, models: [CLAUDE, GPT], model: CLAUDE });
 }
@@ -133,16 +93,9 @@ describe("the dialog's data matches the extension's", () => {
 		assert.deepEqual(toDialogPrefs(readPreferences()), PREFS_DEFAULTS);
 	});
 
-	it("has a row for every setting the menu has, under the same label", async () => {
+	it("has a row for every setting, under its label", async () => {
 		const titles = ["Startup Gate", "Splash Banner", "Info Panel"];
 		const labels = ["Startup gate menu", "Background color", "Animate gradient", "Logo style", "Model + prompt size reveal animation", "Summarize uncommitted changes", "Summary model"];
-
-		// What the showMenu fallback offers, read from the menu itself on a terminal too small for the dialog.
-		const { dialog: menu, done } = await openSettings(makeCtx({ columns: 80, rows: 24 }));
-		const menuText = screen(menu, 90);
-		await press(menu, KEY.esc);
-		await done;
-		for (const text of [...titles, ...labels]) assert.ok(menuText.includes(text), `the menu has "${text}"`);
 
 		// Each section on its own mount: the sidebar lists the titles, the pane the rows.
 		const seen: string[] = [];
@@ -254,14 +207,14 @@ describe("the adapter", () => {
 });
 
 describe("the size of the generated dialog", () => {
-	/** The dialog's own size: mounted with room to spare and left to take the rows its content needs. */
-	function measure(frame: TerminalSize = { columns: 160, rows: 80 }, keys: string[] = []): { size: TerminalSize; rows: string[] } {
+	/** A terminal's frame: the dialog is mounted in it and takes the rows its content needs, up to the frame's. */
+	function mountIn(frame: Terminal, keys: string[] = []): { rows: string[]; text: string } {
 		const element: ReactNode = createElement(SplashSettings, { initial: PREFS_DEFAULTS, onDone: () => {} });
 		const mounted = mountOpenTui(element, { width: frame.columns, height: frame.rows, theme: MOCKUP_PALETTE, fitContent: true });
 		try {
 			for (const key of keys) mounted.input(key);
 			const rows = mounted.charFrame().split("\n");
-			return { size: { columns: Math.max(...rows.map((row) => [...row.trimEnd()].length)), rows: rows.length }, rows };
+			return { rows, text: rows.join("\n") };
 		} finally {
 			mounted.unmount();
 		}
@@ -270,11 +223,11 @@ describe("the size of the generated dialog", () => {
 	/** Down to Info Panel, into its list, down to Summary model, Enter: the picker opens. */
 	const OPEN_PICKER = [KEY.down, KEY.down, KEY.right, KEY.down, KEY.down, KEY.enter];
 
-	async function measureWithPicker(frame: TerminalSize): Promise<string[]> {
-		const element: ReactNode = createElement(SplashSettings, { initial: PREFS_DEFAULTS, onDone: () => {} });
+	async function pickerIn(frame: Terminal, models?: unknown[], more: string[] = []): Promise<string[]> {
+		const element: ReactNode = createElement(SplashSettings, { initial: PREFS_DEFAULTS, ...(models ? { models } : {}), onDone: () => {} } as never);
 		const mounted = mountOpenTui(element, { width: frame.columns, height: frame.rows, theme: MOCKUP_PALETTE, fitContent: true });
 		try {
-			for (const key of OPEN_PICKER) {
+			for (const key of [...OPEN_PICKER, ...more]) {
 				mounted.input(key);
 				await turn();
 			}
@@ -284,138 +237,175 @@ describe("the size of the generated dialog", () => {
 		}
 	}
 
-	it("dialogFits needs every column and every row of the dialog", () => {
-		const dialog = SETTINGS_DIALOG_SIZE;
-		assert.equal(dialogFits(dialog, dialog), true, "a terminal exactly the dialog's size fits it");
-		assert.equal(dialogFits({ columns: dialog.columns + 60, rows: dialog.rows + 30 }, dialog), true);
-		assert.equal(dialogFits({ columns: dialog.columns - 1, rows: dialog.rows + 30 }, dialog), false, "one column short");
-		assert.equal(dialogFits({ columns: dialog.columns + 60, rows: dialog.rows - 1 }, dialog), false, "one row short");
-		assert.equal(dialogFits(undefined, dialog), false, "an unknown size counts as too small");
+	/** Columns up to the last visible character, which leaves out the panel's two padding columns. */
+	const widest = (rows: string[]): number => Math.max(...rows.map((row) => [...row.trimEnd()].length));
+
+	const ROOM = { columns: 160, rows: 80 };
+	const SMALLEST = { columns: 80, rows: 24 };
+
+	it("with room to spare the dialog is its full width; the picker that replaces it is as wide", async () => {
+		// The panel is SETTINGS_DIALOG_WIDTH columns wide, and its last two are padding that no character sits in.
+		assert.equal(widest(mountIn(ROOM).rows), SETTINGS_DIALOG_WIDTH - 2);
+		assert.equal(widest(await pickerIn(ROOM)), SETTINGS_DIALOG_WIDTH - 2);
 	});
 
-	it("dialogFits at common terminal sizes", () => {
-		assert.equal(dialogFits({ columns: 80, rows: 24 }, SETTINGS_DIALOG_SIZE), false, "a default 80x24 window is too small");
-		assert.equal(dialogFits({ columns: 100, rows: 24 }, SETTINGS_DIALOG_SIZE), false, "100x24 has the columns but not the rows the picker needs");
-		assert.equal(dialogFits({ columns: 100, rows: 27 }, SETTINGS_DIALOG_SIZE), false, "one row short at 100 columns");
-		assert.equal(dialogFits({ columns: 100, rows: 28 }, SETTINGS_DIALOG_SIZE), true);
-		assert.equal(dialogFits({ columns: 83, rows: 40 }, SETTINGS_DIALOG_SIZE), false, "one column short");
-		assert.equal(dialogFits({ columns: 120, rows: 40 }, SETTINGS_DIALOG_SIZE), true);
+	it("the picker is taller than the settings view, and neither is cut at 80x24", async () => {
+		const settings = mountIn(SMALLEST).rows;
+		const picker = await pickerIn(SMALLEST);
+		assert.ok(settings.length <= SMALLEST.rows, `the settings view is ${settings.length} rows`);
+		assert.ok(picker.length <= SMALLEST.rows, `the picker is ${picker.length} rows`);
+		assert.ok(widest(settings) <= SMALLEST.columns && widest(picker) <= SMALLEST.columns, "nothing is wider than 80 columns");
+		assert.ok(picker.length > settings.length, "the picker is the taller view");
+		assert.match(settings.at(-2)!, /esc cancel/, "the settings view's last legend row is drawn");
+		assert.match(picker.at(-2)!, /esc back/, "the picker's last legend row is drawn");
+		assert.match(picker.join("\n"), /Select\s+Cancel/, "the picker's buttons are drawn");
+		assert.match(picker.join("\n"), /╭─ Thinking ─+╮/, "and its thinking pane");
+		for (const frame of [settings, picker]) {
+			assert.ok(frame.some((row) => /╮\s*$/.test(row)), "the right-hand panel corners are drawn");
+		}
 	});
 
-	it("the size threshold is the tallest view's own content", async () => {
-		const settings = measure().size;
-		// The panel is 84 columns wide, and its last two are padding that no character sits in.
-		assert.equal(settings.columns, SETTINGS_DIALOG_SIZE.columns - 2);
-		const picker = await measureWithPicker({ columns: 160, rows: 80 });
-		assert.deepEqual(
-			{ columns: Math.max(...picker.map((row) => [...row.trimEnd()].length)), rows: picker.length },
-			{ columns: SETTINGS_DIALOG_SIZE.columns - 2, rows: SETTINGS_DIALOG_SIZE.rows },
-			"the picker is as wide as the dialog and fixes the rows",
-		);
-		assert.ok(settings.rows < SETTINGS_DIALOG_SIZE.rows, "the settings view is shorter than the picker");
-		// The fit rule compares rows directly, which holds only while a dialog may use every row.
-		assert.equal(DIALOG_MAX_HEIGHT, 1);
+	it("takes the room it is given between 80 columns and its full width", () => {
+		for (const columns of [80, 81, 82, 83, SETTINGS_DIALOG_WIDTH, 100]) {
+			const rows = mountIn({ columns, rows: 30 }).rows;
+			assert.equal(widest(rows), Math.min(columns, SETTINGS_DIALOG_WIDTH) - 2, `${columns} columns`);
+			assert.ok(rows.some((row) => /╮\s*$/.test(row)), `${columns} columns keeps the right-hand corners`);
+		}
 	});
 
-	it("the settings view has no blank rows below its key hints", () => {
-		const rows = measure().rows;
-		assert.equal(rows.at(-1)!.trimEnd(), "▌", "the last row is the bar's closing row");
-		assert.match(rows.at(-2)!, /esc cancel/, "the key hints are the row above it");
+	it("the picker fits the same widths", async () => {
+		for (const columns of [80, 83, SETTINGS_DIALOG_WIDTH]) {
+			const rows = await pickerIn({ columns, rows: 40 });
+			assert.equal(widest(rows), Math.min(columns, SETTINGS_DIALOG_WIDTH) - 2, `${columns} columns`);
+			assert.match(rows.join("\n"), /Select\s+Cancel/, `${columns} columns keeps the buttons`);
+		}
 	});
 
-	it("the picker takes the dialog's place whole, with its thinking pane, and the dialog returns when it closes", async () => {
-		const picker = await measureWithPicker(SETTINGS_DIALOG_SIZE);
-		assert.equal(picker.length, SETTINGS_DIALOG_SIZE.rows);
-		const text = picker.join("\n");
-		assert.match(text, /PICK SUMMARY MODEL/, "the picker's title is not cut off at the top");
-		assert.match(text, /╭─ Thinking ─+╮/, "the thinking pane is drawn");
-		assert.match(text, /Select\s+Cancel/, "the picker's buttons are drawn");
-		assert.match(text, /esc back/, "the picker's last legend row is not cut off at the bottom");
-		assert.doesNotMatch(text, /Sections/, "the settings panes are not drawn behind it");
+	it("a taller terminal does not stretch it, and the settings view has no blank rows below its key hints", () => {
+		const roomy = mountIn(ROOM).rows;
+		assert.equal(roomy.length, mountIn({ columns: 100, rows: 30 }).rows.length, "the rows are the content's own");
+		assert.equal(roomy.at(-1)!.trimEnd(), "▌", "the last row is the bar's closing row");
+		assert.match(roomy.at(-2)!, /esc cancel/, "the key hints are the row above it");
+	});
+
+	it("the picker takes the dialog's place whole, with its thinking pane", async () => {
+		const picker = (await pickerIn(ROOM)).join("\n");
+		assert.match(picker, /PICK SUMMARY MODEL/, "the picker's title is not cut off at the top");
+		assert.match(picker, /╭─ Thinking ─+╮/, "the thinking pane is drawn");
+		assert.match(picker, /Select\s+Cancel/, "the picker's buttons are drawn");
+		assert.match(picker, /esc back/, "the picker's last legend row is not cut off at the bottom");
+		assert.doesNotMatch(picker, /Sections/, "the settings panes are not drawn behind it");
+	});
+
+	/** A model that offers `ids` as thinking levels, each with a description the picker can show or leave to the hint area. */
+	const leveled = (...ids: string[]) => [{
+		id: "p/deep", name: "deep", provider: "p", tags: [],
+		levels: ids.map((id, depth) => ({ id, label: id, depth: Math.min(depth, 4), desc: `${id} description` })),
+	}];
+
+	it("describes each thinking level under its row while every level fits that way, and on one row each when not", async () => {
+		const five = leveled("off", "low", "medium", "high", "max");
+		const roomy = (await pickerIn(ROOM, five)).join("\n");
+		assert.match(roomy, /max description/, "with the rows to spare each level has its description");
+		const small = (await pickerIn(SMALLEST, five)).join("\n");
+		for (const level of ["off", "low", "medium", "high", "max"]) assert.match(small, new RegExp(`\\b${level}\\s+[▰▱]`), `${level} is listed at 80x24`);
+		assert.doesNotMatch(small, /max description/, "at 80x24 the descriptions leave the pane; the hint area carries the focused one");
+	});
+
+	it("describes the focused thinking level in the hint area once the rows no longer do, and not before", async () => {
+		const five = leveled("off", "low", "medium", "high", "max");
+		const IN_THINKING_PANE = [KEY.right, KEY.down]; // the pane, then the second level
+		const small = (await pickerIn(SMALLEST, five, IN_THINKING_PANE)).join("\n");
+		assert.match(small, /┃ low: low description\./, "at 80x24 the hint area carries it");
+		assert.doesNotMatch(small, /Summaries are always generated/, "ahead of the picker's own text, which would hide it");
+		const roomy = (await pickerIn(ROOM, five, IN_THINKING_PANE)).join("\n");
+		assert.match(roomy, /Summaries are always generated/, "with room, the picker's own text stays in the hint area");
+		assert.match(roomy, /low description/, "and the level's description is under its row");
+	});
+
+	it("lists all seven levels of a model that offers them, at every size", async () => {
+		const seven = leveled("off", "minimal", "low", "medium", "high", "xhigh", "max");
+		for (const frame of [ROOM, SMALLEST]) {
+			const text = (await pickerIn(frame, seven)).join("\n");
+			for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) assert.match(text, new RegExp(`\\b${level}\\s+[▰▱]`), `${level} is listed at ${frame.columns}x${frame.rows}`);
+		}
+	});
+
+	it("keeps the thinking pane inside the dialog when a model's id and tags are wider than it", async () => {
+		const wide = [{
+			id: "p/wide", name: "wide", provider: "p", tags: ["vision", "tools", "fast"],
+			levels: [{ id: "off", label: "Off", depth: 0, desc: "no thinking" }],
+		}, {
+			id: "p/long-id", name: "long", provider: "p", tags: [],
+			levels: [{ id: "off", label: "Off", depth: 0, desc: "no thinking" }],
+		}];
+		wide[0]!.id = "p/" + "a-very-long-model-identifier";
+		wide[1]!.id = "p/" + "x".repeat(60);
+		for (const columns of [80, SETTINGS_DIALOG_WIDTH]) {
+			const rows = await pickerIn({ columns, rows: 30 }, wide);
+			assert.equal(widest(rows), columns - 2, `${columns} columns: nothing draws into the panel's padding`);
+			assert.ok(rows.some((row) => /╮\s*$/.test(row)), `${columns} columns: the pane's right corner is drawn`);
+		}
 	});
 
 	it("the picker scrolls: the last of many models is still on screen when highlighted", async () => {
 		const models = Array.from({ length: 30 }, (_, index) => ({ id: `p/m${index}`, name: `model-${index}`, provider: "p", tags: [], levels: null }));
 		const element: ReactNode = createElement(SplashSettings, { initial: PREFS_DEFAULTS, models, sessionModelId: "p/m0", onDone: () => {} });
-		const mounted = mountOpenTui(element, { width: 160, height: 80, theme: MOCKUP_PALETTE, fitContent: true });
-		try {
-			for (const key of [...OPEN_PICKER, ...Array.from({ length: 29 }, () => KEY.down)]) {
-				mounted.input(key);
-				await new Promise((resolve) => setTimeout(resolve, 15));
+		for (const frame of [ROOM, SMALLEST]) {
+			const mounted = mountOpenTui(element, { width: frame.columns, height: frame.rows, theme: MOCKUP_PALETTE, fitContent: true });
+			try {
+				for (const key of [...OPEN_PICKER, ...Array.from({ length: 29 }, () => KEY.down)]) {
+					mounted.input(key);
+					await new Promise((resolve) => setTimeout(resolve, 15));
+				}
+				const rows = mounted.charFrame().split("\n");
+				assert.ok(rows.length <= frame.rows, `scrolling does not make it taller than ${frame.rows} rows`);
+				assert.ok(rows.some((row) => /▸ model-29\b/.test(row)), `the highlighted last model is visible at ${frame.columns}x${frame.rows}`);
+				assert.ok(rows.every((row) => !/\bmodel-0\b/.test(row)), "the top of the list has scrolled out");
+			} finally {
+				mounted.unmount();
 			}
-			const rows = mounted.charFrame().split("\n");
-			assert.equal(rows.length, SETTINGS_DIALOG_SIZE.rows, "scrolling does not change the height");
-			assert.ok(rows.some((row) => /▸ model-29\b/.test(row)), "the highlighted last model is visible");
-			assert.ok(rows.every((row) => !/\bmodel-0\b/.test(row)), "the top of the list has scrolled out");
-		} finally {
-			mounted.unmount();
 		}
 	});
 
-	it("a frame with too few rows cuts the view being shown", async () => {
-		const settingsRows = measure().rows.length;
-		const cutSettings = measure({ columns: SETTINGS_DIALOG_SIZE.columns, rows: settingsRows - 1 }).rows;
-		assert.equal(cutSettings.length, settingsRows - 1, "one row less loses the closing row of the bar");
+	it("a frame smaller than 80x24 clips the view being shown", async () => {
+		const settings = mountIn(SMALLEST).rows;
+		const cutSettings = mountIn({ columns: SMALLEST.columns, rows: settings.length - 1 }).rows;
+		assert.equal(cutSettings.length, settings.length - 1, "one row less loses the closing row of the bar");
 		assert.match(cutSettings.at(-1)!, /esc cancel/, "so the key hints are now last");
 
-		const cutPicker = await measureWithPicker({ columns: SETTINGS_DIALOG_SIZE.columns, rows: SETTINGS_DIALOG_SIZE.rows - 1 });
-		assert.equal(cutPicker.length, SETTINGS_DIALOG_SIZE.rows - 1);
+		const picker = await pickerIn(SMALLEST);
+		const cutPicker = await pickerIn({ columns: SMALLEST.columns, rows: picker.length - 1 });
+		assert.equal(cutPicker.length, picker.length - 1);
 		assert.match(cutPicker.at(-1)!, /esc back/, "one row less loses the picker's closing row, leaving its legend last");
-		const cutMore = await measureWithPicker({ columns: SETTINGS_DIALOG_SIZE.columns, rows: 20 });
-		assert.ok(cutMore.every((row) => !/Select\s+Cancel/.test(row)), "a frame of 20 rows loses the picker's buttons");
+		const cutMore = await pickerIn({ columns: SMALLEST.columns, rows: 16 });
+		assert.ok(cutMore.every((row) => !/Select\s+Cancel/.test(row)), "a frame of 16 rows loses the picker's buttons");
 	});
 
-	it("a frame narrower than the dialog loses the panels' right corners", () => {
-		const narrow = measure({ columns: SETTINGS_DIALOG_SIZE.columns - 6, rows: SETTINGS_DIALOG_SIZE.rows }).rows;
+	it("a frame narrower than 80 columns loses the panels' right corners", () => {
+		const narrow = mountIn({ columns: SMALLEST.columns - 6, rows: SMALLEST.rows }).rows;
 		assert.ok(narrow.every((row) => !/[╮╯]$/.test(row.trimEnd())));
 	});
-});
 
-describe("readTerminalSize", () => {
-	it("reads the TUI's terminal without showing anything", async () => {
-		const ctx = makeCtx({ columns: 132, rows: 43 });
-		assert.deepEqual(await readTerminalSize(ctx.ctx), { columns: 132, rows: 43 });
-		assert.deepEqual(ctx.customComponents, [], "the probe finishes inside its factory, so pi never shows it");
-		assert.deepEqual(ctx.customOptions, [], "and nothing is mounted for it");
-		assert.deepEqual(ctx.notifications, []);
-	});
-
-	it("asks nothing of a pi that would close another extension's overlay", async () => {
-		const calls: unknown[] = [];
-		const ctx = { ui: { custom: () => { calls.push(1); return Promise.resolve(undefined); } } };
-		assert.equal(await readTerminalSize(ctx as never, "1.2.0"), undefined);
-		assert.deepEqual(calls, [], "ctx.ui.custom is not called at all");
-		assert.equal(MIN_SIZE_PROBE_HOST_VERSION, "1.3.0");
-		for (const version of ["1.3.0", "1.4.0", "1.5.2", "2.0.0"]) {
-			assert.deepEqual(await readTerminalSize(makeCtx({ columns: 132, rows: 43 }).ctx, version), { columns: 132, rows: 43 }, version);
-		}
-	});
-
-	it("reports an unknown size when the terminal cannot be read or pi rejects the probe", async () => {
-		const withTerminal = (terminal: unknown) => ({
-			ui: { custom: (factory: (tui: unknown, ...rest: unknown[]) => unknown) => new Promise((resolve) => { factory({ terminal }, undefined, undefined, resolve); }) },
-		});
-		assert.equal(await readTerminalSize(withTerminal(undefined) as never), undefined, "a TUI with no terminal");
-		for (const terminal of [{ columns: 0, rows: 40 }, { columns: 120, rows: Number.NaN }, { columns: 120.5, rows: 40 }, { columns: "120", rows: "40" }]) {
-			assert.equal(await readTerminalSize(withTerminal(terminal) as never), undefined, JSON.stringify(terminal));
-		}
-		assert.equal(await readTerminalSize({ ui: { custom: () => Promise.reject(new Error("no ui")) } } as never), undefined);
+	it("asks pi for every row the terminal has", () => {
+		// The dialog sizes itself to the rows the overlay is given, so the overlay must not be cut short of them.
+		assert.equal(DIALOG_MAX_HEIGHT, 1);
 	});
 });
 
 describe("/topping-splash-settings with the generated dialog", () => {
-	it("opens it on a terminal with room, as a titled overlay the size the dialog needs", async (t) => {
+	it("opens it as a titled overlay that asks pi for the dialog's width and every row", async (t) => {
 		const noConsole = watchConsole(t);
 		const { ctx, done, dialog } = await openSettings(makeCtx());
-		assert.ok(!(dialog instanceof MenuComponent), "not the showMenu fallback");
-		assert.equal(ctx.customComponents.length, 1, "the size probe is not a second dialog");
+		assert.equal(ctx.customComponents.length, 1, "one dialog and nothing else, such as a probe for the terminal's size");
 		assert.match(screen(dialog), /PI TOPPING SPLASH: SETTINGS/);
 		assert.match(screen(dialog), /Startup gate menu/);
-		const options = ctx.customOptions[0] as { overlay?: boolean; overlayOptions?: { width?: unknown }; blocked?: { kind?: string; message?: string } };
-		assert.equal(options.overlay, true);
-		assert.equal(options.overlayOptions?.width, SETTINGS_DIALOG_SIZE.columns);
-		assert.deepEqual(options.blocked, { kind: "question", message: SETTINGS_DIALOG_TITLE });
-		for (const line of dialog.render(SETTINGS_DIALOG_SIZE.columns)) assert.equal([...stripAnsi(line)].length, SETTINGS_DIALOG_SIZE.columns, "every line is exactly the overlay's width");
+		assert.deepEqual(ctx.customOptions[0], {
+			overlay: true,
+			blocked: { kind: "question", message: SETTINGS_DIALOG_TITLE },
+			overlayOptions: { width: SETTINGS_DIALOG_WIDTH, maxHeight: "100%" },
+		});
+		for (const line of dialog.render(SETTINGS_DIALOG_WIDTH)) assert.equal([...stripAnsi(line)].length, SETTINGS_DIALOG_WIDTH, "every line is exactly the overlay's width");
 		await press(dialog, KEY.esc);
 		await done;
 		noConsole();
@@ -491,41 +481,44 @@ describe("/topping-splash-settings with the generated dialog", () => {
 		noConsole();
 	});
 
-	it("keeps the showMenu dialog on a terminal too narrow or too short for the generated one", async () => {
-		for (const terminal of [
-			{ columns: SETTINGS_DIALOG_SIZE.columns - 1, rows: 60 },
-			{ columns: 200, rows: SETTINGS_DIALOG_SIZE.rows - 1 },
-			{ columns: 80, rows: 24 },
-		]) {
-			const { dialog, done } = await openSettings(makeCtx(terminal));
-			assert.ok(dialog instanceof MenuComponent, `${terminal.columns}x${terminal.rows} opens the showMenu dialog`);
+	it("opens the same dialog on a default 80x24 terminal, with nothing cut", async () => {
+		const { dialog, done } = await openSettings(makeCtx({ columns: 80, rows: 24 }));
+		const settings = dialog.render(80).map(stripAnsi);
+		assert.ok(settings.length <= 24, `${settings.length} rows`);
+		assert.ok(settings.every((line) => [...line].length === 80), "every line is exactly the 80 columns pi gives the overlay");
+		assert.match(settings.join("\n"), /PI TOPPING SPLASH: SETTINGS/);
+		assert.match(settings.join("\n"), /Apply\s+Cancel/);
+		assert.match(settings.join("\n"), /esc cancel/, "the key hints are not cut off");
+
+		await press(dialog, KEY.down, KEY.down, KEY.right, KEY.down, KEY.down, KEY.enter);
+		const picker = dialog.render(80).map(stripAnsi);
+		assert.equal(picker.length, 24, "the picker takes all 24 rows");
+		assert.ok(picker.every((line) => [...line].length === 80));
+		assert.match(picker.join("\n"), /PICK SUMMARY MODEL/);
+		assert.match(picker.join("\n"), /Select\s+Cancel/);
+		assert.match(picker.join("\n"), /esc back/);
+		await press(dialog, KEY.esc, KEY.esc, KEY.esc);
+		await done;
+	});
+
+	it("still opens the dialog on a terminal smaller than 80x24; it is clipped, and nothing else is opened", async () => {
+		for (const terminal of [{ columns: 60, rows: 30 }, { columns: 120, rows: 18 }, { columns: 50, rows: 12 }]) {
+			const { ctx, dialog, done } = await openSettings(makeCtx(terminal));
+			assert.equal(ctx.customComponents.length, 1, `${terminal.columns}x${terminal.rows}`);
+			assert.match(screen(dialog, terminal.columns), /PI TOPPING SPLASH: SETTINGS/, `${terminal.columns}x${terminal.rows} shows the dialog`);
+			for (const line of dialog.render(terminal.columns)) assert.equal([...stripAnsi(line)].length, terminal.columns, "every line is exactly the overlay's width");
 			await press(dialog, KEY.esc);
 			await done;
 		}
 	});
 
-	it("opens the generated dialog at exactly its own size", async () => {
-		const { dialog, done } = await openSettings(makeCtx({ columns: SETTINGS_DIALOG_SIZE.columns, rows: SETTINGS_DIALOG_SIZE.rows }));
-		assert.ok(!(dialog instanceof MenuComponent));
-		await press(dialog, KEY.esc);
-		await done;
-	});
-
-	it("reports a failing dialog and opens the showMenu dialog, so the settings stay reachable", async () => {
+	it("reports a failing dialog and changes nothing", async () => {
 		const ctx = makeCtx();
-		const custom = ctx.ctx.ui.custom.bind(ctx.ctx.ui);
-		let calls = 0;
-		// The first call is the size probe; the second is the generated dialog.
-		(ctx.ctx.ui as { custom: unknown }).custom = ((factory: never, options: never) => {
-			calls += 1;
-			return calls === 2 ? Promise.reject(new Error("boom")) : custom(factory, options);
-		}) as typeof ctx.ctx.ui.custom;
-		const { dialog, done } = await openSettings(ctx);
-		assert.ok(dialog instanceof MenuComponent, "the fallback menu is shown");
+		(ctx.ctx.ui as { custom: unknown }).custom = (() => Promise.reject(new Error("boom"))) as typeof ctx.ctx.ui.custom;
+		await showSplashSettings(ctx.ctx);
 		assert.ok(ctx.notifications.some((n) => n.type === "error" && /boom/.test(n.message)), "the failure is reported");
-		await press(dialog, KEY.esc);
-		await done;
-		assert.equal(storedPreferences().menuGate, "off");
+		assert.equal(ctx.notifications.some((n) => n.type === "info"), false, "and nothing is announced as saved");
+		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false, "no file written");
 	});
 
 	it("opens with an empty model registry; the picker is empty and nothing throws", async (t) => {

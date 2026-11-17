@@ -31,42 +31,20 @@ to change three sections of settings: the startup gate toggle, the splash banner
 color, gradient animation, and logo style, and the info panel's reveal animation and startup changes
 summary.
 
-On a terminal at least 84 columns wide and 28 rows tall they open as a dialog: the sections on the
-left, the highlighted section's settings on the right, a description of the highlighted setting
-below, and an **Apply** / **Cancel** bar. ↑/↓ move, Tab goes to the next pane (sections, settings,
+The settings open as a dialog: the sections
+on the left, the highlighted section's settings on the right, a description of the highlighted
+setting below, and an **Apply** / **Cancel** bar. ↑/↓ move, Tab goes to the next pane (sections, settings,
 buttons) and Shift+Tab to the previous one, → or Enter opens a section, Space toggles, ←/→ cycle,
 Ctrl+S applies, and Esc goes back one pane; from the section list it cancels, and with unsaved
-changes a second Esc discards them. Enter on **Summary model** opens a model picker in the
-dialog's place, with a model list and a thinking pane (type `/` to filter; summaries always run with
-thinking off, so the level is ignored), and ⌫ resets it to the session model. The dialog is drawn at a fixed
-size, so a smaller terminal, or a dialog that fails to run, opens the original menu instead:
+changes a second Esc discards them. Enter on a toggle or cycle row does nothing; on **Summary model**
+it opens a model picker in the dialog's place, with a model list and a thinking pane (type `/` to
+filter; summaries always run with thinking off, so the level is ignored), and ⌫ resets it to the
+session model.
 
-```text
-╔═[ Pi Topping Splash: Settings ]══════════════════════════════════════════╗
-╟─ Startup Gate ───────────────────────────────────────────────────────────╢
-║  ❯ [■] Startup gate menu                                             ON  ║
-║                                                                          ║
-╟─ Splash Banner ──────────────────────────────────────────────────────────╢
-║    [■] Background color                                     ‹ rainbow ›  ║
-║    [■] Animate gradient                                         ‹ off ›  ║
-║    [■] Logo style                                            ‹ symbol ›  ║
-║                                                                          ║
-╟─ Info Panel ─────────────────────────────────────────────────────────────╢
-║    [■] Model + prompt size reveal animation                          ON  ║
-║    [■] Summarize uncommitted changes                                 ON  ║
-║    [■] Summary model                                    session model ›  ║
-║                                                                          ║
-╟──────────────────────────────────────────────────────────────────────────╢
-║                                                 [ Apply ]    ‹ Cancel ›  ║
-╟──────────────────────────────────────────────────────────────────────────╢
-║  ↑↓ move  ␣ toggle  ←→ cycle  ⏎ pick  ⌫ clear  ⇥ actions  esc cancel     ║
-╚═══════════════════════════════════════════════════════════════════[ 1/7 ]╝
-```
-
-In the menu, move with ↑/↓, toggle with Space, and cycle with ←/→. Tab jumps to the action bar at the bottom,
-where ←/→ choose **Apply** (save and close) or **Cancel** and Enter fires the highlighted button;
-Esc also cancels. Enter on a toggle or cycle row does nothing; it only opens the **Summary model**
-picker.
+The dialog is 84 columns wide where the terminal has them and takes the rows its content needs. On a
+smaller terminal it shrinks to 80 columns by 24 rows: the picker then lists the thinking levels one
+to a row and shows the highlighted level's description in the hint area instead of under it. A
+terminal smaller than 80x24 clips the dialog; there is no other layout to fall back on.
 
 - **Startup gate menu** — show the startup gate menu below the splash on launch (OFF by default; turn it on here if you want the gate)
 - **Background color** — cycle with ←/→ through `rainbow` (a full-width hue sweep), the seven

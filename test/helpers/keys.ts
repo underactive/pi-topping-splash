@@ -12,4 +12,6 @@ export const KEY = {
 	left: "\x1b[D",
 	pageUp: "\x1b[5~",
 	pageDown: "\x1b[6~",
+	shiftTab: "\x1b[Z",
+	ctrlS: "\x13",
 } as const;

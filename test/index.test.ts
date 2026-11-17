@@ -6,11 +6,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
 import type { ExecResult } from "@earendil-works/pi-coding-agent";
-import { MenuComponent } from "@underactive/pi-topping-primitives/menu";
 import piStartupGreeter from "../index.ts";
 import { gradientAnimation, logoAnimation, startLogoAnimation, stopGradientAnimation, stopLogoAnimation } from "../src/animate.ts";
 import { INSTALLER_LOGO_LAST_FRAME } from "../src/installer-logo.ts";
-import { GATE_PANEL_MAX_WIDTH } from "../src/gate-ui.ts";
 import { EDITOR_RESERVED_ROWS, startSummaryStream, stopSummaryStream, summarizeChanges, summaryStream } from "../src/changes-summary.ts";
 import { LOCAL_CHANGES_COMMAND } from "../src/local-changes.ts";
 import { readPreferences, writePreferences, type SplashPreferences } from "../src/preferences.ts";
@@ -18,9 +16,10 @@ import { stopTaglineReveal, taglineReveal } from "../src/reveal.ts";
 import { headerRenderState, state } from "../src/state.ts";
 import { buildHeaderParts } from "../src/splash.ts";
 import { sanitizeTuiText } from "../src/text.ts";
-import { SETTINGS_DIALOG_SIZE } from "../src/ui/dialog-fit.ts";
+import { SETTINGS_DIALOG_WIDTH } from "../src/ui/dialog-size.ts";
 import { setArgv, setEnv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
 import { createFakeCtx, FAKE_SESSION_ID, makeAssistantMessage, makeModel, type FakeCtxHarness } from "./helpers/fake-ctx.ts";
+import { press, screen, type Shown } from "./helpers/dialog.ts";
 import { createFakePi, type FakePiBag, type FakePiHarness } from "./helpers/fake-api.ts";
 import { createFakeTui, type FakeTuiHarness } from "./helpers/fake-tui.ts";
 import { KEY } from "./helpers/keys.ts";
@@ -94,20 +93,83 @@ function wire(options: WireOptions = {}): Wired {
 	return { pi, ctx, tui };
 }
 
-/**
- * Run the settings command on a terminal too small for the generated dialog, so it opens the
- * `showMenu` fallback, and wait until that menu is mounted. The terminal gets its rows back
- * before this returns, so nothing after it sees the small size.
- */
-async function runSettings(wired: Wired): Promise<{ handlerPromise: Promise<void>; component: { handleInput(data: string): void } }> {
-	const rows = wired.tui.tui.terminal.rows;
+/** Each setting's place in the dialog: its section in the sidebar, then its row in that section's list. */
+const SETTING_ROWS = {
+	menuGate: { section: 0, row: 0 },
+	backgroundColor: { section: 1, row: 0 },
+	gradientAnimation: { section: 1, row: 1 },
+	logoStyle: { section: 1, row: 2 },
+	taglineReveal: { section: 2, row: 0 },
+	changesSummary: { section: 2, row: 1 },
+	changesSummaryModel: { section: 2, row: 2 },
+} as const;
+type SettingId = keyof typeof SETTING_ROWS;
+
+/** The generated settings dialog, opened through the real command, and a user's way around it. */
+interface SettingsRun {
+	/** The command's own promise. */
+	handlerPromise: Promise<void>;
+	dialog: Shown;
+	/** Put the cursor on `id`'s row the way a user does: down the sections, into the list, down to the row. */
+	to(id: SettingId): Promise<void>;
+	/** Keys one at a time, each given the time to commit. */
+	press(...keys: string[]): Promise<void>;
+	/** Ctrl+S. */
+	apply(): Promise<void>;
+	/** Escape until the dialog is gone without applying. With unsaved changes it asks first. */
+	cancel(): Promise<void>;
+}
+
+/** Run the settings command and wait until its dialog is on screen. */
+async function runSettings(wired: Wired): Promise<SettingsRun> {
 	const mounted = wired.ctx.customComponents.length;
-	wired.tui.resizeRows(SETTINGS_DIALOG_SIZE.rows - 1);
 	const handlerPromise = Promise.resolve(wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never));
 	await until(() => wired.ctx.customComponents.length > mounted);
-	wired.tui.resizeRows(rows);
-	assert.equal(wired.ctx.customComponents.length, mounted + 1, "the fallback menu is the one component shown");
-	return { handlerPromise, component: wired.ctx.customComponents.at(-1) as { handleInput(data: string): void } };
+	const dialog = wired.ctx.customComponents.at(-1) as Shown;
+	await press(dialog);
+	let closed = false;
+	void handlerPromise.then(() => { closed = true; });
+	// What the dialog's own cursors are, so `to` only presses the keys that are needed.
+	let section = 0;
+	let inList = false;
+	const rows = [0, 0, 0];
+	return {
+		handlerPromise,
+		dialog,
+		press: (...keys) => press(dialog, ...keys),
+		async to(id) {
+			const target = SETTING_ROWS[id];
+			if (inList && section !== target.section) {
+				await press(dialog, KEY.esc);
+				inList = false;
+			}
+			if (!inList) {
+				const steps = target.section - section;
+				await press(dialog, ...Array.from({ length: Math.abs(steps) }, () => (steps > 0 ? KEY.down : KEY.up)), KEY.right);
+				section = target.section;
+				inList = true;
+			}
+			const down = target.row - rows[section]!;
+			await press(dialog, ...Array.from({ length: Math.abs(down) }, () => (down > 0 ? KEY.down : KEY.up)));
+			rows[section] = target.row;
+		},
+		apply: () => press(dialog, KEY.ctrlS),
+		async cancel() {
+			for (let attempt = 0; attempt < 5 && !closed; attempt++) await press(dialog, KEY.esc);
+			assert.ok(closed, "escape closes the dialog");
+		},
+	};
+}
+
+/** Open the dialog, make `edits` (a setting, then the keys that change it), and apply. */
+async function applySettings(wired: Wired, ...edits: [SettingId, ...string[]][]): Promise<void> {
+	const settings = await runSettings(wired);
+	for (const [id, ...keys] of edits) {
+		await settings.to(id);
+		await settings.press(...keys);
+	}
+	await settings.apply();
+	await settings.handlerPromise;
 }
 
 const DIRTY_STATUS = "?? added.ts\0 M changed.ts\0 D deleted.ts\0";
@@ -141,27 +203,14 @@ function startup(wired: Wired, reason = "startup"): Promise<void> {
 	return wired.pi.emit("session_start", { type: "session_start", reason }, wired.ctx.ctx);
 }
 
-/** Focus the settings action bar and fire its primary Apply button. */
-function pressApply(menu: { handleInput(data: string): void }): void {
-	menu.handleInput(KEY.tab);
-	menu.handleInput(KEY.enter);
-}
-
-/**
- * Persist preference choices through the real settings command, into this test's temp agent dir.
- * Drives the menu component synchronously before awaiting the handler, since the fake ui.custom
- * only resolves once the component calls `done` — awaiting first would deadlock.
- * Menu rows in cursor order: menuGate (0), backgroundColor (1), gradientAnimation (2), logoStyle (3), taglineReveal (4), changesSummary (5), changesSummaryModel (6).
- */
+/** Persist preference choices through the real settings command, into this test's temp agent dir. */
 async function persist(target: Partial<SplashPreferences>): Promise<void> {
 	const wired = wire();
 	const current = readPreferences();
-	const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-	if (target.menuGate !== undefined && target.menuGate !== current.menuGate) component.handleInput(KEY.space);
-	for (let index = 0; index < 4; index++) component.handleInput(KEY.down);
-	if (target.taglineReveal !== undefined && target.taglineReveal !== current.taglineReveal) component.handleInput(KEY.space);
-	pressApply(component);
-	await handlerPromise;
+	const edits: [SettingId, ...string[]][] = [];
+	if (target.menuGate !== undefined && target.menuGate !== current.menuGate) edits.push(["menuGate", KEY.space]);
+	if (target.taglineReveal !== undefined && target.taglineReveal !== current.taglineReveal) edits.push(["taglineReveal", KEY.space]);
+	await applySettings(wired, ...edits);
 	resetModuleState();
 }
 
@@ -326,10 +375,7 @@ describe("commands (I-06, I-07)", () => {
 	it("applying the toggle persists the flipped value and notifies success", async () => {
 		const wired = wire();
 		assert.equal(readPreferences().menuGate, "off", "starts at the default");
-		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-		component.handleInput(KEY.space);
-		pressApply(component);
-		await handlerPromise;
+		await applySettings(wired, ["menuGate", KEY.space]);
 		assert.equal(readPreferences().menuGate, "on", "choice written to disk");
 		assert.equal(readPreferences().taglineReveal, "on", "untouched toggle keeps its value");
 		assert.equal(wired.ctx.setHeaderCalls.length, 0, "header untouched — the gate is decided at startup");
@@ -341,11 +387,7 @@ describe("commands (I-06, I-07)", () => {
 
 	it("toggling the tagline animation persists taglineReveal and leaves menuGate alone", async () => {
 		const wired = wire();
-		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-		for (let index = 0; index < 4; index++) component.handleInput(KEY.down);
-		component.handleInput(KEY.space);
-		pressApply(component);
-		await handlerPromise;
+		await applySettings(wired, ["taglineReveal", KEY.space]);
 		const prefs = readPreferences();
 		assert.equal(prefs.taglineReveal, "off", "choice written to disk");
 		assert.equal(prefs.menuGate, "off", "gate preference untouched");
@@ -353,10 +395,11 @@ describe("commands (I-06, I-07)", () => {
 
 	it("escape cancels without writing or notifying success", async () => {
 		const wired = wire();
-		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-		component.handleInput(KEY.space);
-		component.handleInput(KEY.esc);
-		await handlerPromise;
+		const settings = await runSettings(wired);
+		await settings.to("menuGate");
+		await settings.press(KEY.space);
+		await settings.cancel();
+		await settings.handlerPromise;
 		assert.equal(readPreferences().menuGate, "off", "preference untouched");
 		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false, "no file written");
 		assert.ok(!wired.ctx.notifications.some((n) => n.type === "info"), "no success notification");
@@ -386,10 +429,7 @@ describe("commands (I-06, I-07)", () => {
 		writeFileSync(blocker, "occupied");
 		const restoreAgentDir = setEnv("PI_CODING_AGENT_DIR", blocker);
 		try {
-			const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-			component.handleInput(KEY.space);
-			pressApply(component);
-			await handlerPromise;
+			await applySettings(wired, ["menuGate", KEY.space]);
 		} finally {
 			restoreAgentDir();
 		}
@@ -398,171 +438,109 @@ describe("commands (I-06, I-07)", () => {
 		assert.equal(readPreferences().menuGate, "off", "preference unchanged after the failed write");
 	});
 
-	it("non-TUI mode notifies an error and shows no menu", async () => {
+	it("non-TUI mode notifies an error and shows no dialog", async () => {
 		const wired = wire({ mode: "rpc" });
 		await wired.pi.commands.get("topping-splash-settings")!.handler("", wired.ctx.ctx as never);
 		assert.ok(wired.ctx.notifications.some((n) => n.type === "error"), "user notified TUI is required");
-		assert.equal(wired.ctx.customComponents.length, 0, "no menu shown");
+		assert.equal(wired.ctx.customComponents.length, 0, "no dialog shown");
 		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false, "no file written");
 	});
 });
 
 describe("startup changes settings (I-18)", () => {
-	type Input = { handleInput(data: string): void };
-	type Rendered = Input & { render(width: number): string[] };
-
-	/** The `ui.custom` options primitives `showMenu` passes for the settings menu; 0.13.0 added `blocked`. */
-	const SETTINGS_MENU_OPTIONS = {
+	/** The overlay the dialog opens in; the summary-model picker takes its place inside it instead of opening a second one. */
+	const SETTINGS_DIALOG_OPTIONS = {
 		overlay: true,
 		blocked: { kind: "question", message: "Pi Topping Splash: Settings" },
-		overlayOptions: { width: "90%", maxHeight: "85%" },
+		overlayOptions: { width: SETTINGS_DIALOG_WIDTH, maxHeight: "100%" },
 	};
-
-	const rendered = (component: Rendered, width = 80): string => component.render(width).map(sanitizeTuiText).join("\n");
-
-	/** Run the settings command, moving the cursor `rowsDown` rows; 6 lands on the Summary model row. */
-	async function openSettings(wired: Wired, rowsDown = 6): Promise<{ menu: MenuComponent; finished: Promise<void> }> {
-		const { handlerPromise: finished } = await runSettings(wired);
-		const menu = wired.ctx.customComponents[0];
-		assert.ok(menu instanceof MenuComponent, "the command mounts the shared primitives menu");
-		for (let index = 0; index < rowsDown; index++) menu.handleInput(KEY.down);
-		return { menu, finished };
-	}
-
-	/** The picker `ui.custom` mounts over the menu, which stays open underneath it. */
-	async function pickerOver(wired: Wired): Promise<Rendered> {
-		await until(() => wired.ctx.customComponents.length > 1);
-		assert.equal(wired.ctx.mountedComponents.length, 2, "the menu stays mounted under the picker");
-		return wired.ctx.customComponents.at(-1) as Rendered;
-	}
-
-	/** The pick has settled: the picker is unmounted and the same menu takes keys again. */
-	async function pickerSettled(wired: Wired, menu: MenuComponent): Promise<void> {
-		await until(() => wired.ctx.mountedComponents.length === 1 && menu.snapshot().busy.length === 0);
-		assert.equal(wired.ctx.mountedComponents.length, 1, "only the menu is mounted");
-		assert.equal(wired.ctx.mountedComponents[0], menu, "the same menu, not a reopened one");
-		assert.deepEqual(menu.snapshot().busy, [], "the pick row is no longer busy");
-	}
 
 	function seedPreferences(changesSummaryModel: SplashPreferences["changesSummaryModel"]): void {
 		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "on", changesSummaryModel });
 	}
 
-	it("renders an Apply/Cancel action bar between two rules, above the hints, filling the 90% overlay", async () => {
+	/** Open the Summary model picker; it takes the dialog's place. */
+	async function openPicker(settings: SettingsRun): Promise<void> {
+		await settings.to("changesSummaryModel");
+		await settings.press(KEY.enter);
+		assert.match(screen(settings.dialog), /PICK SUMMARY MODEL/);
+	}
+
+	/** Pick what is highlighted: Enter moves into the thinking pane, which is ignored for a summary, and Enter again picks. */
+	const confirmPick = (settings: SettingsRun): Promise<void> => settings.press(KEY.enter, KEY.enter);
+
+	it("opens in one overlay that reports the settings question as blocked, and the picker takes its place there", async () => {
 		const wired = wire();
-		const { menu, finished } = await openSettings(wired, 0);
-		assert.deepEqual(wired.ctx.customOptions[0], SETTINGS_MENU_OPTIONS);
-		// The fake terminal is 100 columns, so pi hands the overlay 90 of them; the shared menu fills them all.
-		const lines = menu.render(90).map(sanitizeTuiText);
-		const bar = lines.findIndex((line) => line.includes("[ Apply ]"));
-		assert.ok(bar > 0, lines.join("\n"));
-		assert.match(lines[bar]!, /\[ Apply \]\s+‹ Cancel ›  ║$/, "buttons are right-aligned");
-		assert.match(lines[bar - 1]!, /^╟─+╢$/, "rule above the bar");
-		assert.match(lines[bar + 1]!, /^╟─+╢$/, "rule below the bar");
-		assert.ok(lines[bar + 2]!.includes("⇥ actions"), lines[bar + 2]);
-		assertLinesExact(lines, 90, "settings menu rows fill the 90-column overlay");
-		menu.handleInput(KEY.esc);
-		await finished;
+		const settings = await runSettings(wired);
+		assert.deepEqual(wired.ctx.customOptions, [SETTINGS_DIALOG_OPTIONS]);
+		assert.match(screen(settings.dialog), /PI TOPPING SPLASH: SETTINGS/);
+
+		await openPicker(settings);
+		assert.equal(wired.ctx.customComponents.length, 1, "no second overlay is opened for the picker");
+		assert.deepEqual(wired.ctx.customOptions, [SETTINGS_DIALOG_OPTIONS], "so no second question is reported as blocked");
+		assert.doesNotMatch(screen(settings.dialog), /Sections/, "the settings panes give way to it");
+
+		await settings.press(KEY.esc);
+		assert.match(screen(settings.dialog), /PI TOPPING SPLASH: SETTINGS/, "the same dialog comes back when the picker closes");
+		await settings.cancel();
 	});
 
-	it("Enter on a toggle or cycle row does nothing; only the action bar applies", async () => {
+	it("Enter on a toggle or cycle row does nothing; only the action bar or Ctrl+S applies", async () => {
 		const wired = wire();
 		let settled = false;
-		const { menu, finished } = await openSettings(wired, 0);
-		void finished.then(() => {
+		const settings = await runSettings(wired);
+		void settings.handlerPromise.then(() => {
 			settled = true;
 		});
-		menu.handleInput(KEY.space);
-		menu.handleInput(KEY.enter);
-		menu.handleInput(KEY.down);
-		menu.handleInput(KEY.down);
-		menu.handleInput(KEY.enter);
+		await settings.to("menuGate");
+		await settings.press(KEY.space, KEY.enter);
+		await settings.to("backgroundColor");
+		await settings.press(KEY.enter);
 		await new Promise((resolve) => setTimeout(resolve, 20));
-		assert.equal(settled, false, "Enter on ordinary rows must not close the menu");
+		assert.equal(settled, false, "Enter on ordinary rows must not close the dialog");
 		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false, "nothing written yet");
-		pressApply(menu);
-		await finished;
+		await settings.press(KEY.tab, KEY.enter); // the action bar, then its Apply button
+		await settings.handlerPromise;
 		assert.equal(readPreferences().menuGate, "on", "the staged toggle survived the stray Enters");
 	});
 
-	it("Tab hands the arrow keys to the action bar and back to the rows", async () => {
+	it("Tab hands the arrow keys to the action bar, and Shift+Tab hands them back to the rows", async () => {
 		const wired = wire();
-		const { menu, finished } = await openSettings(wired, 1);
-		menu.handleInput(KEY.tab);
-		menu.handleInput(KEY.right);
-		menu.handleInput(KEY.left);
-		menu.handleInput(KEY.tab);
-		menu.handleInput(KEY.right);
-		pressApply(menu);
-		await finished;
-		assert.equal(readPreferences().backgroundColor, "accent", "only the post-Tab arrow cycled the row");
+		const settings = await runSettings(wired);
+		await settings.to("backgroundColor");
+		await settings.press(KEY.tab, KEY.right, KEY.left, KEY.shiftTab, KEY.right);
+		await settings.apply();
+		await settings.handlerPromise;
+		assert.equal(readPreferences().backgroundColor, "accent", "only the arrow after Shift+Tab cycled the row");
 	});
 
 	it("the Cancel button closes without writing or notifying success", async () => {
 		const wired = wire();
-		const { menu, finished } = await openSettings(wired, 0);
-		menu.handleInput(KEY.space);
-		menu.handleInput(KEY.tab);
-		menu.handleInput(KEY.right);
-		menu.handleInput(KEY.enter);
-		await finished;
-		assert.equal(readPreferences().menuGate, "off", "staged change discarded");
+		const settings = await runSettings(wired);
+		await settings.to("menuGate");
+		await settings.press(KEY.tab, KEY.right, KEY.enter);
+		await settings.handlerPromise;
+		assert.equal(readPreferences().menuGate, "off");
 		assert.equal(existsSync(join(env.agentDir, "pi-topping-splash.json")), false, "no file written");
 		assert.ok(!wired.ctx.notifications.some((n) => n.type === "info"), "no success notification");
 	});
 
-	it("toggles the feature at cursor 5 and persists a summary model picked with Enter", async () => {
+	it("toggles the feature and persists a summary model picked from the list", async () => {
 		writePreferences({ menuGate: "on", taglineReveal: "on", backgroundColor: "rainbow", gradientAnimation: "off", changesSummary: "off" });
 		const wired = wire();
 		wired.ctx.bag.models.push(makeModel("provider", "fast"));
-		const { menu, finished } = await openSettings(wired, 5);
-		menu.handleInput(KEY.space);
-		menu.handleInput(KEY.down);
-		menu.handleInput(KEY.enter);
-		const picker = await pickerOver(wired);
-		for (const character of "provider/fast") picker.handleInput(character);
-		picker.handleInput(KEY.enter);
-		await pickerSettled(wired, menu);
-		assert.ok(rendered(menu).includes("provider/fast"));
-		pressApply(menu);
-		await finished;
+		const settings = await runSettings(wired);
+		await settings.to("changesSummary");
+		await settings.press(KEY.space);
+		await openPicker(settings);
+		await settings.press("/", ..."fast", KEY.enter); // filter the list down to it, then leave the filter
+		await confirmPick(settings);
+		assert.match(screen(settings.dialog), /fast\s+›/, "the row names the pick");
+		await settings.apply();
+		await settings.handlerPromise;
 		const prefs = readPreferences();
 		assert.equal(prefs.changesSummary, "on");
 		assert.deepEqual(prefs.changesSummaryModel, { provider: "provider", id: "fast" }, "the thinking pane's choice is never stored");
-	});
-
-	it("Space on the Summary model row still opens the picker", async () => {
-		const wired = wire();
-		const { menu, finished } = await openSettings(wired);
-		menu.handleInput(KEY.space);
-		const picker = await pickerOver(wired);
-		assert.deepEqual(wired.ctx.customOptions[0], SETTINGS_MENU_OPTIONS);
-		assert.deepEqual(wired.ctx.customOptions[1], {
-			overlay: true,
-			overlayOptions: { width: GATE_PANEL_MAX_WIDTH, maxHeight: "100%" },
-			blocked: { kind: "question", message: "Summary Model" },
-		});
-		assert.ok(rendered(picker).includes("Summary Model"));
-		picker.handleInput(KEY.esc);
-		await pickerSettled(wired, menu);
-		menu.handleInput(KEY.esc);
-		await finished;
-	});
-
-	it("opens the gate's two-pane model picker in a titled popup that fits every width", async () => {
-		const wired = wire();
-		const { menu, finished } = await openSettings(wired);
-		menu.handleInput(KEY.enter);
-		const picker = await pickerOver(wired);
-		const text = rendered(picker, 90);
-		for (const expected of ["Summary Model", "Summarizes uncommitted changes", "Models", "Thinking", "anthropic/claude-opus-4", "Select", "Cancel", "type to filter"]) {
-			assert.ok(text.includes(expected), `${expected}\n${text}`);
-		}
-		for (const width of [20, 40, 60, 90]) assertLinesExact(picker.render(width), width, `picker at ${width}`);
-		picker.handleInput(KEY.esc);
-		await pickerSettled(wired, menu);
-		menu.handleInput(KEY.esc);
-		await finished;
 	});
 
 	it("starts the picker on the pinned model, else on the session model", async () => {
@@ -576,85 +554,65 @@ describe("startup changes settings (I-18)", () => {
 			if (index > 0) resetModuleState();
 			seedPreferences(testCase.pinned);
 			const wired = wire({ model: late, models: [early, late] });
-			const { menu, finished } = await openSettings(wired);
-			menu.handleInput(KEY.enter);
-			const picker = await pickerOver(wired);
-			picker.handleInput(KEY.enter);
-			await pickerSettled(wired, menu);
-			pressApply(menu);
-			await finished;
+			const settings = await runSettings(wired);
+			await openPicker(settings);
+			await confirmPick(settings);
+			await settings.apply();
+			await settings.handlerPromise;
 			assert.deepEqual(readPreferences().changesSummaryModel, testCase.expected, testCase.label);
 		}
 	});
 
-	it("picker Escape keeps the prior value and menu Escape writes nothing", async () => {
+	it("picker Escape keeps the prior value and dialog Escape writes nothing", async () => {
 		seedPreferences({ provider: "provider", id: "fast" });
 		const wired = wire();
-		const { menu, finished } = await openSettings(wired);
-		menu.handleInput(KEY.enter);
-		const picker = await pickerOver(wired);
-		picker.handleInput(KEY.esc);
-		await pickerSettled(wired, menu);
-		assert.ok(rendered(menu).includes("provider/fast"), "prior value still shown");
-		menu.handleInput(KEY.esc);
-		await finished;
+		const settings = await runSettings(wired);
+		await openPicker(settings);
+		await settings.press(KEY.esc);
+		assert.match(screen(settings.dialog), /fast\s+›/, "prior value still shown");
+		await settings.cancel();
 		assert.deepEqual(readPreferences().changesSummaryModel, { provider: "provider", id: "fast" });
 	});
 
-	it("Backspace or Delete resets the Summary model row to the session model", async () => {
-		for (const [index, clearKey] of [KEY.backspace, KEY.delete].entries()) {
-			if (index > 0) resetModuleState();
-			seedPreferences({ provider: "provider", id: "fast" });
-			const wired = wire({ models: [makeModel("provider", "fast")] });
-			const { menu, finished } = await openSettings(wired);
-			assert.ok(rendered(menu).includes("provider/fast"));
-			menu.handleInput(clearKey);
-			assert.ok(rendered(menu).includes("session model"), "row reads as deliberately unset");
-			pressApply(menu);
-			await finished;
-			assert.equal(readPreferences().changesSummaryModel, undefined, `key ${index}`);
-		}
+	it("Backspace resets the Summary model row to the session model", async () => {
+		seedPreferences({ provider: "provider", id: "fast" });
+		const wired = wire({ models: [makeModel("provider", "fast")] });
+		const settings = await runSettings(wired);
+		await settings.to("changesSummaryModel");
+		assert.match(screen(settings.dialog), /fast\s+›/);
+		await settings.press(KEY.backspace);
+		assert.match(screen(settings.dialog), /session model\s+›/, "row reads as deliberately unset");
+		await settings.apply();
+		await settings.handlerPromise;
+		assert.equal(readPreferences().changesSummaryModel, undefined);
 	});
 
 	it("a cleared Summary model stays cleared when the picker is then cancelled", async () => {
 		seedPreferences({ provider: "provider", id: "fast" });
 		const wired = wire({ models: [makeModel("provider", "fast")] });
-		const { menu, finished } = await openSettings(wired);
-		menu.handleInput(KEY.backspace);
-		menu.handleInput(KEY.enter);
-		(await pickerOver(wired)).handleInput(KEY.esc);
-		await pickerSettled(wired, menu);
-		assert.ok(rendered(menu).includes("session model"));
-		pressApply(menu);
-		await finished;
+		const settings = await runSettings(wired);
+		await settings.to("changesSummaryModel");
+		await settings.press(KEY.backspace, KEY.enter);
+		assert.match(screen(settings.dialog), /PICK SUMMARY MODEL/);
+		await settings.press(KEY.esc);
+		assert.match(screen(settings.dialog), /session model\s+›/);
+		await settings.apply();
+		await settings.handlerPromise;
 		assert.equal(readPreferences().changesSummaryModel, undefined, "the pinned ref must not outlive the clear");
 	});
 
 	it("Backspace and Delete leave rows without a clear value alone", async () => {
 		const wired = wire();
-		const { menu, finished } = await openSettings(wired, 0);
-		menu.handleInput(KEY.backspace);
-		menu.handleInput(KEY.down);
-		menu.handleInput(KEY.down);
-		menu.handleInput(KEY.delete);
-		pressApply(menu);
-		await finished;
+		const settings = await runSettings(wired);
+		await settings.to("menuGate");
+		await settings.press(KEY.backspace, KEY.delete);
+		await settings.to("backgroundColor");
+		await settings.press(KEY.backspace, KEY.delete);
+		await settings.apply();
+		await settings.handlerPromise;
 		const prefs = readPreferences();
 		assert.equal(prefs.menuGate, "off");
 		assert.equal(prefs.backgroundColor, "rainbow");
-	});
-
-	it("warns instead of opening a picker with no models to offer", async () => {
-		const wired = wire({ model: null, models: [] });
-		const { menu, finished } = await openSettings(wired);
-		menu.handleInput(KEY.enter);
-		await until(() => wired.ctx.notifications.some((n) => n.type === "warning"));
-		await pickerSettled(wired, menu);
-		assert.ok(wired.ctx.notifications.some((n) => n.type === "warning" && n.message.includes("No models")));
-		assert.ok(rendered(menu).includes("Pi Topping Splash: Settings"), "still on the menu, no picker mounted");
-		assert.equal(wired.ctx.customComponents.length, 1, "the menu is the only component ever mounted");
-		menu.handleInput(KEY.esc);
-		await finished;
 	});
 });
 
@@ -1223,21 +1181,13 @@ describe("background color setting (I-06 extension)", () => {
 	it("defaults to rainbow and cycles right through the theme colors", async () => {
 		const wired = wire();
 		assert.equal(readPreferences().backgroundColor, "rainbow", "starts at the default");
-		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-		component.handleInput(KEY.down);
-		component.handleInput(KEY.right);
-		pressApply(component);
-		await handlerPromise;
+		await applySettings(wired, ["backgroundColor", KEY.right]);
 		assert.equal(readPreferences().backgroundColor, "accent", "cycled one step right");
 	});
 
 	it("left from rainbow wraps to dynamic and keeps the default tint", async () => {
 		const wired = wire();
-		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-		component.handleInput(KEY.down);
-		component.handleInput(KEY.left);
-		pressApply(component);
-		await handlerPromise;
+		await applySettings(wired, ["backgroundColor", KEY.left]);
 		assert.equal(readPreferences().backgroundColor, "dynamic");
 		assert.equal(readPreferences().dynamicTint, "accent");
 		assert.equal(state.dynamicTint, "accent");
@@ -1245,21 +1195,13 @@ describe("background color setting (I-06 extension)", () => {
 
 	it("records an applied theme color and preserves it while selecting dynamic", async () => {
 		const first = wire();
-		const { handlerPromise: firstPromise, component: firstMenu } = await runSettings(first);
-		firstMenu.handleInput(KEY.down);
-		for (let index = 0; index < 5; index++) firstMenu.handleInput(KEY.right);
-		pressApply(firstMenu);
-		await firstPromise;
+		await applySettings(first, ["backgroundColor", ...Array.from({ length: 5 }, () => KEY.right)]);
 		assert.equal(readPreferences().backgroundColor, "success");
 		assert.equal(readPreferences().dynamicTint, "success");
 
 		resetModuleState();
 		const second = wire();
-		const { handlerPromise: secondPromise, component: secondMenu } = await runSettings(second);
-		secondMenu.handleInput(KEY.down);
-		for (let index = 0; index < 3; index++) secondMenu.handleInput(KEY.right);
-		pressApply(secondMenu);
-		await secondPromise;
+		await applySettings(second, ["backgroundColor", ...Array.from({ length: 3 }, () => KEY.right)]);
 		assert.equal(readPreferences().backgroundColor, "dynamic");
 		assert.equal(readPreferences().dynamicTint, "success");
 		assert.equal(state.dynamicTint, "success");
@@ -1281,12 +1223,7 @@ describe("background color setting (I-06 extension)", () => {
 
 	it("persists all three preferences atomically and leaves untouched toggles as-is", async () => {
 		const wired = wire();
-		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-		component.handleInput(KEY.down);
-		component.handleInput(KEY.right);
-		component.handleInput(KEY.right);
-		pressApply(component);
-		await handlerPromise;
+		await applySettings(wired, ["backgroundColor", KEY.right, KEY.right]);
 		const prefs = readPreferences();
 		assert.equal(prefs.backgroundColor, "border");
 		assert.equal(prefs.menuGate, "off", "untouched toggle keeps its value");
@@ -1305,23 +1242,15 @@ describe("background color setting (I-06 extension)", () => {
 
 	it("cancellation leaves the stored background and the visible splash unchanged", async () => {
 		const wired0 = wire();
-		const { handlerPromise: applyPromise, component: applyComponent } = await runSettings(wired0);
-		applyComponent.handleInput(KEY.down);
-		applyComponent.handleInput(KEY.right);
-		applyComponent.handleInput(KEY.right);
-		applyComponent.handleInput(KEY.right);
-		applyComponent.handleInput(KEY.right);
-		applyComponent.handleInput(KEY.right);
-		pressApply(applyComponent);
-		await applyPromise;
+		await applySettings(wired0, ["backgroundColor", ...Array.from({ length: 5 }, () => KEY.right)]);
 		assert.equal(readPreferences().backgroundColor, "success");
 		resetModuleState();
 		const wired = wire();
-		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-		component.handleInput(KEY.down);
-		component.handleInput(KEY.right);
-		component.handleInput(KEY.esc);
-		await handlerPromise;
+		const settings = await runSettings(wired);
+		await settings.to("backgroundColor");
+		await settings.press(KEY.right);
+		await settings.cancel();
+		await settings.handlerPromise;
 		assert.equal(readPreferences().backgroundColor, "success", "unchanged after cancel");
 		assert.equal(state.backgroundColor, "rainbow", "shared state untouched by a cancelled menu");
 	});
@@ -1332,11 +1261,7 @@ describe("background color setting (I-06 extension)", () => {
 		writeFileSync(blocker, "occupied");
 		const restoreAgentDir = setEnv("PI_CODING_AGENT_DIR", blocker);
 		try {
-			const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-			component.handleInput(KEY.down);
-			component.handleInput(KEY.right);
-			pressApply(component);
-			await handlerPromise;
+			await applySettings(wired, ["backgroundColor", KEY.right]);
 		} finally {
 			restoreAgentDir();
 		}
@@ -1352,29 +1277,17 @@ describe("background color setting (I-06 extension)", () => {
 		assert.equal(typeof headerRenderState.requestRender, "function");
 
 		const before = wired.tui.renderRequests.length;
-		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-		component.handleInput(KEY.down);
-		component.handleInput(KEY.right);
-		pressApply(component);
-		await handlerPromise;
+		await applySettings(wired, ["backgroundColor", KEY.right]);
 		assert.equal(state.backgroundColor, "accent");
 		assert.ok(wired.tui.renderRequests.length > before, "a render must be requested after applying");
 	});
 });
 
 describe("gradient animation setting (I-17)", () => {
-	/** Menu rows in cursor order: menuGate (0), backgroundColor (1), gradientAnimation (2), logoStyle (3). */
-	async function applyMenu(wired: Wired, inputs: string[]): Promise<void> {
-		const { handlerPromise: handlerPromise, component: component } = await runSettings(wired);
-		for (const key of inputs) component.handleInput(key);
-		pressApply(component);
-		await handlerPromise;
-	}
-
 	it("defaults to off; cycling right persists breathe and leaves the rest alone", async () => {
 		const wired = wire();
 		assert.equal(readPreferences().gradientAnimation, "off", "starts at the default");
-		await applyMenu(wired, [KEY.down, KEY.down, KEY.right]);
+		await applySettings(wired, ["gradientAnimation", KEY.right]);
 		const prefs = readPreferences();
 		assert.equal(prefs.gradientAnimation, "breathe", "cycled one step right");
 		assert.equal(prefs.backgroundColor, "rainbow", "untouched cycle keeps its value");
@@ -1393,12 +1306,12 @@ describe("gradient animation setting (I-17)", () => {
 		const factory = wired.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
 		factory(wired.tui.tui, makeTheme());
 
-		await applyMenu(wired, [KEY.down, KEY.right, KEY.down, KEY.right]);
+		await applySettings(wired, ["backgroundColor", KEY.right], ["gradientAnimation", KEY.right]);
 		assert.equal(state.backgroundColor, "accent");
 		assert.equal(state.gradientAnimation, "breathe");
 		assert.notEqual(gradientAnimation.timer, null, "ticker running on an animated backdrop");
 
-		await applyMenu(wired, [KEY.down, KEY.down, KEY.left]);
+		await applySettings(wired, ["gradientAnimation", KEY.left]);
 		assert.equal(state.gradientAnimation, "off");
 		assert.equal(gradientAnimation.timer, null, "ticker stopped once the animation is off");
 	});
@@ -1410,7 +1323,7 @@ describe("gradient animation setting (I-17)", () => {
 		const factory = wired.ctx.setHeaderCalls.at(-1) as (tui: unknown, theme: unknown) => unknown;
 		factory(wired.tui.tui, makeTheme());
 
-		await applyMenu(wired, [KEY.down, KEY.down, KEY.right]);
+		await applySettings(wired, ["gradientAnimation", KEY.right]);
 		assert.equal(state.backgroundColor, "rainbow", "background untouched");
 		assert.equal(state.gradientAnimation, "breathe");
 		assert.notEqual(gradientAnimation.timer, null, "the rainbow animates too");
@@ -1418,7 +1331,7 @@ describe("gradient animation setting (I-17)", () => {
 
 	it("applying an animation with no splash header wired leaves the ticker off", async () => {
 		const wired = wire();
-		await applyMenu(wired, [KEY.down, KEY.right, KEY.down, KEY.right]);
+		await applySettings(wired, ["backgroundColor", KEY.right], ["gradientAnimation", KEY.right]);
 		assert.equal(readPreferences().gradientAnimation, "breathe", "persisted for the next launch");
 		assert.equal(gradientAnimation.timer, null, "nothing visible to animate");
 	});
@@ -1434,7 +1347,7 @@ describe("gradient animation setting (I-17)", () => {
 		await wired.pi.emit("before_agent_start", { type: "before_agent_start", systemPrompt: "x" }, wired.ctx.ctx);
 		assert.equal(gradientAnimation.timer, null, "first turn stopped the ticker");
 
-		await applyMenu(wired, [KEY.down, KEY.down, KEY.right]);
+		await applySettings(wired, ["gradientAnimation", KEY.right]);
 		assert.equal(readPreferences().gradientAnimation, "sheen", "preference still persisted");
 		assert.equal(gradientAnimation.timer, null, "mid-session apply must not restart an off-screen animation");
 	});
@@ -1465,13 +1378,7 @@ describe("gradient animation setting (I-17)", () => {
 });
 
 describe("logo style setting (I-20)", () => {
-	async function applyLogoSetting(wired: Wired, direction: string): Promise<void> {
-		const { handlerPromise: handlerPromise, component: menu } = await runSettings(wired);
-		for (let index = 0; index < 3; index++) menu.handleInput(KEY.down);
-		menu.handleInput(direction);
-		pressApply(menu);
-		await handlerPromise;
-	}
+	const applyLogoSetting = (wired: Wired, direction: string): Promise<void> => applySettings(wired, ["logoStyle", direction]);
 
 	it("defaults missing and invalid logo styles to random", () => {
 		assert.equal(readPreferences().logoStyle, "random");
@@ -1508,11 +1415,7 @@ describe("logo style setting (I-20)", () => {
 			assert.ok(header.render(100).some((line) => line.includes("38;2;77;154;191")));
 			const timer = logoAnimation.timer;
 			logoAnimation.timeMs = 400;
-			const { handlerPromise: background, component: menu } = await runSettings(wired);
-			menu.handleInput(KEY.down);
-			menu.handleInput(KEY.right);
-			pressApply(menu);
-			await background;
+			await applySettings(wired, ["backgroundColor", KEY.right]);
 			assert.equal(logoAnimation.timer, timer, "unrelated settings keep the running clock");
 			assert.equal(logoAnimation.timeMs, 400, "unrelated apply does not replay the one-shot");
 			await applyLogoSetting(wired, KEY.left);
@@ -1543,11 +1446,7 @@ describe("logo style setting (I-20)", () => {
 			assert.notEqual(timer, null, "random selection resolves to an installer logo");
 			logoAnimation.timeMs = 400;
 
-			const { handlerPromise: handlerPromise, component: menu } = await runSettings(wired);
-			menu.handleInput(KEY.down);
-			menu.handleInput(KEY.right);
-			pressApply(menu);
-			await handlerPromise;
+			await applySettings(wired, ["backgroundColor", KEY.right]);
 			assert.equal(logoAnimation.timer, timer, "unrelated settings preserve the active ticker");
 			assert.equal(logoAnimation.timeMs, 400, "unrelated apply does not restart playback");
 		} finally {
@@ -1563,11 +1462,7 @@ describe("logo style setting (I-20)", () => {
 		writeFileSync(blocker, "occupied");
 		const restoreAgentDir = setEnv("PI_CODING_AGENT_DIR", blocker);
 		try {
-			const { handlerPromise: handlerPromise, component: menu } = await runSettings(wired);
-			for (let index = 0; index < 3; index++) menu.handleInput(KEY.down);
-			menu.handleInput(KEY.right);
-			pressApply(menu);
-			await handlerPromise;
+			await applyLogoSetting(wired, KEY.right);
 		} finally {
 			restoreAgentDir();
 		}
@@ -1578,11 +1473,11 @@ describe("logo style setting (I-20)", () => {
 
 	it("cancellation and a post-conversation apply do not start the ticker", async () => {
 		const wired = wire();
-		const { handlerPromise: canceled, component: menu } = await runSettings(wired);
-		for (let index = 0; index < 3; index++) menu.handleInput(KEY.down);
-		menu.handleInput(KEY.right);
-		menu.handleInput(KEY.esc);
-		await canceled;
+		const settings = await runSettings(wired);
+		await settings.to("logoStyle");
+		await settings.press(KEY.right);
+		await settings.cancel();
+		await settings.handlerPromise;
 		assert.equal(readPreferences().logoStyle, "random");
 		assert.equal(state.logoStyle, "random");
 		assert.equal(logoAnimation.timer, null);

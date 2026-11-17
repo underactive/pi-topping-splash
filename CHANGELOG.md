@@ -10,28 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The published package now includes `CHANGELOG.md`, so Pi 1.5.0 and later can show this extension's release notes under "Extension Updates" after it updates. Notices start with the release after the first one that includes the changelog; the first install only records the version.
-- The startup gate, the settings menu and the Summary model picker report blocked questions via
-  OSC 7501, the gate on Pi 1.5.0+ and the two overlays on 1.5.1+. Each reports its own name, and
-  closing one restores the status beneath it; the read-only system prompt view relies on the gate's
-  status. Tests pin the options; live Pi 1.5.2 capture confirmed the transitions with settings
-  opened from the gate and standalone, with and without the picker. Reload cleanup was not tested live.
+- The startup gate and the settings dialog report blocked questions via OSC 7501, the gate on
+  Pi 1.5.0+ and the dialog on 1.5.1+. Each reports its own name, and closing one restores the status
+  beneath it; the read-only system prompt view relies on the gate's status. Tests pin the options;
+  live Pi 1.5.2 capture confirmed the transitions with settings opened from the gate and standalone,
+  with and without the model picker, which was then a separate overlay and is now part of the
+  dialog. Reload cleanup was not tested live.
 
-- `/topping-splash-settings` opens a redesigned settings dialog on a terminal at least 84 columns wide and 28 rows tall: a section list beside the selected section's settings, the focused setting's description below, and an Apply / Cancel bar, with the Summary model picker, model list and thinking pane, taking its place while it is open. The dialog is designed in the `opentui-dialogs` mockups and converted to `src/ui/generated/` by `pi-topping-opentui` (`npm run port:ui`; `npm run port:check` and `npm run parity:ui` verify it against the mockups' recorded frames). It reports the same blocked question as the menu while open. The settings the dialog and the menu write are the same.
+- `/topping-splash-settings` opens a redesigned settings dialog: a section list beside the selected section's settings, the focused setting's description below, and an Apply / Cancel bar, with the Summary model picker, model list and thinking pane, taking its place while it is open. It is 84 columns wide where the terminal has them and shrinks to 80 columns by 24 rows; at that size the picker lists the thinking levels one to a row and shows the highlighted level's description in the hint area. A terminal smaller than 80x24 clips it. The dialog is designed in the `opentui-dialogs` mockups and converted to `src/ui/generated/` by `pi-topping-opentui` (`npm run port:ui`; `npm run port:check` and `npm run parity:ui` verify it against the mockups' recorded frames).
 - New dependency `@underactive/pi-topping-opentui` `^0.14.1`, the small React renderer that draws the converted dialog through Pi's TUI; `@underactive/pi-topping-opentui-tools` `^0.14.1` and `@types/react` are development-only.
 
 ### Changed
 
-- The original settings menu is now the fallback: it opens on a terminal smaller than the dialog, when Pi is older than 1.3.0 (the dialog's size check needs it), and when the dialog fails to run, in which case the failure is reported first. Reading the terminal size makes the command open one tick later than before. The startup gate's own views and the Summary model picker the menu opens are unchanged.
+- The dialog replaces the settings menu built on `showMenu`; there is no fallback layout. If the dialog fails to run, the failure is reported and nothing is changed. The startup gate's own views are unchanged.
+- In the Summary model picker, only Backspace resets the row to the session model; Delete no longer does. With no models available the picker opens empty instead of warning "No models available".
 - Development and CI now typecheck and test against Pi 1.5.2; the
   `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.5.0.
   The dependency bump itself required no source changes. Reload overlay cleanup, the
   session-directory prompt, and real providers have not been tested live.
-- Depend on `@underactive/pi-topping-primitives` exactly `0.13.0` (was `^0.12.1`). Its `showMenu`
-  gives the settings menu its blocked status (see Added). It also ships primitives 0.12.2's menu
-  padding, which was never published on its own: wrapped rows stop two cells short of the right
-  border. With splash's labels the menu is unchanged at 44 columns and wider. A narrower menu can
-  wrap a label one word earlier, and a Summary model name too long for one row wraps two cells
-  earlier. No code changes were needed.
+- Depend on `@underactive/pi-topping-primitives` exactly `0.13.0` (was `^0.12.1`). No code changes were needed.
 
 ## [0.6.1] - 2026-11-02
 
