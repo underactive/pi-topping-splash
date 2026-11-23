@@ -11,7 +11,6 @@ import {
 	type SessionListItem,
 } from "../src/gate.ts";
 import { state } from "../src/state.ts";
-import { SystemPromptView } from "../src/system-prompt-view.ts";
 import { stopTaglineReveal } from "../src/reveal.ts";
 import { sanitizeTuiText } from "../src/text.ts";
 import { setArgv, tempAgentDir, type TempAgentEnv } from "./helpers/env.ts";
@@ -23,6 +22,8 @@ import { bootstrapGlobalTheme, makeTheme } from "./helpers/theme.ts";
 import { KEY } from "./helpers/keys.ts";
 import { seedSession } from "./helpers/sessions.ts";
 import { until } from "./helpers/wait.ts";
+import { press, screen, settle, type Shown } from "./helpers/dialog.ts";
+import { MODEL_PICKER_WIDTH } from "../src/ui/dialog-size.ts";
 import { assertLinesAtMost, assertLinesExact } from "./helpers/width.ts";
 
 bootstrapGlobalTheme();
@@ -242,22 +243,10 @@ describe("menu (GA-04..GA-08)", () => {
 });
 
 describe("View system prompt entry (GA-04)", () => {
-	function mountedView(harness: GateHarness, index = 0): SystemPromptView {
+	function mountedView(harness: GateHarness, index = 0): Shown {
 		const component = harness.ctx.customComponents[index];
-		assert.ok(component instanceof SystemPromptView, "expected a SystemPromptView overlay");
-		return component;
-	}
-
-	/** Every distinct viewport the view shows while paging from the top to the bottom. */
-	function pagedText(view: SystemPromptView, width = 90): string {
-		const seen: string[] = [];
-		for (let page = 0; page < 40; page++) {
-			const text = view.render(width).map(sanitizeTuiText).join("\n");
-			if (seen.at(-1) === text) break;
-			seen.push(text);
-			view.handleInput(KEY.pageDown);
-		}
-		return seen.join("\n");
+		assert.ok(component, "expected a mounted dialog component");
+		return component as Shown;
 	}
 
 	it("shows the label with p, keeps Settings on s, and leaves x inert", () => {
@@ -271,13 +260,18 @@ describe("View system prompt entry (GA-04)", () => {
 		assert.equal(harness.tui.overlays.length, 0);
 	});
 
-	it("p opens the view and s opens Settings, in legacy and Kitty encodings", async () => {
+	it("p opens the viewer and s opens Settings, in legacy and Kitty encodings", async () => {
 		for (const [key, opensPrompt] of [["p", true], ["\x1b[112u", true], ["s", false], ["\x1b[115u", false]] as const) {
 			const harness = makeGate();
 			harness.gate.handleInput(key);
 			await until(() => harness.ctx.customComponents.length > 0);
 			assert.equal(harness.ctx.customComponents.length, 1, `${JSON.stringify(key)} mounts one overlay`);
-			assert.equal(harness.ctx.customComponents[0] instanceof SystemPromptView, opensPrompt, `${JSON.stringify(key)}`);
+			if (opensPrompt) {
+				const text = screen(mountedView(harness), 110);
+				assert.match(text, /SYSTEM PROMPT/);
+				const options = harness.ctx.customOptions[0] as { blocked?: unknown };
+				assert.deepEqual(options.blocked, { kind: "question", message: "System Prompt" });
+			}
 			assert.deepEqual(harness.results, [], "the gate stays unresolved");
 		}
 	});
@@ -292,15 +286,16 @@ describe("View system prompt entry (GA-04)", () => {
 		}
 	});
 
-	it("Enter on the row opens the same view", () => {
+	it("Enter on the row opens the same view", async () => {
 		const harness = makeGate({ systemPrompt: "base prompt text" });
 		for (let i = 0; i < 4; i++) harness.gate.handleInput(KEY.down);
 		harness.gate.handleInput(KEY.enter);
-		assert.ok(mountedView(harness).render(90).map(sanitizeTuiText).join("\n").includes("base prompt text"));
+		await until(() => harness.ctx.customComponents.length > 0);
+		assert.ok(screen(mountedView(harness), 110).includes("base prompt text"));
 		assert.deepEqual(harness.results, []);
 	});
 
-	it("shows only the static base prompt, read once, and starts nothing", () => {
+	it("shows only the static base prompt, read once, and starts nothing", async () => {
 		const lines = Array.from({ length: 80 }, (_, i) => `static line ${i}`);
 		lines[0] = "STATIC_BASE_A";
 		lines[79] = "STATIC_BASE_B";
@@ -313,7 +308,16 @@ describe("View system prompt entry (GA-04)", () => {
 		state.loadedContext = ["DYN_CONTEXT"];
 		assert.equal(reads, 0, "nothing reads the prompt before the view opens");
 		harness.gate.handleInput("p");
-		const text = pagedText(mountedView(harness));
+		await until(() => harness.ctx.customComponents.length > 0);
+		const view = mountedView(harness);
+		const seen: string[] = [];
+		for (let page = 0; page < 60; page++) {
+			const text = screen(view, 110);
+			if (seen.at(-1) === text) break;
+			seen.push(text);
+			await press(view, KEY.pageDown);
+		}
+		const text = seen.join("\n");
 		assert.equal(reads, 1, "read exactly once per open, however much the view renders or scrolls");
 		assert.ok(text.includes("STATIC_BASE_A") && text.includes("STATIC_BASE_B"), "paging reaches both ends of the prompt");
 		assert.equal(/DYN_|dyn-model/.test(text), false, "no session, summary, skill or extension data leaks in");
@@ -323,17 +327,18 @@ describe("View system prompt entry (GA-04)", () => {
 		assert.deepEqual(harness.ctx.notifications, []);
 	});
 
-	it("is modal: the gate's hotkeys do nothing while the view is open", () => {
+	it("is modal: the gate's hotkeys do nothing while the view is open", async () => {
 		const harness = makeGate();
 		harness.gate.handleInput("p");
 		const view = mountedView(harness);
-		const before = harness.tui.renderRequests.length;
-		// pi-tui routes input to the focused overlay, so these reach the view and never the gate.
-		for (const key of ["q", "n", KEY.enter, "r", "t", "m", "s", "p", KEY.tab, KEY.left, KEY.right]) view.handleInput(key);
+		await settle(view, 110);
+		// pi-tui routes input to the focused overlay, so these reach the view and never the
+		// gate. Enter/Esc are left out: they belong to the view and would close it.
+		for (const key of ["q", "n", "r", "t", "m", "s", "p", KEY.left, KEY.right]) await press(view, key);
 		assert.deepEqual(harness.results, []);
 		assert.equal(harness.ctx.customComponents.length, 1);
+		assert.equal(harness.ctx.mountedComponents.length, 1, "nothing closed the view");
 		assert.equal(harness.tui.overlays.length, 0, "no drill-in popup opened beneath");
-		assert.equal(harness.tui.renderRequests.length, before, "nothing closed the view");
 		const chevron = menuText(harness).split("\n").find((line) => line.includes("View system prompt"));
 		assert.ok(chevron?.includes("❯"), "the gate keeps its selection on the row beneath the view");
 	});
@@ -342,49 +347,55 @@ describe("View system prompt entry (GA-04)", () => {
 		let reads = 0;
 		const harness = makeGate({ systemPrompt: () => { reads++; return "prompt"; } });
 		harness.gate.handleInput("p");
+		const view = mountedView(harness);
+		await settle(view, 110);
 		const before = harness.tui.renderRequests.length;
-		mountedView(harness).handleInput(KEY.esc);
-		await new Promise<void>((resolve) => setImmediate(resolve));
+		await press(view, KEY.esc);
+		await until(() => harness.ctx.mountedComponents.length === 0);
 		assert.ok(harness.tui.renderRequests.length > before, "the gate repaints after the view closes");
 		assert.deepEqual(harness.results, [], "closing the view does not resolve the gate");
 		harness.gate.handleInput("p");
-		assert.equal(harness.ctx.customComponents.length, 2);
+		await until(() => harness.ctx.mountedComponents.length > 0);
+		assert.equal(harness.ctx.customComponents.length, 2, "each open mounts one dialog");
+		assert.equal(harness.ctx.mountedComponents.length, 1);
 		assert.equal(reads, 2, "each open reads the prompt again");
-		mountedView(harness, 1).handleInput(KEY.esc);
-		await new Promise<void>((resolve) => setImmediate(resolve));
+		await press(mountedView(harness), KEY.esc);
+		await until(() => harness.ctx.mountedComponents.length === 0);
 		harness.gate.handleInput("q");
 		assert.deepEqual(harness.results, ["quit"]);
 	});
 });
-
 describe("overlay lifecycle (GA-09)", () => {
-	it("drill-in creates the popup lazily, menu return hides it, reuse unhides it", () => {
+	it("Resume creates the popup lazily, menu return hides it, reuse unhides it", () => {
 		const harness = makeGate();
 		assert.equal(harness.tui.overlays.length, 0);
-		harness.gate.handleInput("t");
+		harness.gate.handleInput("r");
 		assert.equal(harness.tui.overlays.length, 1);
 		harness.gate.handleInput(KEY.esc);
 		const overlay = harness.tui.overlays[0]!;
 		assert.equal(overlay.removed, false, "returning to the menu must hide, not destroy");
 		assert.ok(overlay.setHiddenCalls.includes(true));
-		harness.gate.handleInput("t");
+		harness.gate.handleInput("r");
 		assert.equal(harness.tui.overlays.length, 1, "same-width views reuse the overlay");
 		assert.equal(overlay.hidden, false);
 	});
-	it("a view needing a different width rebuilds the overlay", () => {
+	it("Theme opens a capturing dialog instead of the popup overlay", async () => {
 		const harness = makeGate();
-		harness.gate.handleInput("r");
-		assert.equal(harness.tui.overlays.length, 1);
-		assert.equal(harness.tui.overlays[0]?.options?.width, "100%", "resume takes the full terminal width");
-		harness.gate.handleInput(KEY.esc);
+		assert.equal(harness.tui.overlays.length, 0);
 		harness.gate.handleInput("t");
-		assert.equal(harness.tui.overlays.length, 2, "width change must force a rebuild");
-		assert.equal(harness.tui.overlays[0]?.removed, true, "the old overlay is destroyed");
-		assert.notEqual(harness.tui.overlays[1]?.options?.width, "100%");
+		await until(() => harness.ctx.mountedComponents.length > 0);
+		assert.equal(harness.tui.overlays.length, 0, "no drill-in popup for Theme");
+		const options = harness.ctx.customOptions[0] as { overlay?: boolean; blocked?: unknown };
+		assert.equal(options.overlay, true);
+		assert.deepEqual(options.blocked, { kind: "question", message: "Select Theme" });
+		const text = screen(harness.ctx.mountedComponents[0] as Shown, 56);
+		assert.match(text, /SELECT THEME/);
+		await press(harness.ctx.mountedComponents[0] as Shown, KEY.esc);
+		await until(() => harness.ctx.mountedComponents.length === 0);
 	});
 	it("popup renders exactly the width the overlay grants", () => {
 		const harness = makeGate();
-		harness.gate.handleInput("t");
+		harness.gate.handleInput("r");
 		const overlay = harness.tui.live();
 		assert.ok(overlay);
 		for (const width of [40, 60, 80]) {
@@ -392,28 +403,40 @@ describe("overlay lifecycle (GA-09)", () => {
 		}
 	});
 });
-
 describe("theme view (GA-10)", () => {
-	it("navigation live-previews with Theme instances; Esc restores by name", () => {
-		const harness = makeGate();
+	const THEME_PICKER_WIDTH = 56;
+
+	async function openTheme(harness: GateHarness): Promise<Shown> {
 		harness.gate.handleInput("t");
+		await until(() => harness.ctx.mountedComponents.length > 0);
+		const picker = harness.ctx.mountedComponents[0] as Shown;
+		await settle(picker, THEME_PICKER_WIDTH);
+		return picker;
+	}
+
+	it("navigation live-previews with Theme instances; Esc restores by name", async () => {
+		const harness = makeGate();
+		const picker = await openTheme(harness);
 		assert.equal(harness.ctx.setThemeCalls.length, 0);
-		harness.gate.handleInput(KEY.down);
+		await press(picker, KEY.down);
 		assert.ok(harness.ctx.setThemeCalls.length >= 1, "moving the selection must live-preview");
 		const preview = harness.ctx.setThemeCalls.at(-1);
 		assert.ok(preview instanceof Theme, "preview must pass a Theme instance (in-memory only)");
-		harness.gate.handleInput(KEY.esc);
+		await press(picker, KEY.esc);
+		await until(() => harness.ctx.mountedComponents.length === 0);
 		const restore = harness.ctx.setThemeCalls.at(-1);
 		assert.equal(typeof restore, "string", "escape must restore by name (persisting string form)");
-		assert.equal(restore, "test-theme", "restore target is the theme active when the popup opened");
+		assert.equal(restore, "test-theme", "restore target is the theme active when the picker opened");
 	});
-	it("Esc without any preview restores nothing", () => {
+	it("Esc without any preview restores nothing", async () => {
 		const harness = makeGate();
-		harness.gate.handleInput("t");
-		harness.gate.handleInput(KEY.esc);
+		await openTheme(harness);
+		assert.equal(harness.ctx.setThemeCalls.length, 0);
+		await press(harness.ctx.mountedComponents[0] as Shown, KEY.esc);
+		await until(() => harness.ctx.mountedComponents.length === 0);
 		assert.equal(harness.ctx.setThemeCalls.length, 0);
 	});
-	it("gap pass: a throwing getAllThemes is survivable (no-crash safety)", () => {
+	it("gap pass: a throwing getAllThemes is survivable (no-crash safety)", async () => {
 		const harness = makeGate();
 		harness.ctx.bag.themes = undefined as never;
 		Object.defineProperty(harness.ctx.bag, "themes", {
@@ -421,46 +444,88 @@ describe("theme view (GA-10)", () => {
 				throw new Error("theme store unavailable");
 			},
 		});
-		harness.gate.handleInput("t");
-		harness.gate.handleInput(KEY.esc);
+		const picker = await openTheme(harness);
+		const text = screen(picker, THEME_PICKER_WIDTH);
+		assert.ok(text.includes("No themes available"));
 		assert.deepEqual(harness.results, [], "gate must survive and stay interactive");
+		await press(picker, KEY.esc);
+		await until(() => harness.ctx.mountedComponents.length === 0);
+		assert.deepEqual(harness.results, []);
 	});
-	it("Enter persists the selected theme by name and returns to the menu", () => {
+	it("Enter persists the selected theme by name and returns to the menu", async () => {
 		const harness = makeGate();
-		harness.gate.handleInput("t");
-		harness.gate.handleInput(KEY.down);
-		harness.gate.handleInput(KEY.enter);
+		const picker = await openTheme(harness);
+		await press(picker, KEY.down);
+		await press(picker, KEY.enter);
+		await until(() => harness.ctx.mountedComponents.length === 0);
 		const applied = harness.ctx.setThemeCalls.at(-1);
 		assert.equal(typeof applied, "string");
 		assert.ok(["dark", "light", "solarized"].includes(applied as string), `applied ${String(applied)}`);
-		assert.equal(harness.tui.overlays[0]?.hidden, true, "back on the menu");
+		assert.equal(harness.tui.overlays.length, 0, "back on the menu, no drill-in popup");
+		harness.gate.handleInput("q");
+		assert.deepEqual(harness.results, ["quit"], "the menu is interactive again");
 	});
 });
-
 describe("model view (GA-12)", () => {
-	async function confirmDefault(harness: GateHarness): Promise<void> {
+	/** Press m and wait for the OpenTUI picker to mount through ui.custom. */
+	async function openPicker(harness: GateHarness): Promise<Shown> {
 		harness.gate.handleInput("m");
-		harness.gate.handleInput(KEY.tab);
-		harness.gate.handleInput(KEY.tab);
-		harness.gate.handleInput(KEY.enter);
+		await until(() => harness.ctx.customComponents.length > 0);
+		const picker = harness.ctx.customComponents[0] as Shown;
+		await settle(picker, MODEL_PICKER_WIDTH);
+		return picker;
+	}
+	/** The picker mounts on the current model; Enter steps into its thinking pane, Enter again selects. */
+	async function confirmDefault(harness: GateHarness): Promise<void> {
+		const picker = await openPicker(harness);
+		await press(picker, KEY.enter, KEY.enter);
 		await until(() => harness.pi.setModelCalls.length > 0 || harness.ctx.notifications.length > 0);
 		await new Promise((resolve) => setImmediate(resolve));
 	}
+	it("opens the OpenTUI picker as a capturing dialog, not in the gate's popup", async () => {
+		const harness = makeGate();
+		const picker = await openPicker(harness);
+		assert.equal(harness.tui.overlays.length, 0, "no drill-in popup");
+		const options = harness.ctx.customOptions[0] as { blocked?: unknown; overlay?: boolean };
+		assert.equal(options.overlay, true);
+		assert.deepEqual(options.blocked, { kind: "question", message: "Select Model" });
+		const text = screen(picker, MODEL_PICKER_WIDTH);
+		assert.match(text, /SELECT MODEL/);
+		assert.match(text, /╭─ Thinking ─+╮/, "the thinking pane is drawn");
+		assert.match(text, /claude-opus-4/);
+		assert.match(text, /▸ claude-opus-4\s+✦\s+●/, "the session model is highlighted and marked current");
+		assert.deepEqual(harness.results, [], "the gate stays unresolved");
+	});
 	it("confirm applies model then thinking and returns to the menu", async () => {
 		const harness = makeGate();
 		await confirmDefault(harness);
 		assert.equal(harness.pi.setModelCalls.length, 1);
 		assert.equal(harness.pi.setModelCalls[0]?.id, "claude-opus-4");
 		assert.equal(harness.pi.setThinkingCalls.length, 1);
-		assert.equal(harness.tui.overlays[0]?.hidden, true, "back on the menu after applying");
+		assert.equal(harness.ctx.mountedComponents.length, 0, "the picker closed");
+		harness.gate.handleInput("q");
+		assert.deepEqual(harness.results, ["quit"], "the menu is interactive again");
 	});
-	it("a refused model keeps the picker open with an error (README)", async () => {
+	it("Esc cancels: nothing is applied and the menu is back", async () => {
+		const harness = makeGate();
+		const picker = await openPicker(harness);
+		await press(picker, KEY.esc);
+		await until(() => harness.ctx.mountedComponents.length === 0);
+		assert.equal(harness.pi.setModelCalls.length, 0);
+		assert.equal(harness.pi.setThinkingCalls.length, 0);
+		assert.deepEqual(harness.ctx.notifications, []);
+		harness.gate.handleInput("q");
+		assert.deepEqual(harness.results, ["quit"]);
+	});
+	it("a refused model notifies an error and returns to the menu", async () => {
 		const harness = makeGate({ setModelResult: false });
 		await confirmDefault(harness);
 		assert.equal(harness.pi.setModelCalls.length, 1);
 		assert.equal(harness.pi.setThinkingCalls.length, 0, "thinking must not be applied after a refusal");
 		assert.ok(harness.ctx.notifications.some((n) => n.type === "error"));
-		assert.equal(harness.tui.overlays[0]?.hidden, false, "picker stays open");
+		assert.equal(harness.ctx.mountedComponents.length, 0, "the picker closed");
+		harness.gate.handleInput("q");
+		assert.deepEqual(harness.results, ["quit"]);
 	});
 });
 

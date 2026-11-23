@@ -18,11 +18,12 @@ Restart Pi (or run `/reload`) to pick it up.
 Requires Node.js 22.19.0 or newer. The current release is developed and tested against Pi
 1.5.2; Pi package peer dependency ranges remain unrestricted.
 
-While the startup gate, the settings menu, or the **Summary model** picker waits for a choice, Pi
-reports itself blocked on a question via OSC 7501 to supporting terminals and dashboards, under the
-name of the dialog on top. The gate requires Pi 1.5.0 or newer for this status, and the settings menu
-and picker require 1.5.1 or newer; older hosts ignore it. The read-only system prompt view reports no
-status of its own. tmux and screen do not forward these reports.
+While the startup gate, the settings dialog, the gate's **Model** and **Theme** pickers, the
+**system prompt view**, or the **Summary model** picker waits for a choice, Pi reports itself
+blocked on a question via OSC 7501 to supporting terminals and dashboards, under the name of the
+dialog on top. The gate requires Pi 1.5.0 or newer for this status; the settings dialog and the
+picker/view dialogs report their own name while open (1.5.1 or newer). tmux and screen do not
+forward these reports.
 
 ## Settings
 
@@ -82,8 +83,11 @@ terminal smaller than 80x24 clips the dialog; there is no other layout to fall b
 - **Summarize uncommitted changes** — show the info panel's `[local changes]` section with a model
   summary of uncommitted changes (ON by default); turning it off skips the startup git scan and
   model request, but does not disable `/local-changes`.
-- **Summary model** — Enter (or Space) opens the same two-pane model picker as the startup gate:
-  type to filter, Tab or ←/→ to switch panes, Enter to select. The thinking pane belongs to that
+- **Summary model** — Enter (or Space) opens the same two-pane model picker as the startup gate's
+  **Model** entry (hotkey `m`): `/` to filter, Tab or ←/→ to switch panes, Enter to select. In the
+  gate, Select applies the model and its thinking level to the session and returns to the menu; a
+  model Pi refuses (no credentials, say) reports an error and also returns to the menu, and Esc
+  changes nothing. The thinking pane belongs to that
   shared picker but is ignored here, since summaries always run with thinking off. It starts on the
   chosen model, or on the active model when none is chosen. Backspace or Delete resets the row to
   `session model`, which uses the active model.

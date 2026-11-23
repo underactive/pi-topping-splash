@@ -13,6 +13,12 @@
 export const SETTINGS_DIALOG_WIDTH = 84;
 
 /**
+ * Overlay width for the startup gate's model picker: the generated picker's full size. The
+ * picker lays itself out in the room it is given and shrinks to 80x24 below that.
+ */
+export const MODEL_PICKER_WIDTH = 88;
+
+/**
  * `maxHeight` for `showOpenTuiDialog`: the share of the terminal's rows a dialog may take.
  * All of them: the settings view and the picker are each as tall as their content, and a terminal
  * of 24 rows is the least either is laid out for.

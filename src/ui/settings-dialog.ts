@@ -119,7 +119,7 @@ export function fromDialogPrefs(values: DialogPrefs, models: readonly ModelRef[]
 }
 
 /** The thinking levels the registry reports for `ref`; undefined when it does not list the model. */
-function registryLevels(ctx: ExtensionContext, ref: ModelRef): readonly string[] | undefined {
+export function registryLevels(ctx: ExtensionContext, ref: ModelRef): readonly string[] | undefined {
 	const model = ctx.modelRegistry.find(ref.provider, ref.id);
 	return model ? getSupportedThinkingLevels(model) : undefined;
 }

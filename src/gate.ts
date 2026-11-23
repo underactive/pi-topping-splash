@@ -6,9 +6,11 @@ import { headerRenderState, state } from "./state.ts";
 import { sanitizeTuiText } from "./text.ts";
 import { relaunchPi } from "./relaunch.ts";
 import { showSplashSettings } from "./settings.ts";
-import { showSystemPrompt } from "./system-prompt-view.ts";
-import { createSplashModelPicker, availableModelRefs, modelRefLabel, renderFooter, renderSplashModelPicker } from "./model-picker.ts";
-import type { ModelRef, ThinkingLevel, TwoPaneModelThinking } from "./model-picker.ts";
+import { modelRefLabel } from "./model-picker.ts";
+import type { ModelRef, ThinkingLevel } from "./model-picker.ts";
+import { showModelPickerDialog } from "./ui/model-picker-dialog.ts";
+import { showSystemPromptDialog } from "./ui/system-prompt-view-dialog.ts";
+import { showThemePickerDialog } from "./ui/theme-picker-dialog.ts";
 import { GATE_LIST_HEIGHT, GATE_PANEL_MAX_WIDTH, RESUME_PANEL_WIDTH, SHORT_TERMINAL_ROWS, listWindow, renderPopupBox } from "./gate-ui.ts";
 
 /** A theme entry as returned by `ctx.ui.getAllThemes()`. */
@@ -20,7 +22,7 @@ export type SessionListItem = Awaited<ReturnType<typeof SessionManager.list>>[nu
 export type GateResolution = "proceed" | "quit";
 
 export type MenuAction = "new" | "resume" | "model" | "theme" | "prompt" | "settings" | "quit";
-export type GateView = "menu" | "resume" | "model" | "theme";
+export type GateView = "menu" | "resume";
 
 /** Shared menu definition so height calculation and rendering cannot drift apart. */
 const GATE_MENU: { label: string; action: MenuAction; icon: string; hotkey: KeyId }[] = [
@@ -60,10 +62,11 @@ export function gateMenuRows(terminalRows: number): number {
 
 /**
  * The blocking startup gate component. The main menu renders inline under the splash; the
- * Resume/Theme/Model drill-in views render in a bordered popup overlay centered (vertically
+ * Resume/Theme drill-in views render in a bordered popup overlay centered (vertically
  * and horizontally) in the terminal. That overlay is non-capturing, so this component keeps
- * keyboard focus and handles input for every drill-in view. Settings and the system prompt view
- * instead open as capturing overlays above the gate, which take input until they close.
+ * keyboard focus and handles input for every drill-in view. Settings, the system prompt view,
+ * and the model picker instead open as capturing overlays above the gate, which take input
+ * until they close.
  */
 export class StartupGate {
 	private view: GateView = "menu";
@@ -82,15 +85,6 @@ export class StartupGate {
 	private sessionIndex = 0;
 	private precomputedDisplay: { preview: string; count: string; date: string }[] = [];
 
-	/** Two-pane model + thinking picker, rebuilt each time the Model view opens. */
-	private modelPicker: TwoPaneModelThinking | null = null;
-
-	private themes: ThemeListItem[] = [];
-	private themeIndex = 0;
-	/** Theme name active when the popup opened: the ● marker and the restore point on escape. */
-	private savedThemeName: string | undefined;
-	/** True once navigation has live-previewed a theme, so escape knows to restore. */
-	private themePreviewActive = false;
 
 	/** Set when the user changes model in the gate, so relaunches preserve the choice. */
 	private selectedModel: { id: string; provider: string } | undefined;
@@ -126,15 +120,15 @@ export class StartupGate {
 		switch (this.view) {
 			case "menu": this.handleMenu(data); break;
 			case "resume": this.handleResume(data); break;
-			case "model": this.handleModel(data); break;
-			case "theme": this.handleTheme(data); break;
 		}
 		this.tui.requestRender();
 	}
 
 	/** Ensure the popup overlay exists, is visible, and is sized for the active view. */
 	private ensurePopupVisible(): void {
-		const width = this.view === "resume" ? RESUME_PANEL_WIDTH : GATE_PANEL_MAX_WIDTH;
+		// Only Resume uses the popup overlay now; Theme, the model picker and the system
+		// prompt view open as capturing OpenTUI dialogs above the gate instead.
+		const width = RESUME_PANEL_WIDTH;
 		// Overlay options are fixed at creation — OverlayHandle can only hide, show and focus — so
 		// a view that wants a different width needs a fresh overlay rather than a resize.
 		if (this.popupHandle && this.popupWidth !== width) {
@@ -149,7 +143,7 @@ export class StartupGate {
 		// the width to the terminal minus the margins; the gate keeps focus (nonCapturing).
 		this.popupWidth = width;
 		this.popupHandle = this.tui.showOverlay(
-			{ render: (w: number) => this.renderPopup(w), invalidate: () => this.modelPicker?.invalidate() },
+			{ render: (w: number) => this.renderPopup(w), invalidate() {} },
 			{
 				width,
 				maxHeight: "100%",
@@ -212,13 +206,13 @@ export class StartupGate {
 	}
 
 	/**
-	 * Open the read-only system prompt view. Like Settings it is a capturing overlay, which Pi's
-	 * fullscreen viewport needs so PgUp/PgDn reach the view instead of scrolling the transcript;
+	 * Open the read-only system prompt view as a capturing OpenTUI dialog. Pi's fullscreen
+	 * viewport needs the capture so PgUp/PgDn reach the view instead of scrolling the transcript;
 	 * closing it hands focus back to the gate without resolving it.
 	 */
 	private openSystemPrompt(): void {
 		void (async () => {
-			await showSystemPrompt(this.ctx);
+			await showSystemPromptDialog(this.ctx);
 			this.tui.requestRender();
 		})();
 	}
@@ -259,115 +253,52 @@ export class StartupGate {
 		}
 	}
 
+	/**
+	 * Open the model picker as a capturing OpenTUI dialog above the gate, like Settings. It
+	 * resolves with the picked model and thinking level, or null when cancelled; either way the
+	 * gate keeps its menu view, and the pick is applied when there is one.
+	 */
 	private openModel(): void {
-		let refs: ModelRef[];
-		try {
-			refs = availableModelRefs(this.ctx);
-		} catch {
-			refs = [];
-		}
-		const current = this.ctx.model ? { provider: this.ctx.model.provider, id: this.ctx.model.id } : undefined;
-		this.modelPicker = createSplashModelPicker(this.theme, this.ctx, refs, this.pi.getThinkingLevel(), current);
-		this.setView("model");
-	}
-
-	private handleModel(data: string): void {
-		const picker = this.modelPicker;
-		if (!picker) return;
-		const action = picker.handleInput(data);
-		if (action === "back") this.setView("menu");
-		else if (action === "confirm") this.applySelection(picker.getSelected());
-	}
-
-	/** Apply the picked model then its thinking level, staying in the picker if the model is refused. */
-	private applySelection(selection: { ref: ModelRef; thinking: ThinkingLevel }): void {
 		void (async () => {
-			try {
-				const model = this.ctx.modelRegistry.find(selection.ref.provider, selection.ref.id);
-				// setModel resolves false when the provider has no API key configured.
-				if (!model || !(await this.pi.setModel(model))) {
-					this.ctx.ui.notify(`Could not switch to ${sanitizeTuiText(modelRefLabel(selection.ref)) || "(invalid model)"}`, "error");
-					this.tui.requestRender();
-					return;
-				}
-				this.pi.setThinkingLevel(selection.thinking);
-				this.selectedModel = { id: selection.ref.id, provider: selection.ref.provider };
-				this.selectedThinking = selection.thinking;
-				// Refresh the persistent splash header so the new model line shows immediately.
-				headerRenderState.invalidate?.();
-				headerRenderState.requestRender?.();
-				this.setView("menu");
-				this.tui.requestRender();
-			} catch (e) {
-				this.ctx.ui.notify("Model change failed: " + sanitizeTuiText(e instanceof Error ? e.message : String(e)), "error");
-			}
+			const picked = await showModelPickerDialog(this.ctx, this.pi.getThinkingLevel());
+			if (picked) await this.applySelection(picked.model, picked.thinking);
+			this.tui.requestRender();
 		})();
 	}
 
-	private openTheme(): void {
+	/** Apply the picked model then its thinking level; a refusal notifies and leaves the menu as it is. */
+	private async applySelection(ref: ModelRef, thinking: ThinkingLevel | null): Promise<void> {
 		try {
-			this.themes = this.ctx.ui.getAllThemes();
-		} catch {
-			this.themes = [];
+			const model = this.ctx.modelRegistry.find(ref.provider, ref.id);
+			// setModel resolves false when the provider has no API key configured.
+			if (!model || !(await this.pi.setModel(model))) {
+				this.ctx.ui.notify(`Could not switch to ${sanitizeTuiText(modelRefLabel(ref)) || "(invalid model)"}`, "error");
+				return;
+			}
+			if (thinking) {
+				this.pi.setThinkingLevel(thinking);
+				this.selectedThinking = thinking;
+			}
+			this.selectedModel = { id: ref.id, provider: ref.provider };
+			// Refresh the persistent splash header so the new model line shows immediately.
+			headerRenderState.invalidate?.();
+			headerRenderState.requestRender?.();
+		} catch (e) {
+			this.ctx.ui.notify("Model change failed: " + sanitizeTuiText(e instanceof Error ? e.message : String(e)), "error");
 		}
-		// `ctx.ui.theme` is a live proxy to the global theme, so `.name` is the effective
-		// current theme even when the user never persisted one in settings.
-		this.savedThemeName = this.ctx.ui.theme.name;
-		this.themePreviewActive = false;
-		const currentIdx = this.savedThemeName
-			? this.themes.findIndex((entry) => entry.name === this.savedThemeName)
-			: -1;
-		this.themeIndex = currentIdx >= 0 ? currentIdx : 0;
-		this.setView("theme");
 	}
 
 	/**
-	 * Live-preview a theme while navigating: `setTheme` with a Theme *instance* switches the
-	 * global theme in memory without persisting to settings (the string form persists).
-	 * Skipped when the popup opened on an unnamed theme, since escape could not restore it.
+	 * Open the theme picker as a capturing OpenTUI dialog above the gate, like Settings. It
+	 * resolves with the chosen theme name — already persisted by the dialog — or null when
+	 * cancelled; either way the gate keeps its menu view, and the splash repaints beneath.
 	 */
-	private previewTheme(name: string): void {
-		if (!this.savedThemeName) return;
-		try {
-			const loaded = this.ctx.ui.getTheme(name);
-			if (loaded) {
-				this.ctx.ui.setTheme(loaded);
-				this.themePreviewActive = true;
-				headerRenderState.invalidate?.();
-			}
-		} catch { /* keep the current theme */ }
-	}
-
-	private handleTheme(data: string): void {
-		if (matchesKey(data, "escape")) {
-			// Abandon any preview: restore the theme that was active when the popup opened.
-			// Settings still hold that name, so the string form won't rewrite them.
-			if (this.themePreviewActive && this.savedThemeName) {
-				this.ctx.ui.setTheme(this.savedThemeName);
-				headerRenderState.invalidate?.();
-			}
-			this.themePreviewActive = false;
-			this.setView("menu");
-			return;
-		}
-		if (this.themes.length === 0) return;
-		const moveTo = (index: number) => {
-			this.themeIndex = index;
-			const entry = this.themes[index];
-			if (entry) this.previewTheme(entry.name);
-		};
-		if (matchesKey(data, "up")) { moveTo(Math.max(0, this.themeIndex - 1)); return; }
-		if (matchesKey(data, "down")) { moveTo(Math.min(this.themes.length - 1, this.themeIndex + 1)); return; }
-		if (matchesKey(data, "return")) {
-			const entry = this.themes[this.themeIndex];
-			if (entry) {
-				// String form: switches the theme and persists the choice to settings.
-				this.ctx.ui.setTheme(entry.name);
-				this.themePreviewActive = false;
-				headerRenderState.invalidate?.();
-				this.setView("menu");
-			}
-		}
+	private openTheme(): void {
+		void (async () => {
+			await showThemePickerDialog(this.ctx);
+			headerRenderState.requestRender?.();
+			this.tui.requestRender();
+		})();
 	}
 
 	render(width: number): string[] {
@@ -379,8 +310,6 @@ export class StartupGate {
 	private renderPopup(width: number): string[] {
 		switch (this.view) {
 			case "resume": return renderPopupBox(this.theme, width, "Resume Session", this.buildResumeBody(width));
-			case "model": return renderPopupBox(this.theme, width, "Select Model", this.buildModelBody(width));
-			case "theme": return renderPopupBox(this.theme, width, "Select Theme", this.buildThemeBody());
 			default: return [];
 		}
 	}
@@ -463,41 +392,8 @@ export class StartupGate {
 		return body;
 	}
 
-	private buildModelBody(width: number): string[] {
-		const picker = this.modelPicker;
-		if (!picker) return [];
-		// `renderPopupBox` pads its interior to exactly `width - 4`, which is what the picker emits.
-		const bodyWidth = Math.max(1, width - 4);
-		const hints = "type to filter · ↑↓ move · tab/←→ switch pane · enter select · esc back";
-		return [...renderSplashModelPicker(picker, bodyWidth), ...renderFooter(this.theme, picker, bodyWidth, hints)];
-	}
 
-	private buildThemeBody(): string[] {
-		const body: string[] = [];
-		if (this.themes.length === 0) {
-			body.push(this.theme.fg("muted", "No themes available"));
-		} else {
-			const { start, end } = listWindow(this.themes.length, GATE_LIST_HEIGHT, this.themeIndex);
-			for (let idx = start; idx < end; idx++) {
-				const entry = this.themes[idx]!;
-				const selected = idx === this.themeIndex;
-				const isCurrent = entry.name === this.savedThemeName;
-				const marker = isCurrent ? this.theme.fg("success", "●") : " ";
-				const label = sanitizeTuiText(entry.name) || "(invalid theme)";
-				const styled = selected ? this.theme.fg("accent", label) : this.theme.fg("text", label);
-				body.push(`${selected ? "▶" : " "} ${marker} ${styled}`);
-			}
-			if (this.themes.length > GATE_LIST_HEIGHT) {
-				body.push(this.theme.fg("dim", `  ${this.themeIndex + 1}/${this.themes.length}`));
-			}
-		}
-		body.push("", this.hint("↑↓ preview · enter select · esc back"));
-		return body;
-	}
-
-	invalidate(): void {
-		this.modelPicker?.invalidate();
-	}
+	invalidate(): void {}
 }
 
 /** Widths of the resume list's fixed columns: `▶ `, right-aligned count, and `YYYY-MM-DD HH:MM`. */

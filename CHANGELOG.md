@@ -22,7 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The dialog replaces the settings menu built on `showMenu`; there is no fallback layout. If the dialog fails to run, the failure is reported and nothing is changed. The startup gate's own views are unchanged.
+- The dialog replaces the settings menu built on `showMenu`; there is no fallback layout. If the dialog fails to run, the failure is reported and nothing is changed.
+- The startup gate's Theme picker and View system prompt window are now OpenTUI dialogs with
+  the same design language as the settings dialog and model picker, replacing the legacy
+  pi-tui popup and overlay. They are designed as mockups in `opentui-dialogs`, converted by
+  `pi-topping-opentui` into `src/ui/generated/`, and opened through hand-written adapters
+  (`src/ui/theme-picker-dialog.ts`, `src/ui/system-prompt-view-dialog.ts`) that preserve the
+  live theme preview and prompt paging behavior. Each dialog reports its own blocked question
+  while open. New parity cases pin both dialogs at full and 80x24 sizes.
+- The startup gate's **Model** entry (hotkey `m`) opens the same OpenTUI model picker as the settings dialog's Summary model row, as a dialog above the gate, in place of the picker it drew in its own popup: `/` opens the filter, Enter on a model steps into its thinking pane, Enter again selects. Select applies the model and thinking level and returns to the menu. A model Pi refuses now reports the error and returns to the menu as well, where before the picker stayed open.
 - In the Summary model picker, only Backspace resets the row to the session model; Delete no longer does. With no models available the picker opens empty instead of warning "No models available".
 - Development and CI now typecheck and test against Pi 1.5.2; the
   `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.5.0.
