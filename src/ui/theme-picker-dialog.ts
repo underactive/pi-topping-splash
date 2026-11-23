@@ -2,7 +2,7 @@
  * Adapter between the startup gate's Theme action and the generated OpenTUI theme picker.
  *
  * Hand-written. The picker itself is `./generated/splash/theme-picker.ts`, converted from the
- * mockup in `../opentui-dialogs`; this file only translates themes in and the chosen name out,
+ * mockup in `../pi-topping-mockups`; this file only translates themes in and the chosen name out,
  * the way `./model-picker-dialog.ts` does for the model picker. It opens as a capturing overlay
  * above the gate, like Settings and the system prompt view, so the gate keeps rendering the menu
  * beneath. Live preview works through `ctx.ui.setTheme` with a Theme *instance* (in-memory, not

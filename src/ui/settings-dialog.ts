@@ -2,7 +2,7 @@
  * Adapter between the splash preferences and the generated `/topping-splash-settings` dialog.
  *
  * Hand-written. The dialog itself is `./generated/splash/settings-dialog.ts`, converted from the
- * mockup in `../opentui-dialogs`; this file only translates data in and the result out.
+ * mockup in `../pi-topping-mockups`; this file only translates data in and the result out.
  */
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";

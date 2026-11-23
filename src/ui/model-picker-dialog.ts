@@ -2,7 +2,7 @@
  * Adapter between the startup gate's Model action and the generated OpenTUI model picker.
  *
  * Hand-written. The picker itself is `./generated/splash/model-picker.ts`, converted from the
- * mockup in `../opentui-dialogs`; this file only translates data in and the result out, the way
+ * mockup in `../pi-topping-mockups`; this file only translates data in and the result out, the way
  * `./settings-dialog.ts` does for settings. It opens as a capturing overlay above the gate,
  * like Settings and the system prompt view, so the gate keeps rendering the menu beneath.
  */

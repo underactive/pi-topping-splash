@@ -3,7 +3,7 @@
  * prompt viewer.
  *
  * Hand-written. The viewer itself is `./generated/splash/system-prompt-view.ts`, converted from
- * the mockup in `../opentui-dialogs`; this file only reads the prompt and opens the dialog, the
+ * the mockup in `../pi-topping-mockups`; this file only reads the prompt and opens the dialog, the
  * way `./model-picker-dialog.ts` opens the model picker. It opens as a capturing overlay above
  * the gate, so the gate keeps rendering the menu beneath while the viewer owns input.
  */

@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with and without the model picker, which was then a separate overlay and is now part of the
   dialog. Reload cleanup was not tested live.
 
-- `/topping-splash-settings` opens a redesigned settings dialog: a section list beside the selected section's settings, the focused setting's description below, and an Apply / Cancel bar, with the Summary model picker, model list and thinking pane, taking its place while it is open; the thinking pane draws the selected level's bar (`▰▰▱▱`) in pi's theme color for that thinking level. It is 84 columns wide where the terminal has them and shrinks to 80 columns by 24 rows; at that size the picker lists the thinking levels one to a row and shows the highlighted level's description in the hint area. A terminal smaller than 80x24 clips it. The dialog is designed in the `opentui-dialogs` mockups and converted to `src/ui/generated/` by `pi-topping-opentui` (`npm run port:ui`; `npm run port:check` and `npm run parity:ui` verify it against the mockups' recorded frames).
+- `/topping-splash-settings` opens a redesigned settings dialog: a section list beside the selected section's settings, the focused setting's description below, and an Apply / Cancel bar, with the Summary model picker, model list and thinking pane, taking its place while it is open; the thinking pane draws the selected level's bar (`▰▰▱▱`) in pi's theme color for that thinking level. It is 84 columns wide where the terminal has them and shrinks to 80 columns by 24 rows; at that size the picker lists the thinking levels one to a row and shows the highlighted level's description in the hint area. A terminal smaller than 80x24 clips it. The dialog is designed in the `pi-topping-mockups` repository and converted to `src/ui/generated/` by `pi-topping-opentui` (`npm run port:ui`; `npm run port:check` and `npm run parity:ui` verify it against the mockups' recorded frames).
 - New dependency `@underactive/pi-topping-opentui` `^0.14.1`, the small React renderer that draws the converted dialog through Pi's TUI; `@underactive/pi-topping-opentui-tools` `^0.14.1` and `@types/react` are development-only.
 
 ### Changed
@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dialog replaces the settings menu built on `showMenu`; there is no fallback layout. If the dialog fails to run, the failure is reported and nothing is changed.
 - The startup gate's Theme picker and View system prompt window are now OpenTUI dialogs with
   the same design language as the settings dialog and model picker, replacing the legacy
-  pi-tui popup and overlay. They are designed as mockups in `opentui-dialogs`, converted by
+  pi-tui popup and overlay. They are designed as mockups in `pi-topping-mockups`, converted by
   `pi-topping-opentui` into `src/ui/generated/`, and opened through hand-written adapters
   (`src/ui/theme-picker-dialog.ts`, `src/ui/system-prompt-view-dialog.ts`) that preserve the
   live theme preview and prompt paging behavior. Each dialog reports its own blocked question
