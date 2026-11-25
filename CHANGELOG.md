@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-25
+
 ### Added
 
 - The published package now includes `CHANGELOG.md`, so Pi 1.5.0 and later can show this extension's release notes under "Extension Updates" after it updates. Notices start with the release after the first one that includes the changelog; the first install only records the version.
@@ -18,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dialog. Reload cleanup was not tested live.
 
 - `/topping-splash-settings` opens a redesigned settings dialog: a section list beside the selected section's settings, the focused setting's description below, and an Apply / Cancel bar, with the Summary model picker, model list and thinking pane, taking its place while it is open; the thinking pane draws the selected level's bar (`▰▰▱▱`) in pi's theme color for that thinking level. It is 84 columns wide where the terminal has them and shrinks to 80 columns by 24 rows; at that size the picker lists the thinking levels one to a row and shows the highlighted level's description in the hint area. A terminal smaller than 80x24 clips it. The dialog is designed in the `pi-topping-mockups` repository and converted to `src/ui/generated/` by `pi-topping-opentui` (`npm run port:ui`; `npm run port:check` and `npm run parity:ui` verify it against the mockups' recorded frames).
-- New dependency `@underactive/pi-topping-opentui` `^0.14.1`, the small React renderer that draws the converted dialog through Pi's TUI; `@underactive/pi-topping-opentui-tools` `^0.14.1` and `@types/react` are development-only.
+- New dependency `@underactive/pi-topping-opentui` `0.14.4`, the small React renderer that draws the converted dialog through Pi's TUI; `@underactive/pi-topping-opentui-tools` `0.14.4` and `@types/react` are development-only.
 
 ### Changed
 

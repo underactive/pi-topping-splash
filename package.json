@@ -1,6 +1,6 @@
 {
   "name": "@underactive/pi-topping-splash",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "A Pi extension that replaces the default startup header with an informative splash screen and optionally adds an interactive startup gate menu",
   "keywords": [
     "pi-package",
@@ -50,7 +50,7 @@
     "@earendil-works/pi-tui": "1.5.2",
     "@types/node": "^24.0.0",
     "@types/react": "^19.3.0",
-    "@underactive/pi-topping-opentui-tools": "^0.14.1",
+    "@underactive/pi-topping-opentui-tools": "0.14.4",
     "typescript": "^5.9.3"
   },
   "pi": {
@@ -60,7 +60,7 @@
     "image": "https://raw.githubusercontent.com/underactive/pi-topping-splash/main/media/pi-splash-demo.png"
   },
   "dependencies": {
-    "@underactive/pi-topping-opentui": "^0.14.1",
+    "@underactive/pi-topping-opentui": "0.14.4",
     "@underactive/pi-topping-primitives": "0.13.0"
   }
 }
