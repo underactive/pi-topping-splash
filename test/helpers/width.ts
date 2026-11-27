@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 /** Every line must fill exactly `width` columns (full-bleed surfaces). */
-export function assertLinesExact(lines: string[], width: number, label: string): void {
+export function assertLinesExact(lines: readonly string[], width: number, label: string): void {
 	for (let i = 0; i < lines.length; i++) {
 		const w = visibleWidth(lines[i] ?? "");
 		assert.equal(w, width, `${label}: line ${i} is ${w} cols, expected exactly ${width}`);
@@ -10,7 +10,7 @@ export function assertLinesExact(lines: string[], width: number, label: string):
 }
 
 /** No line may exceed `width` columns (interior/unpadded surfaces). */
-export function assertLinesAtMost(lines: string[], width: number, label: string): void {
+export function assertLinesAtMost(lines: readonly string[], width: number, label: string): void {
 	for (let i = 0; i < lines.length; i++) {
 		const w = visibleWidth(lines[i] ?? "");
 		assert.ok(w <= width, `${label}: line ${i} is ${w} cols, exceeds ${width}`);

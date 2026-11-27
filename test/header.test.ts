@@ -370,7 +370,7 @@ describe("installHeader (H-04, H-05)", () => {
 		// The logo re-centers against the taller panel, so compare the panel's columns only. The section's
 		// gap takes the row where the panel's closing padding was; every panel row above keeps its glyphs.
 		const column = sanitizeTuiText(band.find((line) => line.includes("[extensions]"))!).indexOf("[extensions]");
-		const panelText = (lines: string[]) => lines.slice(0, band.length - 2).map((line) => sanitizeTuiText(line).slice(column));
+		const panelText = (lines: readonly string[]) => lines.slice(0, band.length - 2).map((line) => sanitizeTuiText(line).slice(column));
 		assert.deepEqual(panelText(first), panelText(band), "the panel rows above the section keep their glyphs");
 		const text = first.map(sanitizeTuiText).join("\n");
 		assert.ok(text.indexOf("[extensions]") < text.indexOf("[local changes] +1, ~1, -1"), "the section follows the extension list");

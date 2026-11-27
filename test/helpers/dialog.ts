@@ -2,7 +2,7 @@ import { SETTINGS_DIALOG_WIDTH } from "../../src/ui/dialog-size.ts";
 
 /** What pi-tui holds of a component a dialog mounted through `ui.custom`. */
 export interface Shown {
-	render(width: number): string[];
+	render(width: number): readonly string[];
 	handleInput?(data: string): void;
 }
 

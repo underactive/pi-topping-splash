@@ -117,7 +117,7 @@ function getEntryData(harness: Harness): LocalChangesEntryData {
 	return appended.data;
 }
 
-function renderRegisteredEntry(harness: Harness, data: unknown, width = 100): string[] | undefined {
+function renderRegisteredEntry(harness: Harness, data: unknown, width = 100): readonly string[] | undefined {
 	const renderer = harness.pi.entryRenderers.get(ENTRY_TYPES.splashLocalChanges);
 	assert.ok(renderer, "the entry renderer must be registered");
 	const entry: CustomEntry<unknown> = {
@@ -132,7 +132,7 @@ function renderRegisteredEntry(harness: Harness, data: unknown, width = 100): st
 	return component?.render(width);
 }
 
-function rendered(lines: string[]): string {
+function rendered(lines: readonly string[]): string {
 	return lines.map(sanitizeTuiText).join("\n");
 }
 
