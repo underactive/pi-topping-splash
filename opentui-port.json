@@ -6,5 +6,5 @@
   "dataModules": ["splash/data"],
   "entries": [],
   "parity": "../pi-topping-mockups/parity",
-  "cases": ["splash-settings", "splash-settings-compact", "splash-model-picker", "splash-model-picker-compact", "splash-theme-picker", "splash-system-prompt-view", "splash-system-prompt-view-compact"]
+  "cases": ["splash-settings", "splash-settings-compact", "splash-settings-mouse", "splash-model-picker", "splash-model-picker-compact", "splash-model-picker-mouse", "splash-theme-picker", "splash-theme-picker-mouse", "splash-system-prompt-view", "splash-system-prompt-view-compact", "splash-system-prompt-view-mouse"]
 }
