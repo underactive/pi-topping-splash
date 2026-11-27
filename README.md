@@ -16,7 +16,7 @@ Restart Pi (or run `/reload`) to pick it up.
 ## Compatibility
 
 Requires Node.js 22.19.0 or newer. The current release is developed and tested against Pi
-1.5.2; Pi package peer dependency ranges remain unrestricted.
+1.7.0; Pi package peer dependency ranges remain unrestricted.
 
 While the startup gate, the settings dialog, the gate's **Model** and **Theme** pickers, the
 **system prompt view**, or the **Summary model** picker waits for a choice, Pi reports itself

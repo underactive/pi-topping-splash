@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The settings dialog, the model picker, the theme picker and the system prompt viewer can be used with the mouse in fullscreen mode. A click on a button, a section, a row, a thinking level or a pane does what the keys do there, and the wheel moves the list or scrolls the text under the pointer. The viewer's text stays selectable, so a click on it does nothing. The keyboard works as before, regular mode has no mouse, and the dialogs look the same. This needs the mouse support of `@underactive/pi-topping-opentui` and `@underactive/pi-topping-opentui-tools`, which is not published yet: both dependencies still name `0.14.4` and are to be raised when it is.
 
+### Changed
+
+- Development and CI now typecheck and test against Pi 1.7.0; the
+  `@earendil-works/pi-coding-agent`, `pi-ai`, and `pi-tui` devDependencies moved from 1.5.2.
+  Pi 1.6.0 made extension `render()` return `readonly string[]`, so the test helpers that accept
+  rendered lines were widened to `readonly string[]`; no `src/` changes were needed.
+
 ## [0.7.0] - 2026-11-25
 
 ### Added
